@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import ChatBox from "@/components/ChatBox";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 export type ChatSession = {
   id: string;
@@ -19,6 +20,7 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   const refreshSessions = useCallback(async (selectId?: string) => {
     try {
@@ -47,14 +49,14 @@ export default function ChatPage() {
   }, [refreshSessions]);
 
   async function deleteSession(id: string) {
-    const session = sessions.find((s) => s.id === id);
-    if (!window.confirm(`Delete "${session?.title ?? "this chat"}" and all its messages?`)) return;
+    setPendingDelete(null);
     await fetch(`/api/chat/sessions/${id}`, { method: "DELETE" }).catch(() => {});
-    setSessions((current) => {
-      const next = current.filter((s) => s.id !== id);
-      if (activeId === id) setActiveId(next.length > 0 ? next[0].id : null);
-      return next;
-    });
+    const remaining = sessions.filter((s) => s.id !== id);
+    setSessions(remaining);
+    if (activeId === id) {
+      setActiveId(remaining.length > 0 ? remaining[0].id : null);
+      setEpoch((e) => e + 1);
+    }
   }
 
   async function saveRename(id: string) {
@@ -132,7 +134,7 @@ export default function ChatPage() {
                         >
                           ✎
                         </button>
-                        <button type="button" title="Delete" onClick={() => deleteSession(s.id)}>
+                        <button type="button" title="Delete" onClick={() => setPendingDelete(s.id)}>
                           🗑
                         </button>
                       </span>
@@ -146,13 +148,24 @@ export default function ChatPage() {
 
         <div className="card chat-card chat-main">
           <ChatBox
-            key={`${activeId ?? "new"}:${epoch}`}
+            key={epoch}
             sessionId={activeId}
             onSessionCreated={(id) => refreshSessions(id)}
             onActivity={() => refreshSessions()}
           />
         </div>
       </div>
+
+      {pendingDelete ? (
+        <ConfirmDialog
+          title="Delete this chat?"
+          message={`"${sessions.find((s) => s.id === pendingDelete)?.title ?? "This chat"}" and all its messages will be permanently removed.`}
+          confirmLabel="Delete chat"
+          danger
+          onConfirm={() => deleteSession(pendingDelete)}
+          onCancel={() => setPendingDelete(null)}
+        />
+      ) : null}
     </div>
   );
 }

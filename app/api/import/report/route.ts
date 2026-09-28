@@ -1,6 +1,6 @@
-import { classifySlipType, mapInsideOutside, normalizeName, parseAmount, parseReportFile, type ParsedReport } from "@/lib/report-import";
-import { parseReportXlsxBold } from "@/lib/report-bold";
-import { buildWeekLabel, wednesdayOfWeek } from "@/lib/weeks";
+import { classifySlipType, mapInsideOutside, normalizeName, parseAmount } from "@/lib/report-import";
+import { parseUpload } from "@/lib/import-upload";
+import { buildWeekLabel } from "@/lib/weeks";
 import { clearWeekOptionsCache } from "@/lib/server-weeks";
 import { clearSlipsSnapshotCache } from "@/lib/chat/snapshot-cache";
 import { getSupabaseServer } from "@/lib/supabase/server";
@@ -18,34 +18,18 @@ export async function POST(request: Request) {
       return Response.json({ error: "Only .xls/.xlsx/.csv supported" }, { status: 400 });
     }
 
-    const buf = Buffer.from(await file.arrayBuffer());
-    // .xlsx goes through the bold-aware parser (bold name = other chapter);
-    // anything it can't handle falls back to the plain parser.
-    // .xls/.csv carry no formatting info: all names count as same-chapter.
-    let parsed: ParsedReport;
-    let boldUsed = false;
-    if (/\.xlsx$/i.test(file.name)) {
-      try {
-        const boldParsed = await parseReportXlsxBold(buf);
-        parsed = boldParsed;
-        boldUsed = boldParsed.boldFound;
-      } catch {
-        parsed = parseReportFile(buf);
-      }
-    } else {
-      parsed = parseReportFile(buf);
-    }
-    const { rows, errors: parseErrors, headers, columnMap, reportDate } = parsed;
-    if (!reportDate) {
+    // The week always comes from the file itself (snapped to Wednesday) —
+    // there is no week picker on the import screen.
+    let upload;
+    try {
+      upload = await parseUpload(file);
+    } catch (e) {
       return Response.json(
-        { error: "Could not determine the meeting week from the file. Expected a title like 'Slips Audit Report for 01/04/2026' in its first rows." },
+        { error: e instanceof Error ? e.message : "Could not read the file." },
         { status: 400 },
       );
     }
-    // The week always comes from the file itself (snapped to Wednesday) —
-    // there is no week picker on the import screen.
-    const meetingDate = wednesdayOfWeek(reportDate);
-    const bniWeekLabel = buildWeekLabel(meetingDate);
+    const { rows, errors: parseErrors, headers, columnMap, meetingDate, weekLabel: bniWeekLabel, boldUsed } = upload;
     const supabase = getSupabaseServer();
 
     // Find-or-create week. New weeks take the next serial week_no and the

@@ -16,7 +16,7 @@ async function getCounts(): Promise<Record<string, number | null>> {
     const sb = getSupabaseServer();
     const entries = await Promise.all(
       sections.map(async (s) => {
-        const { count } = await sb.from(s.table).select("*", { count: "exact", head: true });
+        const { count } = await sb.from(s.table).select("id", { count: "exact" }).limit(1); // NOTE: head:true silently returns count=null in this client version
         return [s.table, count] as const;
       })
     );

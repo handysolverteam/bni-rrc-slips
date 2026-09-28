@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 type Msg = { sender: "user" | "ai"; text: string };
 
@@ -31,6 +32,7 @@ export default function ChatBox({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingClear, setConfirmingClear] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   // Set when THIS box created its session: the sessionId prop change that
   // follows must not trigger a history reload (it would wipe the reply
@@ -120,7 +122,7 @@ export default function ChatBox({
 
   async function clearChat() {
     if (!sessionId || busy) return;
-    if (!window.confirm("Clear all messages in this chat? The chat itself stays in history.")) return;
+    setConfirmingClear(false);
     setError(null);
     try {
       const res = await fetch(`/api/chat/sessions/${sessionId}/messages`, { method: "DELETE" });
@@ -137,7 +139,7 @@ export default function ChatBox({
       <div className="chat-toolbar">
         <span className="muted">{loadingHistory ? "Loading history…" : `${messages.length} message(s)`}</span>
         {sessionId ? (
-          <button type="button" onClick={clearChat} disabled={busy}>
+          <button type="button" onClick={() => setConfirmingClear(true)} disabled={busy}>
             Clear chat
           </button>
         ) : null}
@@ -194,6 +196,18 @@ export default function ChatBox({
           {busy ? "…" : "Send"}
         </button>
       </form>
+
+      {confirmingClear ? (
+        <ConfirmDialog
+          title="Clear this chat?"
+          message="All messages in this chat will be removed. The chat itself stays in history."
+          confirmLabel="Clear chat"
+          danger
+          busy={busy}
+          onConfirm={clearChat}
+          onCancel={() => setConfirmingClear(false)}
+        />
+      ) : null}
     </div>
   );
 }

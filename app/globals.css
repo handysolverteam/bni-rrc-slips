@@ -309,6 +309,41 @@ button.danger:hover:not(:disabled) { background: var(--red-soft); }
   .chat-sidebar { position: static; max-height: none; }
 }
 
+/* ---------- Import preview + history ---------- */
+.preview-card {
+  border: 1px solid var(--line);
+  border-left-width: 6px;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 14px 0;
+  background: #fff;
+}
+.preview-card.ok { border-left-color: var(--green); }
+.preview-card.warn { border-left-color: var(--accent); }
+.preview-card p { margin: 4px 0 0; }
+.preview-ok { color: var(--green); font-size: 13px; font-weight: 600; }
+.preview-warn { color: #8f2b1f; font-size: 13px; font-weight: 600; }
+.history-card { margin-top: 18px; }
+.history-card h2 { margin: 0 0 12px; font-size: 18px; }
+
+/* ---------- Confirm dialog ---------- */
+.dialog-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(38, 34, 28, 0.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  animation: fade-in 0.15s ease-out;
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.dialog {
+  background: #fff; border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,0.2);
+  max-width: 440px; width: 100%; padding: 20px;
+  animation: slide-in 0.18s ease-out;
+}
+.dialog h2 { margin: 0 0 6px; font-size: 18px; }
+.dialog p { margin: 0 0 16px; line-height: 1.5; }
+.dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
 @media (max-width: 640px) {
   .wrap { padding: 18px 12px 60px; }
   .hero h1 { font-size: 24px; }
