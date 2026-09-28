@@ -5,6 +5,9 @@ import { clearWeekOptionsCache } from "@/lib/server-weeks";
 import { clearSlipsSnapshotCache } from "@/lib/chat/snapshot-cache";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
+/** Bulk import can exceed the default serverless timeout on file uploads. */
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   try {
     const form = await request.formData();

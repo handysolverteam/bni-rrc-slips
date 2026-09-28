@@ -4,6 +4,9 @@ import { askGemini, type ChatHistoryMessage } from "@/lib/chat/gemini";
 /** Per-request message cap (DoS + LLM cost guard). */
 const MAX_CHAT_MESSAGE_LENGTH = 2000;
 
+/** Gemini + snapshot can exceed the default serverless timeout. */
+export const maxDuration = 60;
+
 /**
  * Chat generate endpoint. Builds a live snapshot of the slips database
  * server-side and asks Gemini (server key). Replies with generated text only.
