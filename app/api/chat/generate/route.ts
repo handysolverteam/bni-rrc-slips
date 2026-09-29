@@ -52,7 +52,14 @@ export async function POST(request: Request) {
     const text = result.text;
 
     if (body.sessionId) {
-      await persistChatTurn(body.sessionId, message, text).catch(() => {});
+      // Best-effort only, but never silent: a failed save is logged so a
+      // reply shown on screen can't vanish from history unnoticed.
+      await persistChatTurn(body.sessionId, message, text).catch((e) =>
+        console.error("Chat history save failed", {
+          sessionId: body.sessionId,
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      );
     }
 
     return Response.json({ text, source: "gemini", sessionId: body.sessionId ?? null });
@@ -83,11 +90,15 @@ async function persistChatTurn(sessionId: string, userText: string, aiText: stri
   await sb.from("chat_messages").insert([
     { session_id: sessionId, sender: "user", text: userText },
     { session_id: sessionId, sender: "ai", text: aiText },
-  ]);
+  ]).then(({ error }) => {
+    if (error) throw new Error(`chat_messages insert: ${error.message}`);
+  });
 
   const updates: Record<string, string> = { updated_at: new Date().toISOString() };
   if (!session.title || session.title === "New chat") {
     updates.title = userText.slice(0, 60);
   }
-  await sb.from("chat_sessions").update(updates).eq("id", sessionId);
+  await sb.from("chat_sessions").update(updates).eq("id", sessionId).then(({ error }) => {
+    if (error) throw new Error(`chat_sessions update: ${error.message}`);
+  });
 }

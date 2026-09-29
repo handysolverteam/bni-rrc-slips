@@ -49,6 +49,7 @@ export default async function TyfcbPage({
   return (
     <ListShell
       title="Slip TYFCB"
+      kind="tyfcb"
       total={count ?? 0}
       page={page}
       pageSize={pageSize}

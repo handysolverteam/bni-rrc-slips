@@ -21,6 +21,7 @@ export default function ListShell({
   searchPlaceholder,
   columns,
   rows,
+  kind,
   filterable = [],
   columnFilters = {},
   filterOptions = {},
@@ -36,6 +37,8 @@ export default function ListShell({
   searchPlaceholder: string;
   columns: Col[];
   rows: Record<string, unknown>[];
+  /** Slip type for section coloring (one-to-one / referral / tyfcb / visitor). */
+  kind?: string;
   filterable?: string[];
   columnFilters?: Record<string, string>;
   filterOptions?: Record<string, string[]>;
@@ -59,7 +62,7 @@ export default function ListShell({
   }
 
   return (
-    <div>
+    <div data-stat={kind}>
       <div className="page-head">
         <h1>
           {title}

@@ -27,6 +27,7 @@ export default function ReportTabs({
         <button
           key={t.key}
           type="button"
+          data-stat={t.key === "all" ? undefined : t.key}
           className={activeTab === t.key ? "active" : undefined}
           disabled={isPending}
           onClick={() =>

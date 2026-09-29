@@ -16,6 +16,12 @@ TRUNCATE public.chat_messages,
          public.chapters
 RESTART IDENTITY CASCADE;
 
+-- Re-seed the home chapter so the database is import-ready immediately
+-- (must match NEXT_PUBLIC_CHAPTER_NAME; same id as 002/seed use).
+INSERT INTO public.chapters (id, name)
+VALUES ('c1000000-0000-4000-8000-000000000001', 'BNI Influencer')
+ON CONFLICT (id) DO NOTHING;
+
 -- Verify: every count below should be 0 (bni_weeks keeps its rows).
 SELECT 'referrals' AS t, COUNT(*) FROM public.slip_referrals
 UNION ALL SELECT 'one_to_ones', COUNT(*) FROM public.slip_one_to_ones
@@ -27,4 +33,6 @@ UNION ALL SELECT 'members', COUNT(*) FROM public.members
 UNION ALL SELECT 'chapters', COUNT(*) FROM public.chapters
 UNION ALL SELECT 'chat_sessions', COUNT(*) FROM public.chat_sessions
 UNION ALL SELECT 'chat_messages', COUNT(*) FROM public.chat_messages
-UNION ALL SELECT 'bni_weeks (kept)', COUNT(*) FROM public.bni_weeks;
+UNION ALL SELECT 'bni_weeks (kept)', COUNT(*) FROM public.bni_weeks
+UNION ALL SELECT 'home_chapter (reseeded, should be 1)', COUNT(*) FROM public.chapters
+  WHERE id = 'c1000000-0000-4000-8000-000000000001';

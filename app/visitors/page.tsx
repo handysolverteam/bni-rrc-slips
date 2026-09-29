@@ -55,6 +55,7 @@ export default async function VisitorsPage({
   return (
     <ListShell
       title="Slip Visitors"
+      kind="visitor"
       total={count ?? 0}
       page={page}
       pageSize={pageSize}

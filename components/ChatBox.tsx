@@ -186,11 +186,21 @@ export default function ChatBox({
           send(input);
         }}
       >
-        <input
+        <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            // Shift+Enter = newline (Teams-style); IME confirm Enter must
+            // not send.
+            if (e.nativeEvent.isComposing) return;
+            if (e.shiftKey) return;
+            e.preventDefault();
+            send(input);
+          }}
           placeholder="Ask about referrals, TYFCB, visitors…"
           maxLength={2000}
+          rows={1}
         />
         <button className="primary" type="submit" disabled={busy || !input.trim()}>
           {busy ? "…" : "Send"}

@@ -1,15 +1,13 @@
-import { getSupabaseServer } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paged";
 
 /** Distinct non-empty values of one text column, sorted for dropdowns. */
 export async function distinctValues(
   table: string,
   column: string,
-  limit = 5000,
 ): Promise<string[]> {
-  const sb = getSupabaseServer();
-  const { data } = await sb.from(table).select(column).limit(limit);
+  const data = await fetchAllRows<Record<string, unknown>>(table, column);
   const set = new Set<string>();
-  for (const r of ((data ?? []) as unknown as Record<string, unknown>[])) {
+  for (const r of data) {
     const v = String(r[column] ?? "")
       .replace(/\s+/g, " ")
       .trim();

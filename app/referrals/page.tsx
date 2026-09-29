@@ -53,6 +53,7 @@ export default async function ReferralsPage({
   return (
     <ListShell
       title="Slip Referrals"
+      kind="referral"
       total={count ?? 0}
       page={page}
       pageSize={pageSize}

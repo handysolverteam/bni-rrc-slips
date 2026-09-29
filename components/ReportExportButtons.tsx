@@ -4,6 +4,14 @@ import { useState } from "react";
 
 const FORMATS = ["xlsx", "csv", "pdf"] as const;
 
+// Section header fills — same palette as the screen (see globals.css).
+const SECTION_FILL: Record<string, [number, number, number]> = {
+  "One-to-One": [31, 138, 76],
+  Referral: [214, 84, 44],
+  TYFCB: [106, 79, 199],
+  Visitor: [47, 111, 176],
+};
+
 export default function ReportExportButtons({
   weekId,
   tab,
@@ -89,7 +97,7 @@ export default function ReportExportButtons({
         head: [headers],
         body: [...s.rows, ...(s.totalRow ? [s.totalRow] : [])],
         styles: { fontSize: 7 },
-        headStyles: { fillColor: [193, 60, 48], textColor: 255 },
+        headStyles: { fillColor: SECTION_FILL[s.title] ?? [193, 60, 48], textColor: 255 },
         // Outsider names (bold in the source file) print bold — every
         // section whose rows carry flags, not just referrals.
         didParseCell: (d) => {

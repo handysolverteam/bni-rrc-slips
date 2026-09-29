@@ -21,14 +21,14 @@ Source columns: `From | To | Slip Type | Inside/Outside | TYFCB | CEU Credits | 
 
 - `Slip Type` values handled: `One-to-One`, `Referral`, `TYFCB`, `Visitor`, `CEU` (case-insensitive, trimmed). Unknown/blank → skipped + reported.
 - `Inside/Outside`: `Tier 1 (inside)` → `Inside`, `Tier 2 (outside)` → `Outside` (also accepts plain `inside/outside/1/2`). TYFCB rows leave this blank in source → stored NULL.
-- `Detail`: chapter of the member on that row — blank → home/influencer chapter, filled → that chapter name (stored on `chapters`, linked from the member). Still stored as Other Chapter Member text on the slip for display.
+- `Detail`: the chapter of the BOLD name on that row — blank Detail → home/influencer chapter. Still stored as Other Chapter Member text on the slip for display.
 - **Bold rule (confirmed)**: a BOLD name belongs to a DIFFERENT chapter; the Detail column describes that bold person's chapter. Non-bold names are same-chapter members and are the only ones added to the member master. Implemented for `.xlsx` via ExcelJS (`lib/report-bold.ts`): bold From/To set `from/to_is_other_chapter` and skip member creation (name text is still stored on the slip). Legacy `.xls`/`.csv` carry no formatting info — save as `.xlsx` to preserve bold.
 - `Referral`: From → `referral_from`, To → `referral_to`.
 - `One-to-One`: From → `initiated_by`, To → `met_with`.
-- `TYFCB`: From is normally blank — the anonymous payment receiver doing the thanking. To = member being thanked (stored as `bni_member`), TYFCB column = `amount`. Detail (when filled) names the thanker's other chapter (blank Detail = same-chapter thanker); stored on the slip with `thanker_is_other_chapter`. Bold From (rare) also marks an outside thanker.
+- `TYFCB`: From is normally blank — the anonymous thanker. To = member being thanked, always home (even if bold; the bold flag is kept for display). Detail names the anonymous thanker's other chapter. A named non-bold thanker files home; a bold one is skipped.
 - `Visitor`: From = Invited By (sponsor), To = visitor full name. Company/Email/Phone not in Report XLS → NULL placeholders for now.
 - `CEU`: From = member, CEU Credits = credits. Stored in `slip_ceus`; no dedicated screen in MVP (visible via member detail later).
-- Member master: distinct (From/To) names auto-upserted per chapter — blank Detail → home chapter, otherwise the Detail chapter; existing name+chapter rows are reused, never duplicated. Visitor full names are never added (only non-bold inviters).
+- Member master: one row per name. Bold names file into their Detail chapter; all other names file into home. An existing name is reused (a bold Detail signal upgrades it); never duplicated. Visitor full names are never added (only non-bold inviters).
 
 ## Success criteria
 - Upload Report XLS + week → rows appear in correct 5 screens with pagination (150/page default like screenshots).

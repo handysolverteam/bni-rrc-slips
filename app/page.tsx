@@ -4,11 +4,11 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 const sections = [
-  { href: "/members", label: "Bni Member", table: "members" },
-  { href: "/referrals", label: "Slip Referrals", table: "slip_referrals" },
-  { href: "/one-to-ones", label: "Slip 121", table: "slip_one_to_ones" },
-  { href: "/visitors", label: "Slip Visitors", table: "slip_visitors" },
-  { href: "/tyfcb", label: "Slip TYFCB", table: "slip_tyfcb" },
+  { href: "/members", label: "Bni Member", table: "members", kind: "members" },
+  { href: "/referrals", label: "Slip Referrals", table: "slip_referrals", kind: "referral" },
+  { href: "/one-to-ones", label: "Slip 121", table: "slip_one_to_ones", kind: "one-to-one" },
+  { href: "/visitors", label: "Slip Visitors", table: "slip_visitors", kind: "visitor" },
+  { href: "/tyfcb", label: "Slip TYFCB", table: "slip_tyfcb", kind: "tyfcb" },
 ];
 
 async function getCounts(): Promise<Record<string, number | null>> {
@@ -50,7 +50,7 @@ export default async function Home() {
         {sections.map((s) => {
           const count = counts[s.table];
           return (
-            <Link key={s.href} href={s.href} className="section-card">
+            <Link key={s.href} href={s.href} className="section-card" data-stat={s.kind}>
               <div className="num">{count == null ? "–" : count.toLocaleString("en-IN")}</div>
               <div className="label">{s.label}</div>
               <div className="go">Open →</div>

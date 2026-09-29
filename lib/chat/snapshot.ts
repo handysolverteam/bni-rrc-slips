@@ -1,4 +1,5 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paged";
 
 export type MemberStat = {
   name: string;
@@ -11,6 +12,7 @@ export type MemberStat = {
   oneToOnes: number;
   tyfcbTotal: number;
   visitorsInvited: number;
+  invitedVisitors: string[];
 };
 
 export type SlipsSnapshot = {
@@ -39,10 +41,10 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
   const [membersRes, weeksRes, refRes, otoRes, tyfcbRes, visRes] = await Promise.all([
     sb.from("members").select("name,category,chapters(name)").order("name").limit(500),
     sb.from("bni_weeks").select("label,meeting_date").order("meeting_date", { ascending: false }).limit(60),
-    sb.from("slip_referrals").select("from_name,to_name,inside_outside").limit(8000),
-    sb.from("slip_one_to_ones").select("initiated_by_name,met_with_name").limit(8000),
-    sb.from("slip_tyfcb").select("member_name,amount").limit(8000),
-    sb.from("slip_visitors").select("full_name,invited_by_name").limit(3000),
+    fetchAllRows<{ from_name: string; to_name: string; inside_outside: string | null }>("slip_referrals", "from_name,to_name,inside_outside", { pageSize: 2000 }),
+    fetchAllRows<{ initiated_by_name: string; met_with_name: string }>("slip_one_to_ones", "initiated_by_name,met_with_name", { pageSize: 2000 }),
+    fetchAllRows<{ member_name: string; amount: number | string | null }>("slip_tyfcb", "member_name,amount", { pageSize: 2000 }),
+    fetchAllRows<{ full_name: string; invited_by_name: string | null }>("slip_visitors", "full_name,invited_by_name", { pageSize: 2000 }),
   ]);
 
   const stats = new Map<string, MemberStat>();
@@ -63,6 +65,7 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
         oneToOnes: 0,
         tyfcbTotal: 0,
         visitorsInvited: 0,
+        invitedVisitors: [],
       };
       stats.set(k, s);
     }
@@ -78,7 +81,7 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
     }
   }
 
-  for (const r of (refRes.data ?? []) as { from_name: string; to_name: string; inside_outside: string | null }[]) {
+  for (const r of refRes as { from_name: string; to_name: string; inside_outside: string | null }[]) {
     const from = ensure(r.from_name);
     const to = ensure(r.to_name);
     if (from) {
@@ -89,7 +92,7 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
     if (to) to.referralsReceived += 1;
   }
 
-  for (const r of (otoRes.data ?? []) as { initiated_by_name: string; met_with_name: string }[]) {
+  for (const r of otoRes as { initiated_by_name: string; met_with_name: string }[]) {
     // A 121 counts as participation for both sides (once if same person).
     const init = ensure(r.initiated_by_name);
     if (init) init.oneToOnes += 1;
@@ -98,17 +101,23 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
   }
 
   let tyfcbAmount = 0;
-  for (const r of (tyfcbRes.data ?? []) as { member_name: string; amount: number | string | null }[]) {
+  for (const r of tyfcbRes as { member_name: string; amount: number | string | null }[]) {
     const amt = Number(r.amount ?? 0);
     if (Number.isFinite(amt)) tyfcbAmount += amt;
     const s = ensure(r.member_name);
     if (s && Number.isFinite(amt)) s.tyfcbTotal += amt;
   }
 
-  for (const r of (visRes.data ?? []) as { full_name: string; invited_by_name: string | null }[]) {
+  for (const r of visRes as { full_name: string; invited_by_name: string | null }[]) {
     if (r.invited_by_name) {
       const s = ensure(r.invited_by_name);
-      if (s) s.visitorsInvited += 1;
+      if (s) {
+        s.visitorsInvited += 1;
+        const guest = r.full_name.replace(/\s+/g, " ").trim();
+        if (guest && s.invitedVisitors.length < 20 && !s.invitedVisitors.includes(guest)) {
+          s.invitedVisitors.push(guest);
+        }
+      }
     }
   }
 
@@ -116,9 +125,9 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
     b.referralsGiven + b.referralsReceived + b.tyfcbTotal / 100000 - (a.referralsGiven + a.referralsReceived + a.tyfcbTotal / 100000),
   );
 
-  const referrals = (refRes.data ?? []).length;
-  const oneToOnes = (otoRes.data ?? []).length;
-  const visitors = (visRes.data ?? []).length;
+  const referrals = refRes.length;
+  const oneToOnes = otoRes.length;
+  const visitors = visRes.length;
 
   return {
     chapterName,
@@ -129,7 +138,7 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
       referrals,
       oneToOnes,
       visitors,
-      tyfcbEntries: (tyfcbRes.data ?? []).length,
+      tyfcbEntries: tyfcbRes.length,
       tyfcbAmount: Math.round(tyfcbAmount),
     },
     recentWeeks: ((weeksRes.data ?? []) as { label: string }[]).slice(0, 12).map((w) => w.label),

@@ -1,4 +1,6 @@
 import { classifySlipType, isCountLikeName, mapInsideOutside, normalizeName, parseAmount } from "@/lib/report-import";
+import { computeDesiredChapters, resolveHomeChapter } from "@/lib/member-chapters";
+import { fetchAllRows } from "@/lib/supabase/paged";
 import { parseUpload } from "@/lib/import-upload";
 import { buildWeekLabel } from "@/lib/weeks";
 import { clearWeekOptionsCache } from "@/lib/server-weeks";
@@ -121,19 +123,18 @@ export async function POST(request: Request) {
 
     // ---- 1) Classify every row first (no I/O) and collect member names.
     // Bulk mode: the whole file costs ~10 HTTP calls instead of 2-3 per row.
-    // Chapter rule: blank Detail -> home chapter (NEXT_PUBLIC_CHAPTER_NAME,
-    // fallback "BNI Influencer"); filled Detail -> that chapter's name.
-    // Members are unique per (name, chapter): the same name in two chapters
-    // is two member rows. Visitor full names are never collected.
-    const HOME_CHAPTER = normalizeName(process.env.NEXT_PUBLIC_CHAPTER_NAME || "BNI Influencer") || "BNI Influencer";
-    const chapterOf = (detail: string | null): string => normalizeName(detail ?? "") || HOME_CHAPTER;
-    const neededNames = new Map<string, { name: string; chapter: string }>(); // chapter::lower name -> {display name, chapter}
-    const keyOf = (raw: string, isOther: boolean, chapter: string): string | null => {
+    // Chapter rule (lib/member-chapters.ts, shared with preview): a BOLD
+    // name belongs to its Detail chapter; every other name belongs to HOME.
+    // Exception: TYFCB names never file members (chapter undecided for
+    // now). One member per name: a bold Detail signal upgrades, never
+    // downgrades or duplicates. Visitor full names are never collected.
+    const HOME_CHAPTER = resolveHomeChapter();
+    // Pure pass: desired chapter per name, identical logic to preview.
+    const desired = computeDesiredChapters(rows, HOME_CHAPTER);
+    const keyOf = (raw: string): string | null => {
       const clean = normalizeName(raw);
-      if (!clean || isOther) return null;
-      const k = `${chapter.toLowerCase()}::${clean.toLowerCase()}`;
-      if (!neededNames.has(k)) neededNames.set(k, { name: clean, chapter });
-      return k;
+      if (!clean || isCountLikeName(clean)) return null;
+      return desired.has(clean.toLowerCase()) ? clean.toLowerCase() : null;
     };
 
     type ReferralRow = { fromName: string; toName: string; fromKey: string | null; toKey: string | null; fromOther: boolean; toOther: boolean; other: string | null; inside: string | null };
@@ -156,28 +157,26 @@ export async function POST(request: Request) {
       }
       const insideOutside = mapInsideOutside(r.insideOutside);
       const detail = r.detail.trim() || null;
-      const chapter = chapterOf(detail);
       const fromName = normalizeName(r.from);
       const toName = normalizeName(r.to);
 
       if (kind === "referral") {
         if (!fromName || !toName) { pushRowError(`Row ${r.rowNumber}: Referral needs From + To`); continue; }
         if (isCountLikeName(fromName) || isCountLikeName(toName)) { pushRowError(`Row ${r.rowNumber}: Referral has a number instead of a name — skipped`); continue; }
-        // Bold = other-chapter person: keep the name text, but don't
-        // create a chapter-member record for them.
+        // Bold = other-chapter person: filed as a member of the Detail
+        // chapter (never skipped, never duplicated).
         const fromOther = r.fromBold === true;
         const toOther = r.toBold === true;
-        referralRows.push({ fromName, toName, fromKey: keyOf(r.from, fromOther, chapter), toKey: keyOf(r.to, toOther, chapter), fromOther, toOther, other: detail, inside: insideOutside });
+        referralRows.push({ fromName, toName, fromKey: keyOf(r.from), toKey: keyOf(r.to), fromOther, toOther, other: detail, inside: insideOutside });
       } else if (kind === "one-to-one") {
         if (!fromName || !toName) { pushRowError(`Row ${r.rowNumber}: One-to-One needs From + To`); continue; }
         if (isCountLikeName(fromName) || isCountLikeName(toName)) { pushRowError(`Row ${r.rowNumber}: One-to-One has a number instead of a name — skipped`); continue; }
         const initOther = r.fromBold === true;
         const metOther = r.toBold === true;
-        otoRows.push({ initName: fromName, metName: toName, initKey: keyOf(r.from, initOther, chapter), metKey: keyOf(r.to, metOther, chapter), initOther, metOther, other: detail });
+        otoRows.push({ initName: fromName, metName: toName, initKey: keyOf(r.from), metKey: keyOf(r.to), initOther, metOther, other: detail });
       } else if (kind === "tyfcb") {
-        // To = thanked member (same chapter). From is normally blank: the
-        // anonymous payment receiver doing the thanking; Detail (when filled)
-        // names that thanker's (other) chapter.
+        // To = thanked member. TYFCB names never become members — the
+        // thanked member's chapter is undecided, the thanker anonymous.
         const name = toName || fromName;
         if (!name) { pushRowError(`Row ${r.rowNumber}: TYFCB needs To (member thanked)`); continue; }
         if (isCountLikeName(name)) { pushRowError(`Row ${r.rowNumber}: TYFCB has a number instead of a name — skipped`); continue; }
@@ -186,7 +185,7 @@ export async function POST(request: Request) {
         // numeric From is the row number — never a thanker name.
         const thankerRaw = isCountLikeName(fromName) ? "" : fromName;
         const thankerOther = thankerRaw ? r.fromBold === true : detail !== null;
-        tyfcbRows.push({ name, nameKey: keyOf(toName || r.from, false, chapter), amount: parseAmount(r.tyfcb), other: detail, thankerRaw, thankerKey: keyOf(r.from, r.fromBold === true, chapter), thankerOther });
+        tyfcbRows.push({ name, nameKey: keyOf(toName || r.from), amount: parseAmount(r.tyfcb), other: detail, thankerRaw, thankerKey: thankerRaw ? keyOf(r.from) : null, thankerOther });
       } else if (kind === "visitor") {
         const fullName = toName || fromName;
         if (!fullName) { pushRowError(`Row ${r.rowNumber}: Visitor needs a name`); continue; }
@@ -194,28 +193,26 @@ export async function POST(request: Request) {
         // Visitor names never become members; only a non-bold inviter does.
         // A numeric inviter is the row number, not a person.
         const inviterRaw = r.from && r.to && !isCountLikeName(fromName) ? fromName : null;
-        visitorRows.push({ fullName, inviterRaw, inviterKey: inviterRaw ? keyOf(r.from, r.fromBold === true, chapter) : null });
+        visitorRows.push({ fullName, inviterRaw, inviterKey: inviterRaw ? keyOf(r.from) : null });
       } else {
         const name = fromName || toName;
         if (!name) { pushRowError(`Row ${r.rowNumber}: CEU needs From member`); continue; }
         if (isCountLikeName(name)) { pushRowError(`Row ${r.rowNumber}: CEU has a number instead of a name — skipped`); continue; }
-        ceuRows.push({ name, nameKey: keyOf(r.from || r.to, false, chapter), credits: parseAmount(r.ceuCredits) });
+        ceuRows.push({ name, nameKey: keyOf(r.from || r.to), credits: parseAmount(r.ceuCredits) });
       }
     }
 
-    // ---- 2) Resolve chapter ids, then member ids: preloads + bulk inserts.
-    // Members are matched by (name, chapter): the same name in another
-    // chapter is a different member row and is never merged.
+    // ---- 2) Resolve chapter + member ids: preloads + bulk inserts.
+    // One member per name: an existing row is reused; a bold Detail signal
+    // upgrades a home row to its correct chapter, never the reverse.
     const chapterIds = new Map<string, string>(); // lower chapter -> id
-    const chapterNameById = new Map<string, string>(); // id -> lower chapter
-    const chaptersNeeded = [...new Set([...neededNames.values()].map((v) => v.chapter))];
-    if (chaptersNeeded.length > 0) {
-      const { data: existingChapters } = await supabase.from("chapters").select("id,name").limit(1000);
+    const wantChapters = [...new Set([...desired.values()].map((v) => v.chapter))];
+    if (wantChapters.length > 0) {
+      const { data: existingChapters } = await supabase.from("chapters").select("id,name").limit(2000);
       for (const c of ((existingChapters ?? []) as { id: string; name: string }[])) {
         chapterIds.set(String(c.name).toLowerCase(), c.id);
-        chapterNameById.set(c.id, String(c.name).toLowerCase());
       }
-      const missingChapters = chaptersNeeded.filter((n) => !chapterIds.has(n.toLowerCase()));
+      const missingChapters = wantChapters.filter((n) => !chapterIds.has(n.toLowerCase()));
       if (missingChapters.length > 0) {
         const { data: created, error: createError } = await supabase
           .from("chapters")
@@ -224,81 +221,91 @@ export async function POST(request: Request) {
         if (!createError && created) {
           for (const c of (created as { id: string; name: string }[])) {
             chapterIds.set(String(c.name).toLowerCase(), c.id);
-            chapterNameById.set(c.id, String(c.name).toLowerCase());
-          }
-        } else {
-          // Concurrent-import race: resolve leftovers individually.
-          for (const name of missingChapters) {
-            if (chapterIds.has(name.toLowerCase())) continue;
-            const found = await supabase.from("chapters").select("id").ilike("name", name).limit(1).maybeSingle();
-            let id: string | null = (found.data as { id: string } | null)?.id ?? null;
-            if (!id) {
-              const ins = await supabase.from("chapters").insert({ name }).select("id").maybeSingle();
-              id = (ins.data as { id: string } | null)?.id ?? null;
-              if (!id) {
-                const retry = await supabase.from("chapters").select("id").ilike("name", name).limit(1).maybeSingle();
-                id = (retry.data as { id: string } | null)?.id ?? null;
-              }
-            }
-            if (id) chapterIds.set(name.toLowerCase(), id);
-            if (id) chapterNameById.set(id, name.toLowerCase());
           }
         }
       }
-    }
-
-    const memberIds = new Map<string, string>(); // lower chapter::lower name -> member id
-    const memberKey = (chapterId: string, name: string): string | null => {
-      const cname = chapterNameById.get(chapterId);
-      return cname ? `${cname}::${String(name).toLowerCase()}` : null;
-    };
-    if (neededNames.size > 0) {
-      const { data: existingMembers } = await supabase.from("members").select("id,name,chapter_id").limit(20000);
-      for (const m of ((existingMembers ?? []) as { id: string; name: string; chapter_id: string }[])) {
-        const k = memberKey(m.chapter_id, m.name);
-        if (k) memberIds.set(k, m.id);
+      for (const name of missingChapters) {
+        if (chapterIds.has(name.toLowerCase())) continue;
+        const found = await supabase.from("chapters").select("id").ilike("name", name).limit(1).maybeSingle();
+        const id = (found.data as { id: string } | null)?.id ?? null;
+        if (id) chapterIds.set(name.toLowerCase(), id);
       }
-      const missing = [...neededNames.entries()].filter(
-        ([k, v]) => chapterIds.has(v.chapter.toLowerCase()) && !memberIds.has(k),
-      );
-      if (missing.length > 0) {
+    }
+    const homeChapterId = chapterIds.get(HOME_CHAPTER.toLowerCase()) ?? null;
+
+    type ExistingMember = { id: string; name: string; chapter_id: string };
+    const memberIds = new Map<string, string>(); // lower name -> member id
+    if (desired.size > 0) {
+      const existingMembers = await fetchAllRows<ExistingMember>( "members", "id,name,chapter_id", { pageSize: 2000 });
+      const byName = new Map<string, ExistingMember[]>();
+      for (const m of existingMembers) {
+        const k = String(m.name).toLowerCase();
+        if (!byName.has(k)) byName.set(k, []);
+        byName.get(k)?.push(m);
+      }
+      const toCreate: { key: string; name: string; chapter_id: string }[] = [];
+      for (const [k, w] of desired) {
+        const cid = chapterIds.get(w.chapter.toLowerCase());
+        if (!cid) continue;
+        const rows = byName.get(k) ?? [];
+        const same = rows.find((r) => r.chapter_id === cid);
+        if (same) {
+          memberIds.set(k, same.id);
+          continue;
+        }
+        if (rows.length === 0) {
+          toCreate.push({ key: k, name: w.name, chapter_id: cid });
+          continue;
+        }
+        // Upgrade path: move a home row to its correct (bold-signalled)
+        // chapter; otherwise keep the first existing row. Never downgrade.
+        const homeRow = homeChapterId ? rows.find((r) => r.chapter_id === homeChapterId) : undefined;
+        if (cid !== homeChapterId && homeRow) {
+          await supabase.from("members").update({ chapter_id: cid }).eq("id", homeRow.id);
+          memberIds.set(k, homeRow.id);
+        } else {
+          memberIds.set(k, rows[0].id);
+        }
+      }
+      if (toCreate.length > 0) {
         const { data: created, error: createError } = await supabase
           .from("members")
-          .insert(
-            missing.map(([, v]) => ({
-              name: v.name,
-              chapter_id: chapterIds.get(v.chapter.toLowerCase()) as string,
-            })),
-          )
-          .select("id,name,chapter_id");
+          .insert(toCreate.map(({ name, chapter_id }) => ({ name, chapter_id })))
+          .select("id,name");
         if (!createError && created) {
-          for (const m of (created as { id: string; name: string; chapter_id: string }[])) {
-            const k = memberKey(m.chapter_id, m.name);
-            if (k) memberIds.set(k, m.id);
+          for (const m of (created as { id: string; name: string }[])) {
+            memberIds.set(String(m.name).toLowerCase(), m.id);
           }
         } else {
           // Concurrent-import race: resolve leftovers individually.
-          for (const [k, v] of missing) {
-            if (memberIds.has(k)) continue;
-            const cid = chapterIds.get(v.chapter.toLowerCase());
-            if (!cid) continue;
+          for (const t of toCreate) {
+            if (memberIds.has(t.key)) continue;
             const found = await supabase
               .from("members")
               .select("id")
-              .ilike("name", v.name)
-              .eq("chapter_id", cid)
+              .ilike("name", t.name)
+              .eq("chapter_id", t.chapter_id)
               .limit(1)
               .maybeSingle();
             let id: string | null = (found.data as { id: string } | null)?.id ?? null;
             if (!id) {
               const ins = await supabase
                 .from("members")
-                .insert({ name: v.name, chapter_id: cid })
+                .insert({ name: t.name, chapter_id: t.chapter_id })
                 .select("id")
                 .maybeSingle();
               id = (ins.data as { id: string } | null)?.id ?? null;
             }
-            if (id) memberIds.set(k, id);
+            if (!id) {
+              const anyFound = await supabase
+                .from("members")
+                .select("id")
+                .ilike("name", t.name)
+                .limit(1)
+                .maybeSingle();
+              id = (anyFound.data as { id: string } | null)?.id ?? null;
+            }
+            if (id) memberIds.set(t.key, id);
           }
         }
       }
@@ -315,10 +322,15 @@ export async function POST(request: Request) {
       cols: string,
       toKey: (e: Record<string, string | number | null>) => (string | number | null | undefined)[],
     ): Promise<Set<string>> {
-      const { data, error } = await supabase.from(table).select(cols).eq("bni_week_id", weekId).limit(20000);
-      if (error || !data) return new Set();
-      const rows = data as unknown as Record<string, string | number | null>[];
-      return new Set(rows.map((e) => dkey([weekId, ...toKey(e)])));
+      try {
+        const rows = await fetchAllRows<Record<string, string | number | null>>(table, cols, {
+          eq: [["bni_week_id", weekId]],
+          pageSize: 2000,
+        });
+        return new Set(rows.map((e) => dkey([weekId, ...toKey(e)])));
+      } catch {
+        return new Set();
+      }
     }
 
     async function bulkInsert(table: string, payloads: Record<string, unknown>[]) {
@@ -435,10 +447,13 @@ export async function POST(request: Request) {
       })),
     );
 
-    await supabase
+    const { error: batchError } = await supabase
       .from("import_batches")
       .update({ imported_count: imported, skipped_count: skipped, error_message: errors.slice(0, 10).join(" | ") || null })
       .eq("id", batch?.id);
+    if (batchError) {
+      console.error("Import batch counts not saved", { batchId, error: batchError.message });
+    }
 
     // Fresh data: drop cached weeks + chat snapshot so screens update.
     clearWeekOptionsCache();

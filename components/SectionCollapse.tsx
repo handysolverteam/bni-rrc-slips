@@ -7,16 +7,18 @@ export default function SectionCollapse({
   title,
   badge,
   rowCount,
+  kind,
   children,
 }: {
   title: string;
   badge: React.ReactNode;
   rowCount: number;
+  kind?: string;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(rowCount <= 100);
   return (
-    <section className="report-section">
+    <section className="report-section" data-stat={kind}>
       <div className="section-head">
         <h2>
           {title} {badge}

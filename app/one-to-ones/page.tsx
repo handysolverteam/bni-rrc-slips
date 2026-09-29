@@ -51,6 +51,7 @@ export default async function OneToOnesPage({
   return (
     <ListShell
       title="Slip 121"
+      kind="one-to-one"
       total={count ?? 0}
       page={page}
       pageSize={pageSize}

@@ -1,4 +1,5 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paged";
 
 export type ReportSectionKey = "one-to-one" | "referral" | "tyfcb" | "visitor";
 
@@ -60,52 +61,44 @@ export async function fetchReportSections(
   col: ReportColFilters = {},
   weekOverrides: Partial<Record<ReportSectionKey, string>> = {},
 ): Promise<SectionData[]> {
-  const sb = getSupabaseServer();
   const scopeOf = (key: ReportSectionKey): string => {
     const ov = (weekOverrides[key] || "").trim();
     return ov || weekId;
   };
-  const otoQ = sb
-      .from("slip_one_to_ones")
-      .select("initiated_by_name,met_with_name,other_chapter_member,initiated_by_is_other_chapter,met_with_is_other_chapter,bni_weeks(label)")
-      .order("created_at")
-      .limit(20000);
-  const refQ = sb
-      .from("slip_referrals")
-      .select("from_name,to_name,inside_outside,other_chapter_member,from_is_other_chapter,to_is_other_chapter,bni_weeks(label)")
-      .order("created_at")
-      .limit(20000);
-  const tyfcbQ = sb
-      .from("slip_tyfcb")
-      .select("member_name,amount,other_chapter_member,thanker_name,bni_weeks(label)")
-      .order("created_at")
-      .limit(20000);
-  const visQ = sb
-      .from("slip_visitors")
-      .select("full_name,invited_by_name,bni_weeks(label)")
-      .order("created_at")
-      .limit(20000);
-
   const otoScope = scopeOf("one-to-one");
   const refScope = scopeOf("referral");
   const tyfcbScope = scopeOf("tyfcb");
   const visScope = scopeOf("visitor");
 
-  const [oto, ref, tyfcb, vis] = await Promise.all([
-    otoScope === "all" ? otoQ : otoQ.eq("bni_week_id", otoScope),
-    refScope === "all" ? refQ : refQ.eq("bni_week_id", refScope),
-    tyfcbScope === "all" ? tyfcbQ : tyfcbQ.eq("bni_week_id", tyfcbScope),
-    visScope === "all" ? visQ : visQ.eq("bni_week_id", visScope),
-  ]);
+  const scopedEq = (scope: string): [string, string][] =>
+    scope === "all" ? [] : [["bni_week_id", scope]];
 
   type R = Record<string, string | boolean | number | null | { label?: string } | { label?: string }[]>;
+  const [oto, ref, tyfcb, vis] = await Promise.all([
+    fetchAllRows<R>("slip_one_to_ones", "initiated_by_name,met_with_name,other_chapter_member,initiated_by_is_other_chapter,met_with_is_other_chapter,bni_weeks(label)", {
+      eq: scopedEq(otoScope),
+      order: { column: "created_at" },
+    }),
+    fetchAllRows<R>("slip_referrals", "from_name,to_name,inside_outside,other_chapter_member,from_is_other_chapter,to_is_other_chapter,bni_weeks(label)", {
+      eq: scopedEq(refScope),
+      order: { column: "created_at" },
+    }),
+    fetchAllRows<R>("slip_tyfcb", "member_name,amount,other_chapter_member,thanker_name,bni_weeks(label)", {
+      eq: scopedEq(tyfcbScope),
+      order: { column: "created_at" },
+    }),
+    fetchAllRows<R>("slip_visitors", "full_name,invited_by_name,bni_weeks(label)", {
+      eq: scopedEq(visScope),
+      order: { column: "created_at" },
+    }),
+  ]);
   const weekOf = (r: R): string => {
     const j = r.bni_weeks as { label?: string } | { label?: string }[] | null | undefined;
     const label = Array.isArray(j) ? j[0]?.label : j?.label;
     return typeof label === "string" ? label : "";
   };
 
-  const otoRows: ReportRow[] = (((oto as { data?: R[] }).data ?? []) as R[]).map((r, i) => ({
+  const otoRows: ReportRow[] = oto.map((r, i) => ({
     count: i + 1,
     week: weekOf(r),
     from: String(r.initiated_by_name ?? ""),
@@ -119,7 +112,7 @@ export async function fetchReportSections(
     toBold: r.met_with_is_other_chapter === true,
   }));
 
-  const refRows: ReportRow[] = (((ref as { data?: R[] }).data ?? []) as R[]).map((r, i) => ({
+  const refRows: ReportRow[] = ref.map((r, i) => ({
     count: i + 1,
     week: weekOf(r),
     from: String(r.from_name ?? ""),
@@ -133,7 +126,7 @@ export async function fetchReportSections(
     toBold: r.to_is_other_chapter === true,
   }));
 
-  const tyfcbRaw = (((tyfcb as { data?: R[] }).data ?? []) as R[]);
+  const tyfcbRaw = tyfcb;
   const tyfcbRows: ReportRow[] = tyfcbRaw.map((r, i) => {
     return {
       count: i + 1,
@@ -150,7 +143,7 @@ export async function fetchReportSections(
     };
   });
 
-  const visRows: ReportRow[] = (((vis as { data?: R[] }).data ?? []) as R[]).map((r, i) => ({
+  const visRows: ReportRow[] = vis.map((r, i) => ({
     count: i + 1,
     week: weekOf(r),
     from: String(r.invited_by_name ?? ""),

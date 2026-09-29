@@ -8,6 +8,14 @@ export const dynamic = "force-dynamic";
 
 const TABS: ReportSectionKey[] = ["one-to-one", "referral", "tyfcb", "visitor"];
 
+// Section header fills — same palette as the screen (see globals.css).
+const SECTION_FILL: Record<string, [number, number, number]> = {
+  "One-to-One": [31, 138, 76],
+  Referral: [214, 84, 44],
+  TYFCB: [106, 79, 199],
+  Visitor: [47, 111, 176],
+};
+
 function safeFilePart(label: string): string {
   return label.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "report";
 }
@@ -199,7 +207,7 @@ export async function GET(request: Request) {
             : []),
         ],
         styles: { fontSize: 7 },
-        headStyles: { fillColor: [193, 60, 48], textColor: 255 },
+        headStyles: { fillColor: SECTION_FILL[s.title] ?? [193, 60, 48], textColor: 255 },
         // Outsider names (bold in the source file) print bold — every
         // section whose rows carry flags, not just referrals.
         didParseCell: (d) => {

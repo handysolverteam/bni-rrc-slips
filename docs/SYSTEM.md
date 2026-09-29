@@ -12,7 +12,7 @@
 - `slip_ceus(id, bni_week_id fk, member_id fk null, member_name text, credits numeric)`
 - `import_batches(id, filename, bni_week_id fk null, imported_count, skipped_count, status, error_message, created_at)`
 
-Name matching: case-insensitive trim, scoped to (name, chapter). Chapter rule: blank Detail → home chapter (`NEXT_PUBLIC_CHAPTER_NAME`, fallback `BNI Influencer`); filled Detail → that chapter (find-or-created). Bold (.xlsx) names stay other-chapter text and never create members; visitor full names never create members (only a non-bold inviter does).
+Name matching: case-insensitive trim, one member row per name. Chapter rule: a BOLD name belongs to its Detail chapter; every other name belongs to HOME (`NEXT_PUBLIC_CHAPTER_NAME`, fallback `BNI Influencer`). A bold Detail signal upgrades a home row to its correct chapter — never the reverse, never a duplicate. Detail is also stored as text on the slip. Visitor full names never create members (only a non-bold inviter does).
 
 ## Actions / APIs
 - `POST /api/import/report` (multipart: `file` only — the week comes from the file's title row).

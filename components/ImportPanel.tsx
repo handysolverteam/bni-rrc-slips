@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
@@ -26,29 +26,35 @@ type Preview = {
   weekExists: boolean;
   weekId: string | null;
   slipCount: number;
+  counts: Record<string, number>;
   rowCount: number;
   columns: string[];
   boldUsed: boolean;
   errors: string[];
   rowIssues: RowIssues;
+  chapterMoves: { count: number; samples: string[] };
+  ceuRows: number;
 };
 
 /**
  * Shared import panel — identical UI on /import and /report:
  * multi-file picker, per-file preview cards (week, rows, bold,
  * new-vs-duplicate), one confirmation for all duplicates, per-file results.
+ * variant "card": self-contained card with its own head (/import page).
+ * variant "toolbar": solid accent button + dropdown panel — sits inside a
+ * page toolbar next to other actions (report header).
  */
 export default function ImportPanel({
   title = "Import Report XLS",
   headingLevel = "h2",
   defaultCollapsed = false,
-  exportSlot,
+  variant = "card",
   onImported,
 }: {
   title?: string;
   headingLevel?: "h1" | "h2";
   defaultCollapsed?: boolean;
-  exportSlot?: React.ReactNode;
+  variant?: "card" | "toolbar";
   onImported?: () => void;
 }) {
   const [open, setOpen] = useState(!defaultCollapsed);
@@ -59,6 +65,17 @@ export default function ImportPanel({
   const [results, setResults] = useState<Result[]>([]);
   const [previews, setPreviews] = useState<Preview[]>([]);
   const [confirming, setConfirming] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Toolbar variant behaves like a menu: clicking outside closes it.
+  useEffect(() => {
+    if (!open || variant !== "toolbar") return;
+    const onDown = (e: PointerEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [open, variant]);
 
   useEffect(() => {
     if (results.length === 0) return;
@@ -80,6 +97,9 @@ export default function ImportPanel({
         ...data,
         filename: f.name,
         rowIssues: data.rowIssues ?? { skippedCount: 0, skippedSamples: [], warningCount: 0, warningSamples: [] },
+        chapterMoves: data.chapterMoves ?? { count: 0, samples: [] },
+        ceuRows: data.ceuRows ?? 0,
+        counts: data.counts ?? {},
       };
     } catch (err) {
       setResults((r) => [...r, { kind: "error", title: `${f.name}: could not read file`, detail: err instanceof Error ? err.message : "Network error" }]);
@@ -104,7 +124,14 @@ export default function ImportPanel({
 
   const duplicates = previews.filter((p) => p.weekExists && p.slipCount > 0);
   const badFiles = previews.filter((p) => p.rowIssues.skippedCount > 0);
-  const needsConfirm = duplicates.length > 0 || badFiles.length > 0;
+  const moveFiles = previews.filter((p) => p.chapterMoves.count > 0);
+  // CEU rows have no duplicate check: importing them into a week that
+  // already holds CEUs doubles the data — always confirm those.
+  const ceuDupes = previews.filter(
+    (p) => p.ceuRows > 0 && (p.counts?.slip_ceus ?? 0) > 0,
+  );
+  const needsConfirm =
+    duplicates.length > 0 || badFiles.length > 0 || moveFiles.length > 0 || ceuDupes.length > 0;
   const done = results.filter((r) => r.kind === "success");
   const failed = results.filter((r) => r.kind === "error");
 
@@ -132,6 +159,20 @@ export default function ImportPanel({
           .join("; ") + ". Those rows will be skipped — import the rest?",
       );
     }
+    if (moveFiles.length > 0) {
+      parts.push(
+        moveFiles
+          .map((p) => `"${p.filename}" moves ${p.chapterMoves.count} member(s) to another chapter (${p.chapterMoves.samples.join("; ")})`)
+          .join("; ") + ". Import with these moves?",
+      );
+    }
+    if (ceuDupes.length > 0) {
+      parts.push(
+        ceuDupes
+          .map((p) => `"${p.filename}" adds ${p.ceuRows} CEU row(s) to a week already holding ${p.counts.slip_ceus}`)
+          .join("; ") + ". CEUs have no duplicate check — re-importing doubles them. Import anyway?",
+      );
+    }
     return parts.join(" ");
   }
 
@@ -145,6 +186,7 @@ export default function ImportPanel({
     for (const p of previews) {
       const file = byName.get(p.filename);
       if (!file) continue;
+      let ok = false;
       try {
         const fd = new FormData();
         fd.append("file", file);
@@ -153,6 +195,7 @@ export default function ImportPanel({
         if (!res.ok) {
           setResults((r) => [...r, { kind: "error", title: `${p.filename}: import failed`, detail: data.error ?? `Server returned status ${res.status}` }]);
         } else {
+          ok = true;
           const bits = [
             `+${data.importedCount ?? 0} into ${data.bniWeek ?? p.weekLabel}`,
             data.skippedCount ? `${data.skippedCount} skipped` : "",
@@ -167,9 +210,17 @@ export default function ImportPanel({
       } catch (err) {
         setResults((r) => [...r, { kind: "error", title: `${p.filename}: import failed`, detail: err instanceof Error ? err.message : "Network error" }]);
       }
+      // Imported files leave the queue at once: drop the preview card into
+      // the Imported list below and reflect the new data straight away.
+      // Failed files stay queued for retry.
+      if (ok) {
+        setPreviews((prev) => prev.filter((x) => x.filename !== p.filename));
+        setFiles((prev) => prev.filter((x) => x.name !== p.filename));
+        router.refresh();
+      }
     }
-    setPreviews([]);
     setBusy(false);
+    onImported?.();
     router.refresh();
     onImported?.();
   }
@@ -184,21 +235,7 @@ export default function ImportPanel({
     doImport();
   }
 
-  return (
-    <div className="card">
-      <div className="import-head">
-        {headingLevel === "h2" ? <h2>{title}</h2> : <h1>{title}</h1>}
-        <button
-          type="button"
-          className="import-toggle"
-          aria-expanded={open}
-          onClick={() => setOpen((o) => !o)}
-        >
-          {open ? "− Minimize" : "+ Import files"}
-        </button>
-      </div>
-      {exportSlot ? <div className="import-export-row">{exportSlot}</div> : null}
-      {open ? (
+  const body = open ? (
       <>
       <form onSubmit={submit}>
         <label className="field">
@@ -251,6 +288,17 @@ export default function ImportPanel({
                   ({p.rowIssues.warningSamples.join("; ")}).
                 </p>
               ) : null}
+              {p.chapterMoves.count > 0 ? (
+                <p className="preview-note">
+                  {p.chapterMoves.count} member(s) will move chapters
+                  ({p.chapterMoves.samples.join("; ")}).
+                </p>
+              ) : null}
+              {p.ceuRows > 0 && (p.counts?.slip_ceus ?? 0) > 0 ? (
+                <p className="preview-warn">
+                  Week already holds {p.counts.slip_ceus} CEU row(s) — importing {p.ceuRows} more will duplicate them.
+                </p>
+              ) : null}
           </div>
         ))}
 
@@ -261,7 +309,18 @@ export default function ImportPanel({
 
       {done.length > 0 ? (
         <div className="done-list">
-          <strong>Imported</strong>
+          <div className="done-head">
+            <strong>Imported</strong>
+            <button
+              type="button"
+              className="mini-x"
+              aria-label="Dismiss all imported files"
+              title="Dismiss all"
+              onClick={() => setResults((r) => r.filter((x) => x.kind !== "success"))}
+            >
+              ✕
+            </button>
+          </div>
           <ul>
             {done.map((n) => (
               <li key={n.title}>
@@ -317,7 +376,37 @@ export default function ImportPanel({
         />
       ) : null}
       </>
-      ) : null}
+  ) : null;
+
+  if (variant === "toolbar") {
+    return (
+      <div className="import-toolbar" ref={wrapRef}>
+        <button
+          type="button"
+          className="import-open"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? "✕ Close" : "+ Import files"}
+        </button>
+        {open ? <div className="import-pop">{body}</div> : null}
+      </div>
+    );
+  }
+  return (
+    <div className="card">
+      <div className="import-head">
+        {headingLevel === "h2" ? <h2>{title}</h2> : <h1>{title}</h1>}
+        <button
+          type="button"
+          className="import-toggle"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? "− Minimize" : "+ Import files"}
+        </button>
+      </div>
+      {body}
     </div>
   );
 }

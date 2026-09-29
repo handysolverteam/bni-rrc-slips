@@ -197,23 +197,19 @@ export default async function ReportPage({
           </h1>
           {allWeeks ? <p className="sub muted">All weeks</p> : activeWeek ? <p className="sub muted">{activeWeek.label}</p> : null}
         </div>
-        <ImportPanel
-          title="Import"
-          headingLevel="h2"
-          defaultCollapsed
-          exportSlot={
-            <ReportExportButtons
-              weekId={weekId}
-              tab={tab}
-              scopeLabel={allWeeks ? "all-weeks" : (activeWeek?.label ?? "week")}
-            />
-          }
-        />
+        <div className="report-head-actions">
+          <ImportPanel variant="toolbar" defaultCollapsed />
+          <ReportExportButtons
+            weekId={weekId}
+            tab={tab}
+            scopeLabel={allWeeks ? "all-weeks" : (activeWeek?.label ?? "week")}
+          />
+        </div>
       </div>
 
       <div className="cards stat-cards">
         {sections.map((s) => (
-          <div key={s.key} className="section-card">
+          <div key={s.key} className="section-card" data-stat={s.key}>
             <div className="num">{s.rows.length}</div>
             <div className="label">{s.title}</div>
             <div className="go">{s.stat ?? s.totalLabel}</div>
@@ -248,6 +244,7 @@ export default async function ReportPage({
       {visible.map((s) => (
         <SectionCollapse
           key={s.key}
+          kind={s.key}
           title={s.title}
           rowCount={s.rows.length}
           badge={
