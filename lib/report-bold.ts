@@ -9,10 +9,9 @@ import type { ReportRow } from "./types";
  * chapter, and the Detail column describes THAT bold person's chapter.
  * Non-bold names are same-chapter members.
  *
- * NOTE: legacy .xls (BIFF) files carry no readable formatting through
- * open-source parsers, so .xls/.csv imports keep the old behavior
- * (all names treated as same-chapter). Save the file as .xlsx to
- * preserve bold info.
+ * NOTE: true binary BIFF .xls files carry no readable formatting through
+ * open-source parsers — but the client's `.xls` files are really
+ * SpreadsheetML XML, handled with bold by lib/report-xml.ts.
  */
 
 type RichRun = { text?: string | number; font?: { bold?: boolean } };

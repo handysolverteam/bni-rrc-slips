@@ -1,6 +1,7 @@
 import ListShell from "@/components/ListShell";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getCachedWeekOptions } from "@/lib/server-weeks";
+import { distinctValues } from "@/lib/distinct";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +22,30 @@ export default async function VisitorsPage({
     .order("created_at", { ascending: false });
   if (q) query = query.or(`full_name.ilike.%${q}%,invited_by_name.ilike.%${q}%`);
   if (weekId) query = query.eq("bni_week_id", weekId);
-  const [{ data, count }, weeks] = await Promise.all([
+  const columnFilters: Record<string, string> = {};
+  for (const k of ["full_name", "company", "invited_by_name", "email", "phone"]) {
+    const v = (sp[`c_${k}`] || "").trim();
+    if (v) {
+      query = query.ilike(k, `%${v}%`);
+      columnFilters[k] = v;
+    }
+  }
+  const [{ data, count }, weeks, filterOptions] = await Promise.all([
     query.range((page - 1) * pageSize, page * pageSize - 1),
     getCachedWeekOptions(),
+    Promise.all([
+      distinctValues("slip_visitors", "full_name"),
+      distinctValues("slip_visitors", "company"),
+      distinctValues("slip_visitors", "invited_by_name"),
+      distinctValues("slip_visitors", "email"),
+      distinctValues("slip_visitors", "phone"),
+    ]).then(([full_name, company, invited_by_name, email, phone]) => ({
+      full_name,
+      company,
+      invited_by_name,
+      email,
+      phone,
+    })),
   ]);
   const rows = (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
@@ -50,6 +72,9 @@ export default async function VisitorsPage({
         { key: "phone", label: "Phone" },
       ]}
       rows={rows}
+      filterable={["full_name", "company", "invited_by_name", "email", "phone"]}
+      columnFilters={columnFilters}
+      filterOptions={filterOptions}
     />
   );
 }

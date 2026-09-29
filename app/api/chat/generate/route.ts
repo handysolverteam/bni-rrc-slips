@@ -39,14 +39,17 @@ export async function POST(request: Request) {
     }
 
     const snapshot = await getCachedSlipsSnapshot();
-    const text = await askGemini(message, snapshot, body.history ?? []);
+    const result = await askGemini(message, snapshot, body.history ?? []);
 
-    if (!text || !text.trim()) {
+    if (!result.text || !result.text.trim()) {
+      const detail = result.detail ? ` (${result.detail})` : "";
+      console.error("Gemini generate failed", { detail: result.detail ?? "unknown" });
       return Response.json(
-        { error: "The AI did not respond. Please try again in a moment." },
+        { error: `The AI did not respond${detail}. Please try again in a moment.` },
         { status: 502 },
       );
     }
+    const text = result.text;
 
     if (body.sessionId) {
       await persistChatTurn(body.sessionId, message, text).catch(() => {});

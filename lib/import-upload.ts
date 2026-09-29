@@ -1,5 +1,6 @@
 import { parseReportFile, type ParsedReport } from "@/lib/report-import";
 import { parseReportXlsxBold } from "@/lib/report-bold";
+import { isSpreadsheetML, parseReportXmlSpreadsheetML } from "@/lib/report-xml";
 import { buildWeekLabel, wednesdayOfWeek } from "@/lib/weeks";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
@@ -42,7 +43,17 @@ export async function parseUpload(file: File): Promise<{
   const buf = Buffer.from(await file.arrayBuffer());
   let parsed: ParsedReport;
   let boldUsed = false;
-  if (/\.xlsx$/i.test(file.name)) {
+  // Content sniffing beats the extension: the client's files are named
+  // .xls/.xlsx but are really SpreadsheetML XML — which carries bold info.
+  if (isSpreadsheetML(buf)) {
+    try {
+      const xmlParsed = parseReportXmlSpreadsheetML(buf);
+      parsed = xmlParsed;
+      boldUsed = xmlParsed.boldFound;
+    } catch {
+      parsed = parseReportFile(buf);
+    }
+  } else if (/\.xlsx$/i.test(file.name)) {
     try {
       const boldParsed = await parseReportXlsxBold(buf);
       parsed = boldParsed;

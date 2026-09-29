@@ -1,6 +1,7 @@
 import ListShell from "@/components/ListShell";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getCachedWeekOptions } from "@/lib/server-weeks";
+import { distinctValues } from "@/lib/distinct";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +22,28 @@ export default async function ReferralsPage({
     .order("created_at", { ascending: false });
   if (q) query = query.or(`from_name.ilike.%${q}%,to_name.ilike.%${q}%`);
   if (weekId) query = query.eq("bni_week_id", weekId);
-  const [{ data, count }, weeks] = await Promise.all([
+  const columnFilters: Record<string, string> = {};
+  for (const k of ["from_name", "to_name", "other_chapter_member", "inside_outside"]) {
+    const v = (sp[`c_${k}`] || "").trim();
+    if (v) {
+      query = query.ilike(k, `%${v}%`);
+      columnFilters[k] = v;
+    }
+  }
+  const [{ data, count }, weeks, filterOptions] = await Promise.all([
     query.range((page - 1) * pageSize, page * pageSize - 1),
     getCachedWeekOptions(),
+    Promise.all([
+      distinctValues("slip_referrals", "from_name"),
+      distinctValues("slip_referrals", "to_name"),
+      distinctValues("slip_referrals", "other_chapter_member"),
+      distinctValues("slip_referrals", "inside_outside"),
+    ]).then(([from_name, to_name, other_chapter_member, inside_outside]) => ({
+      from_name,
+      to_name,
+      other_chapter_member,
+      inside_outside,
+    })),
   ]);
   const rows = (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
@@ -49,6 +69,9 @@ export default async function ReferralsPage({
         { key: "inside_outside", label: "Inside Or Outside" },
       ]}
       rows={rows}
+      filterable={["from_name", "to_name", "other_chapter_member", "inside_outside"]}
+      columnFilters={columnFilters}
+      filterOptions={filterOptions}
     />
   );
 }

@@ -12,6 +12,6 @@ Next.js + Supabase app for weekly BNI Report XLS import, slip browsing, and AI c
 - `docs/PRD.md`, `docs/SYSTEM.md`, `docs/ARCHITECTURE.md`
 
 ## Notes
-- `.xlsx` preserves bold (bold name = other-chapter member); `.xls`/`.csv` treat all names as same-chapter.
+- Bold names are read as other-chapter members from real `.xlsx` and from the client's SpreadsheetML `.xls` files (detected by content, not extension). Plain binary `.xls`/`.csv` carry no formatting — all names count as same-chapter there.
 - Tier 1 (inside) → Inside, Tier 2 (outside) → Outside. Detail → other-chapter/thanker chapter text.
 - Meetings are every Wednesday; labels read like `7 January 2026 (Week 2)` (ISO week).

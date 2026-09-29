@@ -2,6 +2,7 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 
 export type MemberStat = {
   name: string;
+  chapter: string | null;
   category: string | null;
   referralsGiven: number;
   referralsReceived: number;
@@ -36,7 +37,7 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
   const chapterName = process.env.NEXT_PUBLIC_CHAPTER_NAME || "BNI Chapter";
 
   const [membersRes, weeksRes, refRes, otoRes, tyfcbRes, visRes] = await Promise.all([
-    sb.from("members").select("name,category").order("name").limit(500),
+    sb.from("members").select("name,category,chapters(name)").order("name").limit(500),
     sb.from("bni_weeks").select("label,meeting_date").order("meeting_date", { ascending: false }).limit(60),
     sb.from("slip_referrals").select("from_name,to_name,inside_outside").limit(8000),
     sb.from("slip_one_to_ones").select("initiated_by_name,met_with_name").limit(8000),
@@ -45,7 +46,7 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
   ]);
 
   const stats = new Map<string, MemberStat>();
-  const ensure = (name: string): MemberStat | null => {
+  const ensure = (name: string, chapter: string | null = null): MemberStat | null => {
     const clean = name.replace(/\s+/g, " ").trim();
     if (!clean) return null;
     const k = key(clean);
@@ -53,6 +54,7 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
     if (!s) {
       s = {
         name: clean,
+        chapter,
         category: null,
         referralsGiven: 0,
         referralsReceived: 0,
@@ -67,9 +69,13 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
     return s;
   };
 
-  for (const m of (membersRes.data ?? []) as { name: string; category: string | null }[]) {
-    const s = ensure(m.name);
-    if (s) s.category = m.category;
+  for (const m of (membersRes.data ?? []) as { name: string; category: string | null; chapters: { name: string } | { name: string }[] | null }[]) {
+    const rel = Array.isArray(m.chapters) ? m.chapters[0] : m.chapters;
+    const s = ensure(m.name, rel?.name ?? null);
+    if (s) {
+      s.category = m.category;
+      if (!s.chapter && rel?.name) s.chapter = rel.name;
+    }
   }
 
   for (const r of (refRes.data ?? []) as { from_name: string; to_name: string; inside_outside: string | null }[]) {

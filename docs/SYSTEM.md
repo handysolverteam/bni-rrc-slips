@@ -1,7 +1,8 @@
 # SYSTEM — BNI Week Slips
 
 ## Entities
-- `members(id uuid, name text unique-ci, category text null, phone text null, email text null, company text null, is_inactive bool default false, created_at)`
+- `chapters(id uuid, name text unique-ci)`
+- `members(id uuid, name text, chapter_id fk chapters, category/phone/email/company null, is_inactive bool default false, ...)` — unique per `(lower(name), chapter_id)`: the same name in different chapters is a different member.
 - `bni_weeks(id uuid, label text unique e.g. "7 January 2026 (Week 2)", meeting_date date unique, week_no int, created_at)`
 - `slip_referrals(id, bni_week_id fk, from_member_id fk null, to_member_id fk null, from_name text, to_name text, other_chapter_member text null, inside_outside text null check Inside/Outside, import_batch_id fk, created_at)`
   - Keep both fk + raw names so other-chapter / deleted members never break display.
@@ -11,7 +12,7 @@
 - `slip_ceus(id, bni_week_id fk, member_id fk null, member_name text, credits numeric)`
 - `import_batches(id, filename, bni_week_id fk null, imported_count, skipped_count, status, error_message, created_at)`
 
-Name matching: case-insensitive trim; auto-create member if missing. `from_is_other_chapter/to_is_other_chapter bool default false` reserved for future bold parsing (unused in MVP).
+Name matching: case-insensitive trim, scoped to (name, chapter). Chapter rule: blank Detail → home chapter (`NEXT_PUBLIC_CHAPTER_NAME`, fallback `BNI Influencer`); filled Detail → that chapter (find-or-created). Bold (.xlsx) names stay other-chapter text and never create members; visitor full names never create members (only a non-bold inviter does).
 
 ## Actions / APIs
 - `POST /api/import/report` (multipart: `file` only — the week comes from the file's title row).

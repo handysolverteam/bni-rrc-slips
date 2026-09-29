@@ -1,6 +1,7 @@
 import ListShell from "@/components/ListShell";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getCachedWeekOptions } from "@/lib/server-weeks";
+import { distinctValues } from "@/lib/distinct";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +22,24 @@ export default async function TyfcbPage({
     .order("created_at", { ascending: false });
   if (q) query = query.ilike("member_name", `%${q}%`);
   if (weekId) query = query.eq("bni_week_id", weekId);
-  const [{ data, count }, weeks] = await Promise.all([
+  const columnFilters: Record<string, string> = {};
+  for (const k of ["member_name", "other_chapter_member"]) {
+    const v = (sp[`c_${k}`] || "").trim();
+    if (v) {
+      query = query.ilike(k, `%${v}%`);
+      columnFilters[k] = v;
+    }
+  }
+  const [{ data, count }, weeks, filterOptions] = await Promise.all([
     query.range((page - 1) * pageSize, page * pageSize - 1),
     getCachedWeekOptions(),
+    Promise.all([
+      distinctValues("slip_tyfcb", "member_name"),
+      distinctValues("slip_tyfcb", "other_chapter_member"),
+    ]).then(([member_name, other_chapter_member]) => ({
+      member_name,
+      other_chapter_member,
+    })),
   ]);
   const rows = (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
@@ -48,6 +64,9 @@ export default async function TyfcbPage({
         { key: "other_chapter_member", label: "Other Chapter Member" },
       ]}
       rows={rows}
+      filterable={["member_name", "other_chapter_member"]}
+      columnFilters={columnFilters}
+      filterOptions={filterOptions}
     />
   );
 }

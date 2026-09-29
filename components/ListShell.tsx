@@ -1,5 +1,10 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useTransition } from "react";
 import SlipsTable from "@/components/SlipsTable";
+import FilterBar from "@/components/FilterBar";
 import type { WeekOption } from "@/lib/weeks";
 
 type Col = { key: string; label: string };
@@ -16,6 +21,9 @@ export default function ListShell({
   searchPlaceholder,
   columns,
   rows,
+  filterable = [],
+  columnFilters = {},
+  filterOptions = {},
 }: {
   title: string;
   total: number;
@@ -28,10 +36,27 @@ export default function ListShell({
   searchPlaceholder: string;
   columns: Col[];
   rows: Record<string, unknown>[];
+  filterable?: string[];
+  columnFilters?: Record<string, string>;
+  filterOptions?: Record<string, string[]>;
 }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const pageQuery = (p: number) =>
     `${basePath}?q=${encodeURIComponent(q)}&week=${encodeURIComponent(weekId)}&page=${p}`;
   const activeWeek = weeks.find((w) => w.id === weekId);
+  const go = (url: string) => startTransition(() => router.push(url));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  // Compact page list: 1 … c-1 c c+1 … N
+  const pageItems: (number | "…")[] = [];
+  for (let p = 1; p <= totalPages; p++) {
+    if (p === 1 || p === totalPages || Math.abs(p - page) <= 2) {
+      pageItems.push(p);
+    } else if (pageItems[pageItems.length - 1] !== "…") {
+      pageItems.push("…");
+    }
+  }
 
   return (
     <div>
@@ -50,41 +75,63 @@ export default function ListShell({
       </div>
 
       <div className="toolbar">
-        <form className="filter-form" action={basePath} method="get">
-          <input name="q" placeholder={searchPlaceholder} defaultValue={q} aria-label="Search" />
-          {weeks.length > 0 ? (
-            <select name="week" defaultValue={weekId} aria-label="Filter by BNI week">
-              <option value="">All weeks</option>
-            {weeks.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.label}
-              </option>
-            ))}
-            </select>
-          ) : null}
-          <button type="submit">Apply</button>
-          {q || weekId ? (
-            <Link href={basePath}>
-              <button type="button">Clear</button>
-            </Link>
-          ) : null}
-        </form>
+        <FilterBar
+          basePath={basePath}
+          q={q}
+          weekId={weekId}
+          weeks={weeks}
+          searchPlaceholder={searchPlaceholder}
+          onNavigate={go}
+        />
+        {q || weekId || Object.keys(columnFilters).length > 0 ? (
+          <Link href={basePath}>
+            <button type="button">Clear all</button>
+          </Link>
+        ) : null}
       </div>
 
-      <SlipsTable columns={columns} rows={rows} />
+      <div className="table-overlay-wrap">
+        <SlipsTable
+          columns={columns}
+          rows={rows}
+          filterable={filterable}
+          initialFilters={columnFilters}
+          filterOptions={filterOptions}
+        />
+        {isPending ? (
+          <div className="table-loading-overlay" role="status" aria-label="Loading">
+            <div className="table-loading-card">
+              <div className="skel skel-row" />
+              <div className="skel skel-row" />
+              <div className="skel skel-row" />
+              <div className="skel skel-row short" />
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       <div className="pager">
-        <Link href={pageQuery(Math.max(1, page - 1))}>
-          <button type="button" disabled={page <= 1}>
-            ← Prev
-          </button>
-        </Link>
-        <span className="page-num">{page}</span>
-        <Link href={pageQuery(page + 1)}>
-          <button type="button" disabled={page * pageSize >= total}>
-            Next →
-          </button>
-        </Link>
+        <button type="button" disabled={page <= 1 || isPending} onClick={() => go(pageQuery(Math.max(1, page - 1)))}>
+          ← Prev
+        </button>
+        {pageItems.map((p, i) =>
+          p === "…" ? (
+            <span key={`gap-${i}`} className="page-gap">…</span>
+          ) : (
+            <button
+              key={p}
+              type="button"
+              className={p === page ? "page-num active" : "page-num"}
+              disabled={p === page || isPending}
+              onClick={() => go(pageQuery(p))}
+            >
+              {p}
+            </button>
+          ),
+        )}
+        <button type="button" disabled={page >= totalPages || isPending} onClick={() => go(pageQuery(page + 1))}>
+          Next →
+        </button>
       </div>
     </div>
   );

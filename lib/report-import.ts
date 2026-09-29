@@ -208,3 +208,64 @@ export function parseAmount(raw: string): number {
 export function normalizeName(v: string): string {
   return v.replace(/\s+/g, " ").trim();
 }
+
+/**
+ * A From/To cell holding only digits is the source row number (e.g. the
+ * extra Count column in TYFCB sections) — never a real person name.
+ */
+export function isCountLikeName(v: string): boolean {
+  return /^\d+$/.test(v.trim());
+}
+
+export type RowIssueLists = { skipped: string[]; warnings: string[] };
+
+/**
+ * Row-level file validation for preview: mirrors the import route's own
+ * rules so the UI can warn before importing. `skipped` rows never import;
+ * `warnings` import with a defaulted value.
+ */
+export function validateReportRows(
+  rows: import("./types").ReportRow[],
+): RowIssueLists {
+  const skipped: string[] = [];
+  const warnings: string[] = [];
+  for (const r of rows) {
+    const kind = classifySlipType(r.slipType);
+    const from = normalizeName(r.from);
+    const to = normalizeName(r.to);
+    if (!kind) {
+      skipped.push(`Row ${r.rowNumber}: unknown Slip Type "${r.slipType.trim().slice(0, 30)}"`);
+      continue;
+    }
+    if (kind === "referral" || kind === "one-to-one") {
+      const label = kind === "referral" ? "Referral" : "One-to-One";
+      if (!from || !to) skipped.push(`Row ${r.rowNumber}: ${label} needs From + To`);
+      else if (isCountLikeName(from) || isCountLikeName(to)) {
+        skipped.push(`Row ${r.rowNumber}: ${label} has a number instead of a name`);
+      }
+    } else if (kind === "tyfcb") {
+      const name = to || from;
+      if (!name) skipped.push(`Row ${r.rowNumber}: TYFCB needs To (member thanked)`);
+      else if (isCountLikeName(name)) skipped.push(`Row ${r.rowNumber}: TYFCB has a number instead of a name`);
+      else if (from && isCountLikeName(from)) {
+        warnings.push(`Row ${r.rowNumber}: TYFCB From "${from}" is a number, ignored`);
+      }
+      if (!r.tyfcb.trim()) warnings.push(`Row ${r.rowNumber}: TYFCB has no amount (imports as 0)`);
+    } else if (kind === "visitor") {
+      const fullName = to || from;
+      if (!fullName) skipped.push(`Row ${r.rowNumber}: Visitor needs a name`);
+      else if (isCountLikeName(fullName)) skipped.push(`Row ${r.rowNumber}: Visitor has a number instead of a name`);
+      else if (r.from && r.to && isCountLikeName(from)) {
+        warnings.push(`Row ${r.rowNumber}: inviter "${from}" is a number, ignored`);
+      }
+    } else {
+      const name = from || to;
+      if (!name) skipped.push(`Row ${r.rowNumber}: CEU needs From member`);
+      else if (isCountLikeName(name)) skipped.push(`Row ${r.rowNumber}: CEU has a number instead of a name`);
+    }
+    if (r.insideOutside.trim() && !mapInsideOutside(r.insideOutside)) {
+      warnings.push(`Row ${r.rowNumber}: Inside/Outside "${r.insideOutside.trim().slice(0, 30)}" not recognized (stored blank)`);
+    }
+  }
+  return { skipped, warnings };
+}

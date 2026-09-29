@@ -1,4 +1,4 @@
-import { classifySlipType, mapInsideOutside, normalizeName, parseAmount } from "@/lib/report-import";
+import { classifySlipType, isCountLikeName, mapInsideOutside, normalizeName, parseAmount } from "@/lib/report-import";
 import { parseUpload } from "@/lib/import-upload";
 import { buildWeekLabel } from "@/lib/weeks";
 import { clearWeekOptionsCache } from "@/lib/server-weeks";
@@ -121,12 +121,18 @@ export async function POST(request: Request) {
 
     // ---- 1) Classify every row first (no I/O) and collect member names.
     // Bulk mode: the whole file costs ~10 HTTP calls instead of 2-3 per row.
-    const neededNames = new Map<string, string>(); // lower name -> display name
-    const keyOf = (raw: string, isOther: boolean): string | null => {
+    // Chapter rule: blank Detail -> home chapter (NEXT_PUBLIC_CHAPTER_NAME,
+    // fallback "BNI Influencer"); filled Detail -> that chapter's name.
+    // Members are unique per (name, chapter): the same name in two chapters
+    // is two member rows. Visitor full names are never collected.
+    const HOME_CHAPTER = normalizeName(process.env.NEXT_PUBLIC_CHAPTER_NAME || "BNI Influencer") || "BNI Influencer";
+    const chapterOf = (detail: string | null): string => normalizeName(detail ?? "") || HOME_CHAPTER;
+    const neededNames = new Map<string, { name: string; chapter: string }>(); // chapter::lower name -> {display name, chapter}
+    const keyOf = (raw: string, isOther: boolean, chapter: string): string | null => {
       const clean = normalizeName(raw);
       if (!clean || isOther) return null;
-      const k = clean.toLowerCase();
-      if (!neededNames.has(k)) neededNames.set(k, clean);
+      const k = `${chapter.toLowerCase()}::${clean.toLowerCase()}`;
+      if (!neededNames.has(k)) neededNames.set(k, { name: clean, chapter });
       return k;
     };
 
@@ -150,70 +156,146 @@ export async function POST(request: Request) {
       }
       const insideOutside = mapInsideOutside(r.insideOutside);
       const detail = r.detail.trim() || null;
+      const chapter = chapterOf(detail);
       const fromName = normalizeName(r.from);
       const toName = normalizeName(r.to);
 
       if (kind === "referral") {
         if (!fromName || !toName) { pushRowError(`Row ${r.rowNumber}: Referral needs From + To`); continue; }
+        if (isCountLikeName(fromName) || isCountLikeName(toName)) { pushRowError(`Row ${r.rowNumber}: Referral has a number instead of a name — skipped`); continue; }
         // Bold = other-chapter person: keep the name text, but don't
         // create a chapter-member record for them.
         const fromOther = r.fromBold === true;
         const toOther = r.toBold === true;
-        referralRows.push({ fromName, toName, fromKey: keyOf(r.from, fromOther), toKey: keyOf(r.to, toOther), fromOther, toOther, other: detail, inside: insideOutside });
+        referralRows.push({ fromName, toName, fromKey: keyOf(r.from, fromOther, chapter), toKey: keyOf(r.to, toOther, chapter), fromOther, toOther, other: detail, inside: insideOutside });
       } else if (kind === "one-to-one") {
         if (!fromName || !toName) { pushRowError(`Row ${r.rowNumber}: One-to-One needs From + To`); continue; }
+        if (isCountLikeName(fromName) || isCountLikeName(toName)) { pushRowError(`Row ${r.rowNumber}: One-to-One has a number instead of a name — skipped`); continue; }
         const initOther = r.fromBold === true;
         const metOther = r.toBold === true;
-        otoRows.push({ initName: fromName, metName: toName, initKey: keyOf(r.from, initOther), metKey: keyOf(r.to, metOther), initOther, metOther, other: detail });
+        otoRows.push({ initName: fromName, metName: toName, initKey: keyOf(r.from, initOther, chapter), metKey: keyOf(r.to, metOther, chapter), initOther, metOther, other: detail });
       } else if (kind === "tyfcb") {
         // To = thanked member (same chapter). From is normally blank: the
         // anonymous payment receiver doing the thanking; Detail (when filled)
         // names that thanker's (other) chapter.
         const name = toName || fromName;
         if (!name) { pushRowError(`Row ${r.rowNumber}: TYFCB needs To (member thanked)`); continue; }
+        if (isCountLikeName(name)) { pushRowError(`Row ${r.rowNumber}: TYFCB has a number instead of a name — skipped`); continue; }
         if (!r.tyfcb.trim()) tyfcbBlankAmount++;
-        const thankerRaw = fromName;
+        // TYFCB sections carry an extra leading Count column, so a purely
+        // numeric From is the row number — never a thanker name.
+        const thankerRaw = isCountLikeName(fromName) ? "" : fromName;
         const thankerOther = thankerRaw ? r.fromBold === true : detail !== null;
-        tyfcbRows.push({ name, nameKey: keyOf(toName || r.from, false), amount: parseAmount(r.tyfcb), other: detail, thankerRaw, thankerKey: keyOf(r.from, r.fromBold === true), thankerOther });
+        tyfcbRows.push({ name, nameKey: keyOf(toName || r.from, false, chapter), amount: parseAmount(r.tyfcb), other: detail, thankerRaw, thankerKey: keyOf(r.from, r.fromBold === true, chapter), thankerOther });
       } else if (kind === "visitor") {
         const fullName = toName || fromName;
         if (!fullName) { pushRowError(`Row ${r.rowNumber}: Visitor needs a name`); continue; }
-        const inviterRaw = r.from && r.to ? fromName : null;
-        visitorRows.push({ fullName, inviterRaw, inviterKey: r.from && r.to ? keyOf(r.from, false) : null });
+        if (isCountLikeName(fullName)) { pushRowError(`Row ${r.rowNumber}: Visitor has a number instead of a name — skipped`); continue; }
+        // Visitor names never become members; only a non-bold inviter does.
+        // A numeric inviter is the row number, not a person.
+        const inviterRaw = r.from && r.to && !isCountLikeName(fromName) ? fromName : null;
+        visitorRows.push({ fullName, inviterRaw, inviterKey: inviterRaw ? keyOf(r.from, r.fromBold === true, chapter) : null });
       } else {
         const name = fromName || toName;
         if (!name) { pushRowError(`Row ${r.rowNumber}: CEU needs From member`); continue; }
-        ceuRows.push({ name, nameKey: keyOf(r.from || r.to, false), credits: parseAmount(r.ceuCredits) });
+        if (isCountLikeName(name)) { pushRowError(`Row ${r.rowNumber}: CEU has a number instead of a name — skipped`); continue; }
+        ceuRows.push({ name, nameKey: keyOf(r.from || r.to, false, chapter), credits: parseAmount(r.ceuCredits) });
       }
     }
 
-    // ---- 2) Resolve member ids: one preload + one bulk insert for the missing.
-    // (The old per-name upsert also never matched its conflict target, so new
-    // members were silently never created — this fixes that too.)
-    const memberIds = new Map<string, string>();
-    if (neededNames.size > 0) {
-      const { data: existingMembers } = await supabase.from("members").select("id,name").limit(5000);
-      for (const m of ((existingMembers ?? []) as { id: string; name: string }[])) {
-        memberIds.set(String(m.name).toLowerCase(), m.id);
+    // ---- 2) Resolve chapter ids, then member ids: preloads + bulk inserts.
+    // Members are matched by (name, chapter): the same name in another
+    // chapter is a different member row and is never merged.
+    const chapterIds = new Map<string, string>(); // lower chapter -> id
+    const chapterNameById = new Map<string, string>(); // id -> lower chapter
+    const chaptersNeeded = [...new Set([...neededNames.values()].map((v) => v.chapter))];
+    if (chaptersNeeded.length > 0) {
+      const { data: existingChapters } = await supabase.from("chapters").select("id,name").limit(1000);
+      for (const c of ((existingChapters ?? []) as { id: string; name: string }[])) {
+        chapterIds.set(String(c.name).toLowerCase(), c.id);
+        chapterNameById.set(c.id, String(c.name).toLowerCase());
       }
-      const missing = [...neededNames.entries()].filter(([k]) => !memberIds.has(k));
-      if (missing.length > 0) {
+      const missingChapters = chaptersNeeded.filter((n) => !chapterIds.has(n.toLowerCase()));
+      if (missingChapters.length > 0) {
         const { data: created, error: createError } = await supabase
-          .from("members")
-          .insert(missing.map(([, name]) => ({ name })))
+          .from("chapters")
+          .insert(missingChapters.map((name) => ({ name })))
           .select("id,name");
         if (!createError && created) {
-          for (const m of (created as { id: string; name: string }[])) {
-            memberIds.set(String(m.name).toLowerCase(), m.id);
+          for (const c of (created as { id: string; name: string }[])) {
+            chapterIds.set(String(c.name).toLowerCase(), c.id);
+            chapterNameById.set(c.id, String(c.name).toLowerCase());
           }
         } else {
           // Concurrent-import race: resolve leftovers individually.
-          for (const [k, name] of missing) {
-            if (memberIds.has(k)) continue;
-            const found = await supabase.from("members").select("id").ilike("name", name).limit(1).maybeSingle();
+          for (const name of missingChapters) {
+            if (chapterIds.has(name.toLowerCase())) continue;
+            const found = await supabase.from("chapters").select("id").ilike("name", name).limit(1).maybeSingle();
             let id: string | null = (found.data as { id: string } | null)?.id ?? null;
             if (!id) {
-              const ins = await supabase.from("members").insert({ name }).select("id").maybeSingle();
+              const ins = await supabase.from("chapters").insert({ name }).select("id").maybeSingle();
+              id = (ins.data as { id: string } | null)?.id ?? null;
+              if (!id) {
+                const retry = await supabase.from("chapters").select("id").ilike("name", name).limit(1).maybeSingle();
+                id = (retry.data as { id: string } | null)?.id ?? null;
+              }
+            }
+            if (id) chapterIds.set(name.toLowerCase(), id);
+            if (id) chapterNameById.set(id, name.toLowerCase());
+          }
+        }
+      }
+    }
+
+    const memberIds = new Map<string, string>(); // lower chapter::lower name -> member id
+    const memberKey = (chapterId: string, name: string): string | null => {
+      const cname = chapterNameById.get(chapterId);
+      return cname ? `${cname}::${String(name).toLowerCase()}` : null;
+    };
+    if (neededNames.size > 0) {
+      const { data: existingMembers } = await supabase.from("members").select("id,name,chapter_id").limit(20000);
+      for (const m of ((existingMembers ?? []) as { id: string; name: string; chapter_id: string }[])) {
+        const k = memberKey(m.chapter_id, m.name);
+        if (k) memberIds.set(k, m.id);
+      }
+      const missing = [...neededNames.entries()].filter(
+        ([k, v]) => chapterIds.has(v.chapter.toLowerCase()) && !memberIds.has(k),
+      );
+      if (missing.length > 0) {
+        const { data: created, error: createError } = await supabase
+          .from("members")
+          .insert(
+            missing.map(([, v]) => ({
+              name: v.name,
+              chapter_id: chapterIds.get(v.chapter.toLowerCase()) as string,
+            })),
+          )
+          .select("id,name,chapter_id");
+        if (!createError && created) {
+          for (const m of (created as { id: string; name: string; chapter_id: string }[])) {
+            const k = memberKey(m.chapter_id, m.name);
+            if (k) memberIds.set(k, m.id);
+          }
+        } else {
+          // Concurrent-import race: resolve leftovers individually.
+          for (const [k, v] of missing) {
+            if (memberIds.has(k)) continue;
+            const cid = chapterIds.get(v.chapter.toLowerCase());
+            if (!cid) continue;
+            const found = await supabase
+              .from("members")
+              .select("id")
+              .ilike("name", v.name)
+              .eq("chapter_id", cid)
+              .limit(1)
+              .maybeSingle();
+            let id: string | null = (found.data as { id: string } | null)?.id ?? null;
+            if (!id) {
+              const ins = await supabase
+                .from("members")
+                .insert({ name: v.name, chapter_id: cid })
+                .select("id")
+                .maybeSingle();
               id = (ins.data as { id: string } | null)?.id ?? null;
             }
             if (id) memberIds.set(k, id);

@@ -1,6 +1,7 @@
 import ListShell from "@/components/ListShell";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getCachedWeekOptions } from "@/lib/server-weeks";
+import { distinctValues } from "@/lib/distinct";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +22,26 @@ export default async function OneToOnesPage({
     .order("created_at", { ascending: false });
   if (q) query = query.or(`initiated_by_name.ilike.%${q}%,met_with_name.ilike.%${q}%`);
   if (weekId) query = query.eq("bni_week_id", weekId);
-  const [{ data, count }, weeks] = await Promise.all([
+  const columnFilters: Record<string, string> = {};
+  for (const k of ["initiated_by_name", "met_with_name", "other_chapter_member"]) {
+    const v = (sp[`c_${k}`] || "").trim();
+    if (v) {
+      query = query.ilike(k, `%${v}%`);
+      columnFilters[k] = v;
+    }
+  }
+  const [{ data, count }, weeks, filterOptions] = await Promise.all([
     query.range((page - 1) * pageSize, page * pageSize - 1),
     getCachedWeekOptions(),
+    Promise.all([
+      distinctValues("slip_one_to_ones", "initiated_by_name"),
+      distinctValues("slip_one_to_ones", "met_with_name"),
+      distinctValues("slip_one_to_ones", "other_chapter_member"),
+    ]).then(([initiated_by_name, met_with_name, other_chapter_member]) => ({
+      initiated_by_name,
+      met_with_name,
+      other_chapter_member,
+    })),
   ]);
   const rows = (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
@@ -48,6 +66,9 @@ export default async function OneToOnesPage({
         { key: "other_chapter_member", label: "Other Chapter Member" },
       ]}
       rows={rows}
+      filterable={["initiated_by_name", "met_with_name", "other_chapter_member"]}
+      columnFilters={columnFilters}
+      filterOptions={filterOptions}
     />
   );
 }

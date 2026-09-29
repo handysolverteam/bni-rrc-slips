@@ -1,4 +1,5 @@
 import { findWeekByDate, parseUpload, weekSlipCounts } from "@/lib/import-upload";
+import { validateReportRows } from "@/lib/report-import";
 
 /**
  * Inspect an uploaded Report file WITHOUT importing it: resolves the week
@@ -35,6 +36,16 @@ export async function POST(request: Request) {
       counts = result.counts;
     }
 
+    // Every structural row problem (mirrors the import route's rules):
+    // skipped rows never import, warnings import with a defaulted value.
+    const { skipped, warnings } = validateReportRows(upload.rows);
+    const rowIssues = {
+      skippedCount: skipped.length,
+      skippedSamples: skipped.slice(0, 5),
+      warningCount: warnings.length,
+      warningSamples: warnings.slice(0, 5),
+    };
+
     return Response.json({
       filename: file.name,
       reportDate: upload.reportDate,
@@ -48,6 +59,7 @@ export async function POST(request: Request) {
       columns: upload.headers.filter(Boolean),
       boldUsed: upload.boldUsed,
       errors: upload.errors,
+      rowIssues,
     });
   } catch (e) {
     return Response.json(

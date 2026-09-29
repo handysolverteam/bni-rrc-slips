@@ -81,6 +81,16 @@ INSERT INTO public.members (id, name, category) VALUES
   ('ffeab6d6-965f-47df-bfa6-7d484a6b937a', 'Tarun Rajput', 'Dentist')
 ON CONFLICT (id) DO NOTHING;
 
+-- Home chapter for seed members (must match NEXT_PUBLIC_CHAPTER_NAME,
+-- or the 'BNI Influencer' fallback; keep in sync with 002 migration).
+INSERT INTO public.chapters (id, name)
+VALUES ('c1000000-0000-4000-8000-000000000001', 'BNI Influencer')
+ON CONFLICT (id) DO NOTHING;
+
+UPDATE public.members
+SET chapter_id = 'c1000000-0000-4000-8000-000000000001'
+WHERE chapter_id IS NULL;
+
 -- ---------- BNI weeks: every Wednesday, Jan 2026 → Dec 2027 ----------
 -- Label format matches the app: "7 January 2026 (Week 2)" (ISO week-of-year).
 WITH days(d) AS (
