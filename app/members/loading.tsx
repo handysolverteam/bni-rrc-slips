@@ -13,7 +13,7 @@ export default function Loading() {
         { key: "chapter", label: "Chapter" },
         { key: "category", label: "Category" },
         { key: "company", label: "Company" },
-        { key: "phone", label: "Contact" },
+        { key: "phone", label: "Phone" },
       ]}
       filterable={["name", "category", "company", "phone"]}
     />

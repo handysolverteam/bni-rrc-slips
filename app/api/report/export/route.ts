@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { fetchReportSections, rowCells, totalRowCells, visibleColumns, type ReportSectionKey } from "@/lib/report-view";
+import { detailLabelFor, fetchReportSections, fromToLabelsFor, rowCells, totalRowCells, visibleColumns, type ReportSectionKey } from "@/lib/report-view";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -83,11 +83,13 @@ export async function GET(request: Request) {
       if (ov) filterBits.push(`${s.title} week: ${await weekLabelOf(ov)}`);
     }
     if (q.trim()) filterBits.push(`Search: "${q.trim()}"`);
-    const colLabels = { from: "From", to: "To", detail: "Other Member's Chapter" } as const;
     for (const s of picked) {
       for (const f of ["from", "to", "detail"] as const) {
         const v = (col[s.key]?.[f] || "").trim();
-        if (v) filterBits.push(`${s.title} ${colLabels[f]}: ${v}`);
+        if (!v) continue;
+        const label = f === "detail" ? detailLabelFor(s.key) : fromToLabelsFor(s.key)[f];
+        const prefix = label.toLowerCase().startsWith(s.title.toLowerCase()) ? "" : `${s.title} `;
+        filterBits.push(`${prefix}${label}: ${v}`);
       }
     }
     const filterLine = filterBits.join(" | ");
@@ -115,7 +117,7 @@ export async function GET(request: Request) {
         weekLabel: titleWeek,
         filterLine,
         sections: picked.map((s) => {
-          const cols = visibleColumns(s.rows, wideOf(s.key));
+          const cols = visibleColumns(s.rows, wideOf(s.key), s.key);
           const withTotal = s.totalAmount != null && s.rows.length > 0;
           return {
             title: s.title,
@@ -132,7 +134,7 @@ export async function GET(request: Request) {
     if (format === "csv") {
       const lines = [`Week,${JSON.stringify(titleWeek)}`, `Filters,${JSON.stringify(filterLine)}`];
       for (const s of picked) {
-        const cols = visibleColumns(s.rows, wideOf(s.key));
+        const cols = visibleColumns(s.rows, wideOf(s.key), s.key);
         const headers = cols.map((c) => c.label);
         lines.push("", `${s.title} (${s.rows.length})`, headers.join(","));
         for (const r of s.rows) {
@@ -153,7 +155,7 @@ export async function GET(request: Request) {
     if (format === "xlsx") {
       const wb = XLSX.utils.book_new();
       for (const s of picked) {
-        const cols = visibleColumns(s.rows, wideOf(s.key));
+        const cols = visibleColumns(s.rows, wideOf(s.key), s.key);
         const headers = cols.map((c) => c.label);
         const ws = XLSX.utils.aoa_to_sheet([
           [`${titleWeek} — ${s.title} (${s.rows.length})`],
@@ -187,10 +189,10 @@ export async function GET(request: Request) {
     const firstTableY = 58 + filterLines.length * 10;
     let first = true;
     for (const s of picked) {
-      const cols = visibleColumns(s.rows, wideOf(s.key));
+      const cols = visibleColumns(s.rows, wideOf(s.key), s.key);
       const headers = cols.map((c) => c.label);
-      const fromCol = headers.indexOf("From");
-      const toCol = headers.indexOf("To");
+      const fromCol = cols.findIndex((c) => c.key === "from");
+      const toCol = cols.findIndex((c) => c.key === "to");
       autoTable(doc, {
         startY: first ? firstTableY : undefined,
         head: [[`${s.title} (${s.rows.length})`, "", "", "", "", "", "", ""].slice(0, headers.length)],

@@ -4,6 +4,7 @@ import ImportPanel from "@/components/ImportPanel";
 import ReportExportButtons from "@/components/ReportExportButtons";
 import ReportTabs from "@/components/ReportTabs";
 import SectionCollapse from "@/components/SectionCollapse";
+import { detailLabelFor, fromToLabelsFor, type ReportSectionKey } from "@/lib/report-view";
 
 /**
  * Geometry-accurate loading skeletons: every block mirrors the height/width
@@ -259,7 +260,7 @@ const REPORT_SECTIONS = [
     tyfcb: false,
     sum: false,
   },
-];
+] as const;
 
 function ReportSectionTable({
   sectionKey,
@@ -267,19 +268,20 @@ function ReportSectionTable({
   withTyfcb,
   withSum,
 }: {
-  sectionKey: string;
+  sectionKey: ReportSectionKey;
   rows: number;
   withTyfcb: boolean;
   withSum: boolean;
 }) {
   const colCount = 5 + (withTyfcb ? 1 : 0) + 1; // base 5 + optional tyfcb + detail
+  const fromTo = fromToLabelsFor(sectionKey);
   return (
     <div className="table-card">
       <div className="table-scroll">
         <table className="grid">
           <thead>
             <tr>
-              <th>Count</th>
+              <th>No.</th>
               <th>
                 <ColumnFilter
                   paramKey={`sk_w_${sectionKey}`}
@@ -294,7 +296,7 @@ function ReportSectionTable({
                   paramKey={`sk_f_${sectionKey}`}
                   defaultValue=""
                   options={[]}
-                  label="From"
+                  label={fromTo.from}
                 />
               </th>
               <th>
@@ -302,7 +304,7 @@ function ReportSectionTable({
                   paramKey={`sk_t_${sectionKey}`}
                   defaultValue=""
                   options={[]}
-                  label="To"
+                  label={fromTo.to}
                 />
               </th>
               <th>Slip Type</th>
@@ -316,7 +318,7 @@ function ReportSectionTable({
                   paramKey={`sk_d_${sectionKey}`}
                   defaultValue=""
                   options={[]}
-                  label={"Other Member's Chapter"}
+                  label={detailLabelFor(sectionKey)}
                 />
               </th>
             </tr>

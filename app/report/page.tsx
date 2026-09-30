@@ -1,7 +1,9 @@
 import { defaultWeekId, getCachedWeekOptions } from "@/lib/server-weeks";
 import { distinctValues, mergeDistinct } from "@/lib/distinct";
 import {
+  detailLabelFor,
   fetchReportSections,
+  fromToLabelsFor,
   latestImportedWeekId,
   type ReportRow,
   type ReportSectionKey,
@@ -28,7 +30,7 @@ const OPTIONAL_COLS: OptCol[] = [
   { key: "detail", label: "Other Member's Chapter" },
 ];
 
-/** Report-shaped table: Count + From/To/Type always; other columns only when used. */
+/** Report-shaped table: No + From/To/Type always; other columns only when used. */
 function SectionTable({
   rows,
   sectionKey,
@@ -47,7 +49,8 @@ function SectionTable({
   weeks: { id: string; label: string }[];
 }) {
   const cols = OPTIONAL_COLS.filter((c) => rows.some((r) => r[c.key].trim() !== ""));
-  const baseCount = 5; // Count, BNI Week, From, To, Type
+  const baseCount = 5; // No, BNI Week, From, To, Type
+  const fromTo = fromToLabelsFor(sectionKey);
   const amtIdx = cols.findIndex((c) => c.key === "tyfcb");
   const headFilter = (key: "from" | "to" | "detail", label: string) => (
     <ColumnFilter
@@ -63,7 +66,7 @@ function SectionTable({
         <table className="grid">
           <thead>
             <tr>
-              <th>Count</th>
+              <th>No.</th>
               <th>
                 <ColumnFilter
                   paramKey={`w_${sectionKey}`}
@@ -73,13 +76,13 @@ function SectionTable({
                   allLabel="Universal"
                 />
               </th>
-              <th>{headFilter("from", "From")}</th>
-              <th>{headFilter("to", "To")}</th>
+              <th>{headFilter("from", fromTo.from)}</th>
+              <th>{headFilter("to", fromTo.to)}</th>
               <th>Slip Type</th>
               {cols.map((c) => (
                 <th key={c.key}>
                   {c.key === "detail" ? (
-                    headFilter("detail", c.label)
+                    headFilter("detail", detailLabelFor(sectionKey))
                   ) : (
                     <span className="th-label">{c.label}</span>
                   )}
