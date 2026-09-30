@@ -6,9 +6,9 @@ const FORMATS = ["xlsx", "csv", "pdf"] as const;
 
 // Section header fills — same palette as the screen (see globals.css).
 const SECTION_FILL: Record<string, [number, number, number]> = {
-  "One-to-One": [31, 138, 76],
-  Referral: [214, 84, 44],
-  TYFCB: [106, 79, 199],
+  "One-to-One": [211, 84, 0],
+  Referral: [46, 139, 87],
+  TYFCB: [184, 134, 11],
   Visitor: [47, 111, 176],
 };
 

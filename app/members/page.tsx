@@ -56,7 +56,6 @@ export default async function MembersPage({
       q={q}
       weekId=""
       weeks={[]}
-      searchPlaceholder="Search by name…"
       columns={[
         { key: "name", label: "Name" },
         { key: "chapter", label: "Chapter" },

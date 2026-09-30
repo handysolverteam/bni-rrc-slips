@@ -18,7 +18,6 @@ export default function ListShell({
   q,
   weekId,
   weeks,
-  searchPlaceholder,
   columns,
   rows,
   kind,
@@ -34,7 +33,6 @@ export default function ListShell({
   q: string;
   weekId: string;
   weeks: WeekOption[];
-  searchPlaceholder: string;
   columns: Col[];
   rows: Record<string, unknown>[];
   /** Slip type for section coloring (one-to-one / referral / tyfcb / visitor). */
@@ -45,8 +43,9 @@ export default function ListShell({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const weekParam = weekId || "all";
   const pageQuery = (p: number) =>
-    `${basePath}?q=${encodeURIComponent(q)}&week=${encodeURIComponent(weekId)}&page=${p}`;
+    `${basePath}?q=${encodeURIComponent(q)}&week=${encodeURIComponent(weekParam)}&page=${p}`;
   const activeWeek = weeks.find((w) => w.id === weekId);
   const go = (url: string) => startTransition(() => router.push(url));
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -83,7 +82,7 @@ export default function ListShell({
           q={q}
           weekId={weekId}
           weeks={weeks}
-          searchPlaceholder={searchPlaceholder}
+          hideSearch
           onNavigate={go}
         />
         {q || weekId || Object.keys(columnFilters).length > 0 ? (
@@ -100,17 +99,8 @@ export default function ListShell({
           filterable={filterable}
           initialFilters={columnFilters}
           filterOptions={filterOptions}
+          loading={isPending}
         />
-        {isPending ? (
-          <div className="table-loading-overlay" role="status" aria-label="Loading">
-            <div className="table-loading-card">
-              <div className="skel skel-row" />
-              <div className="skel skel-row" />
-              <div className="skel skel-row" />
-              <div className="skel skel-row short" />
-            </div>
-          </div>
-        ) : null}
       </div>
 
       <div className="pager">

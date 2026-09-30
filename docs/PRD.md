@@ -9,10 +9,10 @@ Import a weekly BNI `Report` XLS (columns: From, To, Slip Type, Inside/Outside, 
 3. Server parses, upserts members/weeks, inserts slips, returns `{ imported, skipped, errors }`.
 4. User browses 5 read-only paginated screens:
    - `/members` — Bni Member (Name, Category, Contact placeholders)
-   - `/referrals` — Slip Referrals (BNI Week, Referral From, Referral To, Other Chapter Member, Inside/Outside)
-   - `/one-to-ones` — Slip 121 (BNI Week, Initiated By, Met With, Other Chapter Member, Photo Proof, Gains Shared)
+   - `/referrals` — Slip Referrals (BNI Week, Referral From, Referral To, Other Member's Chapter, Inside/Outside)
+   - `/one-to-ones` — Slip 121 (BNI Week, Initiated By, Met With, Other Member's Chapter, Photo Proof, Gains Shared)
    - `/visitors` — Slip Visitors (Full Name, Company, Invited By, BNI Week, Email, Phone, Attending, etc.)
-   - `/tyfcb` — Slip TYFCB (BNI Week, BNI Member, Amount, Other Chapter Member)
+   - `/tyfcb` — Slip TYFCB (BNI Week, BNI Member, Amount, Other Member's Chapter)
 
 No CRUD in MVP. CRUD later.
 
@@ -21,7 +21,7 @@ Source columns: `From | To | Slip Type | Inside/Outside | TYFCB | CEU Credits | 
 
 - `Slip Type` values handled: `One-to-One`, `Referral`, `TYFCB`, `Visitor`, `CEU` (case-insensitive, trimmed). Unknown/blank → skipped + reported.
 - `Inside/Outside`: `Tier 1 (inside)` → `Inside`, `Tier 2 (outside)` → `Outside` (also accepts plain `inside/outside/1/2`). TYFCB rows leave this blank in source → stored NULL.
-- `Detail`: the chapter of the BOLD name on that row — blank Detail → home/influencer chapter. Still stored as Other Chapter Member text on the slip for display.
+- `Detail`: the chapter of the BOLD name on that row — blank Detail → home/influencer chapter. Displayed as Other Member's Chapter text on the slip for display.
 - **Bold rule (confirmed)**: a BOLD name belongs to a DIFFERENT chapter; the Detail column describes that bold person's chapter. Non-bold names are same-chapter members and are the only ones added to the member master. Implemented for `.xlsx` via ExcelJS (`lib/report-bold.ts`): bold From/To set `from/to_is_other_chapter` and skip member creation (name text is still stored on the slip). Legacy `.xls`/`.csv` carry no formatting info — save as `.xlsx` to preserve bold.
 - `Referral`: From → `referral_from`, To → `referral_to`.
 - `One-to-One`: From → `initiated_by`, To → `met_with`.

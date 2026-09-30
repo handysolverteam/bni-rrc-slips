@@ -1,7 +1,8 @@
 import ListShell from "@/components/ListShell";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { getCachedWeekOptions } from "@/lib/server-weeks";
+import { defaultWeekId, getCachedWeekOptions } from "@/lib/server-weeks";
 import { distinctValues } from "@/lib/distinct";
+import { latestImportedWeekId } from "@/lib/report-view";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,14 @@ export default async function TyfcbPage({
   const page = Math.max(1, Number(sp.page || 1));
   const pageSize = 100;
   const q = sp.q || "";
-  const weekId = sp.week || "";
+  const weekId =
+    sp.week === "all"
+      ? ""
+      : sp.week ||
+        (await Promise.all([defaultWeekId(), latestImportedWeekId()]).then(
+          ([d, l]) => d || l,
+        )) ||
+        "";
   const sb = getSupabaseServer();
   let query = sb
     .from("slip_tyfcb")
@@ -57,12 +65,11 @@ export default async function TyfcbPage({
       q={q}
       weekId={weekId}
       weeks={weeks}
-      searchPlaceholder="Search member…"
       columns={[
         { key: "bni_week", label: "BNI Week" },
         { key: "member_name", label: "BNI Member" },
         { key: "amount", label: "Amount" },
-        { key: "other_chapter_member", label: "Other Chapter Member" },
+        { key: "other_chapter_member", label: "Other Member's Chapter" },
       ]}
       rows={rows}
       filterable={["member_name", "other_chapter_member"]}

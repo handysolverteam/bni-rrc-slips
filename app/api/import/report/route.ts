@@ -4,6 +4,8 @@ import { fetchAllRows } from "@/lib/supabase/paged";
 import { parseUpload } from "@/lib/import-upload";
 import { buildWeekLabel } from "@/lib/weeks";
 import { clearWeekOptionsCache } from "@/lib/server-weeks";
+import { clearDistinctCache } from "@/lib/distinct";
+import { clearLatestImportedWeekCache } from "@/lib/report-view";
 import { clearSlipsSnapshotCache } from "@/lib/chat/snapshot-cache";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
@@ -455,8 +457,11 @@ export async function POST(request: Request) {
       console.error("Import batch counts not saved", { batchId, error: batchError.message });
     }
 
-    // Fresh data: drop cached weeks + chat snapshot so screens update.
+    // Fresh data: drop cached weeks + filter options + default/latest week
+    // + chat snapshot so screens update.
     clearWeekOptionsCache();
+    clearDistinctCache();
+    clearLatestImportedWeekCache();
     clearSlipsSnapshotCache();
 
     return Response.json({

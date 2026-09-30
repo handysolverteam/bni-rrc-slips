@@ -28,6 +28,8 @@ function Cell({ columnKey, value, row }: { columnKey: string; value: unknown; ro
   return <>{value == null ? "" : String(value)}</>;
 }
 
+const CELL_W = [92, 78, 86, 70, 82];
+
 export default function SlipsTable({
   columns,
   rows,
@@ -35,6 +37,7 @@ export default function SlipsTable({
   initialFilters = {},
   filterOptions = {},
   emptyHint = "No records yet — import a Report XLS to get started.",
+  loading = false,
 }: {
   columns: Col[];
   rows: Record<string, unknown>[];
@@ -42,7 +45,12 @@ export default function SlipsTable({
   initialFilters?: Record<string, string>;
   filterOptions?: Record<string, string[]>;
   emptyHint?: string;
+  loading?: boolean;
 }) {
+  // Same row height the real cells produce: pills (Inside/Outside) render
+  // taller than plain text, so shimmer cells must match per table.
+  const cellH = columns.some((c) => c.key === "inside_outside") ? 24 : 18;
+  const skeletonRows = Math.max(rows.length, 5);
   return (
     <div className="table-card">
       <div className="table-scroll">
@@ -66,19 +74,39 @@ export default function SlipsTable({
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={(r.id as string) ?? i}>
-                {columns.map((c) => (
-                  <td key={c.key}>
-                    <Cell columnKey={c.key} value={r[c.key]} row={r} />
-                  </td>
+            {loading
+              ? Array.from({ length: skeletonRows }, (_, i) => (
+                  <tr key={`skel-${i}`}>
+                    {columns.map((c, j) => (
+                      <td key={c.key}>
+                        <span
+                          className="skel"
+                          style={{
+                            display: "block",
+                            height: cellH,
+                            width: `${CELL_W[(i + j) % CELL_W.length]}%`,
+                            borderRadius: 4,
+                          }}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              : rows.map((r, i) => (
+                  <tr key={(r.id as string) ?? i}>
+                    {columns.map((c) => (
+                      <td key={c.key}>
+                        <Cell columnKey={c.key} value={r[c.key]} row={r} />
+                      </td>
+                    ))}
+                  </tr>
                 ))}
-              </tr>
-            ))}
           </tbody>
         </table>
       </div>
-      {rows.length === 0 ? <div className="empty-state">{emptyHint}</div> : null}
+      {!loading && rows.length === 0 ? (
+        <div className="empty-state">{emptyHint}</div>
+      ) : null}
     </div>
   );
 }

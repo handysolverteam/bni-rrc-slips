@@ -62,7 +62,7 @@ export default async function Home() {
       <div className="card note-card">
         <p className="muted" style={{ margin: 0 }}>
           Note: bold formatting in Excel cannot be read by the current parser. All names are stored
-          as same-chapter members; Detail is stored as Other Chapter Member text.
+          as same-chapter members; Detail is stored as Other Member's Chapter text.
         </p>
       </div>
     </div>

@@ -2,12 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useTransition } from "react";
+import SearchSelect from "@/components/SearchSelect";
 import type { WeekOption } from "@/lib/weeks";
 
 /**
- * Week dropdown applies instantly on change; search still uses Apply.
- * Navigations run in a React transition, so the current table stays on
- * screen — only an additional indicator appears while loading.
+ * Search also uses Apply-on-navigate; the week dropdown is a searchable
+ * select that applies instantly on change (same pattern as table filters).
+ * Cleared/All selection is sent as `week=all`.
  */
 export default function FilterBar({
   basePath,
@@ -24,7 +25,7 @@ export default function FilterBar({
   q: string;
   weekId: string;
   weeks: WeekOption[];
-  searchPlaceholder: string;
+  searchPlaceholder?: string;
   hiddenParams?: Record<string, string>;
   includeAllOption?: boolean;
   hideSearch?: boolean;
@@ -32,7 +33,6 @@ export default function FilterBar({
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const selectRef = useRef<HTMLSelectElement>(null);
   const [isPending, startTransition] = useTransition();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -45,28 +45,14 @@ export default function FilterBar({
     return `${basePath}?${params.toString()}`;
   }
 
-  function currentWeek(): string {
-    return selectRef.current?.value ?? weekId;
-  }
-
-  function fire() {
-    const url = buildUrl(currentWeek());
-    if (onNavigate) onNavigate(url);
-    else startTransition(() => router.push(url));
-  }
-
-  function go(week: string, immediate = true) {
+  function go(week: string) {
     if (timer.current) {
       clearTimeout(timer.current);
       timer.current = null;
     }
-    if (immediate) {
-      const url = buildUrl(week);
-      if (onNavigate) onNavigate(url);
-      else startTransition(() => router.push(url));
-      return;
-    }
-    timer.current = setTimeout(fire, 600);
+    const url = buildUrl(week);
+    if (onNavigate) onNavigate(url);
+    else startTransition(() => router.push(url));
   }
 
   useEffect(
@@ -91,24 +77,21 @@ export default function FilterBar({
           placeholder={searchPlaceholder}
           defaultValue={q}
           aria-label="Search"
-          onChange={() => go(currentWeek(), false)}
+          onChange={() => {
+            if (timer.current) clearTimeout(timer.current);
+            timer.current = setTimeout(() => go(weekId), 600);
+          }}
         />
       ) : null}
       {weeks.length > 0 ? (
-        <select
-          ref={selectRef}
-          name="week"
-          defaultValue={weekId}
-          aria-label="Filter by BNI week"
-          onChange={(e) => go(e.target.value)}
-        >
-          <option value={includeAllOption ? "all" : ""}>All weeks</option>
-          {weeks.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.label}
-            </option>
-          ))}
-        </select>
+        <SearchSelect
+          value={weekId}
+          options={weeks.map((w) => ({ value: w.id, label: w.label }))}
+          placeholder="All weeks"
+          allLabel="All weeks"
+          showClear={false}
+          onChange={(v) => go(v || "all")}
+        />
       ) : null}
       {isPending ? (
         <span className="toolbar-loading" role="status">

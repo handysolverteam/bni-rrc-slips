@@ -1,5 +1,6 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paged";
+import { createTtlCache } from "@/lib/cache";
 
 export type ReportSectionKey = "one-to-one" | "referral" | "tyfcb" | "visitor";
 
@@ -36,7 +37,7 @@ export const REPORT_HEADERS = [
   "Inside/Outside",
   "TYFCB Amount",
   "CEU Credits",
-  "Detail",
+  "Other Member's Chapter",
 ];
 
 const tierLabel = (v: string | null): string =>
@@ -202,7 +203,7 @@ export async function fetchReportSections(
 }
 
 /** Latest week that actually has imported slips (drives the default view). */
-export async function latestImportedWeekId(): Promise<string | null> {
+async function fetchLatestImportedWeekId(): Promise<string | null> {
   const sb = getSupabaseServer();
   const { data } = await sb
     .from("import_batches")
@@ -212,6 +213,15 @@ export async function latestImportedWeekId(): Promise<string | null> {
     .maybeSingle();
   return (data as { bni_week_id: string | null } | null)?.bni_week_id ?? null;
 }
+
+// Changes only on import: cache per process for 5 minutes.
+const latestCache = createTtlCache<string | null>(5 * 60 * 1000);
+
+export const latestImportedWeekId = (): Promise<string | null> =>
+  latestCache.get(fetchLatestImportedWeekId);
+
+/** Drop the cached latest-week pointer (call on import). */
+export const clearLatestImportedWeekCache = (): void => latestCache.clear();
 
 export const rowToArray = (r: ReportRow, withWeek = false): (string | number)[] => {
   const rest: (string | number)[] = [
@@ -251,7 +261,7 @@ const ALL_COLUMNS: ReportColumn[] = [
   { key: "insideOutside", label: "Inside/Outside" },
   { key: "tyfcb", label: "TYFCB Amount", numeric: true },
   { key: "ceu", label: "CEU Credits" },
-  { key: "detail", label: "Detail" },
+  { key: "detail", label: "Other Member's Chapter" },
 ];
 
 const cellOf = (r: ReportRow, key: ReportColumnKey): string =>

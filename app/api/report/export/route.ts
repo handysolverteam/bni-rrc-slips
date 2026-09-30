@@ -10,9 +10,9 @@ const TABS: ReportSectionKey[] = ["one-to-one", "referral", "tyfcb", "visitor"];
 
 // Section header fills — same palette as the screen (see globals.css).
 const SECTION_FILL: Record<string, [number, number, number]> = {
-  "One-to-One": [31, 138, 76],
-  Referral: [214, 84, 44],
-  TYFCB: [106, 79, 199],
+  "One-to-One": [211, 84, 0],
+  Referral: [46, 139, 87],
+  TYFCB: [184, 134, 11],
   Visitor: [47, 111, 176],
 };
 
@@ -83,7 +83,7 @@ export async function GET(request: Request) {
       if (ov) filterBits.push(`${s.title} week: ${await weekLabelOf(ov)}`);
     }
     if (q.trim()) filterBits.push(`Search: "${q.trim()}"`);
-    const colLabels = { from: "From", to: "To", detail: "Detail" } as const;
+    const colLabels = { from: "From", to: "To", detail: "Other Member's Chapter" } as const;
     for (const s of picked) {
       for (const f of ["from", "to", "detail"] as const) {
         const v = (col[s.key]?.[f] || "").trim();

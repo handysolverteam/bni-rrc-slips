@@ -1,7 +1,8 @@
 import ListShell from "@/components/ListShell";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { getCachedWeekOptions } from "@/lib/server-weeks";
+import { defaultWeekId, getCachedWeekOptions } from "@/lib/server-weeks";
 import { distinctValues } from "@/lib/distinct";
+import { latestImportedWeekId } from "@/lib/report-view";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,14 @@ export default async function ReferralsPage({
   const page = Math.max(1, Number(sp.page || 1));
   const pageSize = 100;
   const q = sp.q || "";
-  const weekId = sp.week || "";
+  const weekId =
+    sp.week === "all"
+      ? ""
+      : sp.week ||
+        (await Promise.all([defaultWeekId(), latestImportedWeekId()]).then(
+          ([d, l]) => d || l,
+        )) ||
+        "";
   const sb = getSupabaseServer();
   let query = sb
     .from("slip_referrals")
@@ -61,12 +69,11 @@ export default async function ReferralsPage({
       q={q}
       weekId={weekId}
       weeks={weeks}
-      searchPlaceholder="Search referral from / to…"
       columns={[
         { key: "bni_week", label: "BNI Week" },
         { key: "from_name", label: "Referral From" },
         { key: "to_name", label: "Referral To" },
-        { key: "other_chapter_member", label: "Other Chapter Member" },
+        { key: "other_chapter_member", label: "Other Member's Chapter" },
         { key: "inside_outside", label: "Inside Or Outside" },
       ]}
       rows={rows}

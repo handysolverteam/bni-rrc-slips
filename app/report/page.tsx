@@ -1,4 +1,4 @@
-import { getCachedWeekOptions } from "@/lib/server-weeks";
+import { defaultWeekId, getCachedWeekOptions } from "@/lib/server-weeks";
 import { distinctValues, mergeDistinct } from "@/lib/distinct";
 import {
   fetchReportSections,
@@ -25,7 +25,7 @@ const OPTIONAL_COLS: OptCol[] = [
   { key: "insideOutside", label: "Inside/Outside" },
   { key: "tyfcb", label: "TYFCB Amount", numeric: true },
   { key: "ceu", label: "CEU Credits" },
-  { key: "detail", label: "Detail" },
+  { key: "detail", label: "Other Member's Chapter" },
 ];
 
 /** Report-shaped table: Count + From/To/Type always; other columns only when used. */
@@ -131,9 +131,12 @@ export default async function ReportPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const sp = await searchParams;
-  const weeks = await getCachedWeekOptions();
-  const latest = await latestImportedWeekId();
-  const weekId = sp.week || latest || weeks[0]?.id || "";
+  const [weeks, latest, defaultId] = await Promise.all([
+    getCachedWeekOptions(),
+    latestImportedWeekId(),
+    sp.week ? Promise.resolve(null) : defaultWeekId(),
+  ]);
+  const weekId = sp.week || defaultId || latest || weeks[0]?.id || "";
   const tab = (sp.tab as ReportSectionKey | "all" | undefined) || "all";
   const q = sp.q || "";
   const colFor = (key: ReportSectionKey) => ({
@@ -144,8 +147,8 @@ export default async function ReportPage({
   const allWeeks = weekId === "all";
   const activeWeek = weeks.find((w) => w.id === weekId);
 
-  const sections = weekId
-    ? await fetchReportSections(weekId, q, {
+  const sectionsPromise = weekId
+    ? fetchReportSections(weekId, q, {
         "one-to-one": colFor("one-to-one"),
         referral: colFor("referral"),
         tyfcb: colFor("tyfcb"),
@@ -156,8 +159,10 @@ export default async function ReportPage({
         tyfcb: sp["w_tyfcb"] || "",
         visitor: sp["w_visitor"] || "",
       })
-    : [];
-  const [fromOptions, toOptions, detailOptions] = await Promise.all([
+    : Promise.resolve([]);
+  const [sections, [fromOptions, toOptions, detailOptions]] = await Promise.all([
+    sectionsPromise,
+    Promise.all([
     Promise.all([
       distinctValues("slip_referrals", "from_name"),
       distinctValues("slip_one_to_ones", "initiated_by_name"),
@@ -174,6 +179,7 @@ export default async function ReportPage({
       distinctValues("slip_one_to_ones", "other_chapter_member"),
       distinctValues("slip_tyfcb", "other_chapter_member"),
     ]).then((lists) => mergeDistinct(...lists)),
+    ]),
   ]);
   const colOptions = { from: fromOptions, to: toOptions, detail: detailOptions };
   const visible = tab === "all" ? sections : sections.filter((s) => s.key === tab);

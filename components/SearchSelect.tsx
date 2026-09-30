@@ -19,12 +19,15 @@ export default function SearchSelect({
   options,
   placeholder,
   allLabel,
+  showClear = true,
   onChange,
 }: {
   value: string;
   options: ComboOption[];
   placeholder: string;
   allLabel?: string;
+  /** Render the ✕ button inside the field (week box relies on the "All" item). */
+  showClear?: boolean;
   onChange: (value: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -42,7 +45,7 @@ export default function SearchSelect({
     if (!el) return null;
     const r = el.getBoundingClientRect();
     if (r.bottom < 0 || r.top > window.innerHeight) return null;
-    const width = Math.round(Math.max(r.width, 230));
+    const width = Math.round(Math.min(r.width, window.innerWidth - 16));
     // Flip above the field when there is no room below. Rounded to whole
     // pixels — fractional fixed positions blur text in Chrome.
     const estHeight = 260;
@@ -53,7 +56,7 @@ export default function SearchSelect({
     );
     return {
       top: Math.max(8, top),
-      left: Math.round(Math.max(8, Math.min(r.left, window.innerWidth - Math.min(width, 300) - 8))),
+      left: Math.round(Math.max(8, Math.min(r.left, window.innerWidth - width - 8))),
       width,
     };
   }
@@ -152,7 +155,7 @@ export default function SearchSelect({
             }
           }}
         />
-        {value ? (
+        {showClear && value ? (
           <button
             type="button"
             className="combo-adorn"
@@ -177,7 +180,7 @@ export default function SearchSelect({
               className="combo-pop"
               role="listbox"
               ref={popRef}
-              style={{ position: "fixed", top: pos.top, left: pos.left, width: Math.min(pos.width, 300) }}
+              style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width }}
             >
               <span className="combo-list">
                 <button type="button" className="combo-item combo-clear" onClick={() => pick("")}>
