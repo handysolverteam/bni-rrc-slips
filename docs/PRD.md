@@ -8,11 +8,11 @@ Import a weekly BNI `Report` XLS (columns: From, To, Slip Type, Inside/Outside, 
 2. App POSTs the file to `/api/import/report`.
 3. Server parses, upserts members/weeks, inserts slips, returns `{ imported, skipped, errors }`.
 4. User browses 5 read-only paginated screens:
-   - `/members` — Bni Member (Name, Category, Contact placeholders)
+   - `/members` — Bni Member (Name, Chapter, Category, Company, Phone — Category/Company/Phone are empty placeholders until CRUD)
    - `/referrals` — Slip Referrals (BNI Week, Referral From, Referral To, Other Member's Chapter, Inside/Outside)
    - `/one-to-ones` — Slip 121 (BNI Week, Initiated By, Met With, Other Member's Chapter, Photo Proof, Gains Shared)
    - `/visitors` — Slip Visitors (Full Name, Company, Invited By, BNI Week, Email, Phone, Attending, etc.)
-   - `/tyfcb` — Slip TYFCB (BNI Week, BNI Member, Amount, Other Member's Chapter)
+   - `/tyfcb` — Slip TYFCB (BNI Week, BNI Member, Amount, Thanking Member's Chapter)
 
 No CRUD in MVP. CRUD later.
 

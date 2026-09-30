@@ -30,7 +30,7 @@ export type SectionData = {
 };
 
 export const REPORT_HEADERS = [
-  "Count",
+  "No.",
   "From",
   "To",
   "Slip Type",
@@ -237,7 +237,7 @@ export const rowToArray = (r: ReportRow, withWeek = false): (string | number)[] 
 };
 
 export const reportHeaders = (withWeek = false): string[] =>
-  withWeek ? ["Count", "BNI Week", ...REPORT_HEADERS.slice(1)] : REPORT_HEADERS;
+  withWeek ? ["No.", "BNI Week", ...REPORT_HEADERS.slice(1)] : REPORT_HEADERS;
 
 export type ReportColumnKey =
   | "count"
@@ -253,7 +253,7 @@ export type ReportColumnKey =
 export type ReportColumn = { key: ReportColumnKey; label: string; numeric?: boolean };
 
 const ALL_COLUMNS: ReportColumn[] = [
-  { key: "count", label: "Count" },
+  { key: "count", label: "No." },
   { key: "week", label: "BNI Week" },
   { key: "from", label: "From" },
   { key: "to", label: "To" },
@@ -264,6 +264,24 @@ const ALL_COLUMNS: ReportColumn[] = [
   { key: "detail", label: "Other Member's Chapter" },
 ];
 
+/** Detail header: on TYFCB rows the Detail text is the thanking member's chapter. */
+export const detailLabelFor = (key: ReportSectionKey): string =>
+  key === "tyfcb" ? "Thanking Member's Chapter" : "Other Member's Chapter";
+
+/** From/To header per section: each slip type names its two sides. */
+export function fromToLabelsFor(key: ReportSectionKey): { from: string; to: string } {
+  switch (key) {
+    case "one-to-one":
+      return { from: "Initiated By", to: "Met With" };
+    case "referral":
+      return { from: "Referral From", to: "Referral To" };
+    case "tyfcb":
+      return { from: "Thanker", to: "BNI Member" };
+    case "visitor":
+      return { from: "Invited By", to: "Visitor" };
+  }
+}
+
 const cellOf = (r: ReportRow, key: ReportColumnKey): string =>
   key === "count" ? String(r.count) : key === "week" ? r.week : r[key];
 
@@ -272,11 +290,20 @@ const cellOf = (r: ReportRow, key: ReportColumnKey): string =>
  * scope); any other column only when at least one row fills it —
  * exactly what the screen shows.
  */
-export function visibleColumns(rows: ReportRow[], withWeek: boolean): ReportColumn[] {
+export function visibleColumns(
+  rows: ReportRow[],
+  withWeek: boolean,
+  sectionKey?: ReportSectionKey,
+): ReportColumn[] {
   return ALL_COLUMNS.filter((c) => {
     if (c.key === "week") return withWeek;
     if (["count", "from", "to", "slipType"].includes(c.key)) return true;
     return rows.some((r) => cellOf(r, c.key).trim() !== "");
+  }).map((c) => {
+    if (c.key === "detail" && sectionKey) return { ...c, label: detailLabelFor(sectionKey) };
+    if ((c.key === "from" || c.key === "to") && sectionKey)
+      return { ...c, label: fromToLabelsFor(sectionKey)[c.key] };
+    return c;
   });
 }
 

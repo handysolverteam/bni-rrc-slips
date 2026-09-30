@@ -61,7 +61,7 @@ export default async function MembersPage({
         { key: "chapter", label: "Chapter" },
         { key: "category", label: "Category" },
         { key: "company", label: "Company" },
-        { key: "phone", label: "Contact" },
+        { key: "phone", label: "Phone" },
       ]}
       rows={rows}
       filterable={["name", "category", "company", "phone"]}
