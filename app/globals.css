@@ -566,6 +566,12 @@ button.danger:hover:not(:disabled) { background: var(--red-soft); }
   transition: background 0.15s, box-shadow 0.15s;
 }
 .import-open:hover { background: var(--accent-hover); box-shadow: 0 3px 9px rgba(214, 84, 44, 0.35); }
+/* The base `button:hover:not(:disabled)` (near-white bg) would otherwise win
+   specificity over `.import-open:hover` and white-on-white the text. */
+button.import-open:hover:not(:disabled) {
+  background: var(--accent-hover); color: #fff; border-color: transparent;
+  box-shadow: 0 3px 9px rgba(214, 84, 44, 0.35);
+}
 .import-pop {
   position: absolute; right: 0; top: calc(100% + 10px); z-index: 90;
   width: min(540px, calc(100vw - 40px));
