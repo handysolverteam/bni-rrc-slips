@@ -166,6 +166,25 @@ table.grid tbody tr:last-child td { border-bottom: none; }
 table.grid tbody tr { transition: background 0.12s; }
 table.grid tbody tr:nth-child(even) { background: #fbf8f2; }
 table.grid tbody tr:hover { background: #f7f0e1; }
+/* Import history: Skipped count expands to the list of dropped rows. */
+.skip-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+/* Neutralise the global button hover capsule/press on the Skipped count. */
+.skip-toggle:hover:not(:disabled) { background: none; border: none; box-shadow: none; }
+.skip-toggle:active:not(:disabled) { transform: none; }
+.skip-toggle .skip-caret { font-size: 10px; margin-left: 5px; color: var(--muted); }
+tr.skip-detail:hover { background: #f3ecdd; }
+tr.skip-detail td { background: #f6efe1; vertical-align: top; }
+tr.skip-detail strong { display: block; margin-bottom: 4px; font-size: 12.5px; }
+tr.skip-detail ul { margin: 0; padding-left: 18px; }
+tr.skip-detail li { font-size: 12.5px; line-height: 1.75; }
+tr.skip-detail p { margin: 4px 0 2px; }
 table.grid tfoot tr.sum-row td {
   background: var(--sec-soft);
   border-top: 2px solid var(--sec);

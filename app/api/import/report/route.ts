@@ -117,9 +117,23 @@ export async function POST(request: Request) {
     let skipped = 0;
     let tyfcbBlankAmount = 0;
     const errors: string[] = [...parseErrors];
+    // One entry per skipped row (validation + duplicates) so the Import
+    // history table can show exactly what was dropped and why.
+    const skipDetails: string[] = [];
+    const pushSkip = (msg: string) => {
+      if (skipDetails.length < 1000) skipDetails.push(msg);
+    };
+    const SLIP_LABELS: Record<string, string> = {
+      slip_referrals: "Referral",
+      slip_one_to_ones: "One-to-One",
+      slip_tyfcb: "TYFCB",
+      slip_visitors: "Visitor",
+      slip_ceus: "CEU",
+    };
     const batchId: string | null = batch?.id ?? null;
     const pushRowError = (msg: string) => {
       skipped++;
+      pushSkip(msg);
       if (errors.length < 50) errors.push(msg);
     };
 
@@ -346,8 +360,10 @@ export async function POST(request: Request) {
         // One bad row must not sink the batch: retry row-by-row.
         for (const row of chunk) {
           const { error: rowError } = await supabase.from(table).insert(row);
-          if (rowError && (rowError as { code?: string }).code === "23505") skipped++;
-          else if (rowError) pushRowError(`${table}: ${rowError.message}`);
+          if (rowError && (rowError as { code?: string }).code === "23505") {
+            skipped++;
+            pushSkip(`${SLIP_LABELS[table] ?? table}: duplicate rejected by a database rule`);
+          } else if (rowError) pushRowError(`${table}: ${rowError.message}`);
           else imported++;
         }
       }
@@ -365,6 +381,10 @@ export async function POST(request: Request) {
         const k = dkey([weekId, ...toKey(p as Record<string, string | number | null>)]);
         if (seen.has(k)) {
           skipped++;
+          const parts = toKey(p as Record<string, string | number | null>)
+            .map((v) => (v ?? "").toString())
+            .filter(Boolean);
+          pushSkip(`${SLIP_LABELS[table] ?? table} duplicate: ${parts.join(" → ") || "row"} — already imported for this week`);
           return false;
         }
         seen.add(k);
@@ -449,9 +469,14 @@ export async function POST(request: Request) {
       })),
     );
 
+    const batchLog = JSON.stringify({ errors: errors.slice(0, 50), skips: skipDetails.slice(0, 1000) });
     const { error: batchError } = await supabase
       .from("import_batches")
-      .update({ imported_count: imported, skipped_count: skipped, error_message: errors.slice(0, 10).join(" | ") || null })
+      .update({
+        imported_count: imported,
+        skipped_count: skipped,
+        error_message: errors.length || skipDetails.length ? batchLog : null,
+      })
       .eq("id", batch?.id);
     if (batchError) {
       console.error("Import batch counts not saved", { batchId, error: batchError.message });

@@ -11,6 +11,7 @@
 - `slip_visitors(id, bni_week_id fk, full_name text, company/email/phone null, invited_by_member_id fk null, invited_by_name text, attending bool default false, ...)`
 - `slip_ceus(id, bni_week_id fk, member_id fk null, member_name text, credits numeric)`
 - `import_batches(id, filename, bni_week_id fk null, imported_count, skipped_count, status, error_message, created_at)`
+  - `error_message` = JSON `{ errors: string[], skips: string[] }` — one `skips` entry per dropped row (validation + duplicate), shown in the Import history dropdown (older rows may be plain text or null).
 
 Name matching: case-insensitive trim, one member row per name. Chapter rule: a BOLD name belongs to its Detail chapter; every other name belongs to HOME (`NEXT_PUBLIC_CHAPTER_NAME`, fallback `BNI Influencer`). A bold Detail signal upgrades a home row to its correct chapter — never the reverse, never a duplicate. Detail is also stored as text on the slip. Visitor full names never create members (only a non-bold inviter does).
 
@@ -29,3 +30,4 @@ Name matching: case-insensitive trim, one member row per name. Chapter rule: a B
 ## Validation / errors
 - Missing headers → 400. Unknown slip type / empty both From+To → skip + collect in `errors[]` (max 50 returned).
 - Duplicate slip (same week + same from/to/amount/detail) → skip via unique index, counted as skipped.
+- Every skipped row (validation or duplicate) also stores a reason in the batch's `skips` log (cap 1000) — shown per batch in the Import history dropdown.

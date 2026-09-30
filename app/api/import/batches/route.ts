@@ -6,7 +6,7 @@ export async function GET() {
     const sb = getSupabaseServer();
     const { data, error } = await sb
       .from("import_batches")
-      .select("id,filename,imported_count,skipped_count,status,created_at,bni_weeks(label,meeting_date)")
+      .select("id,filename,imported_count,skipped_count,status,error_message,created_at,bni_weeks(label,meeting_date)")
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) return Response.json({ error: error.message }, { status: 500 });
