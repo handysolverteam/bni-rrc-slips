@@ -3,6 +3,7 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 import { getCachedWeekOptions, listWeekScope } from "@/lib/server-weeks";
 import { distinctValues } from "@/lib/distinct";
 import { weekFilterOptions } from "@/lib/weeks";
+import { applyColumnFilter, applyWeekFilter } from "@/lib/list-filters";
 
 export const dynamic = "force-dynamic";
 
@@ -22,13 +23,13 @@ export default async function VisitorsPage({
     .select("*, bni_weeks(label)", { count: "exact" })
     .order("created_at", { ascending: false });
   if (q) query = query.or(`full_name.ilike.%${q}%,invited_by_name.ilike.%${q}%`);
-  if (weekId) query = query.eq("bni_week_id", weekId);
+  if (weekId) query = applyWeekFilter(query, weekId);
   const columnFilters: Record<string, string> = {};
   if (weekFilter) columnFilters.bni_week = weekFilter;
   for (const k of ["full_name", "company", "invited_by_name", "email", "phone"]) {
     const v = (sp[`c_${k}`] || "").trim();
     if (v) {
-      query = query.ilike(k, `%${v}%`);
+      query = applyColumnFilter(query, k, v);
       columnFilters[k] = v;
     }
   }

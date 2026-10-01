@@ -1,6 +1,7 @@
 import ListShell from "@/components/ListShell";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { distinctValues } from "@/lib/distinct";
+import { applyColumnFilter, multiParts } from "@/lib/list-filters";
 
 export const dynamic = "force-dynamic";
 
@@ -20,17 +21,18 @@ export default async function MembersPage({
   for (const k of ["name", "category", "company", "phone"]) {
     const v = (sp[`c_${k}`] || "").trim();
     if (v) {
-      query = query.ilike(k, `%${v}%`);
+      query = applyColumnFilter(query, k, v);
       columnFilters[k] = v;
     }
   }
   const chapterV = (sp.c_chapter || "").trim();
   if (chapterV) {
     const { data: chapters } = await sb.from("chapters").select("id, name");
-    const hit = (chapters ?? []).find(
-      (c) => String(c.name ?? "").trim().toLowerCase() === chapterV.toLowerCase(),
-    );
-    query = query.eq("chapter_id", hit?.id ?? "00000000-0000-0000-0000-000000000000");
+    const names = multiParts(chapterV).map((s) => s.toLowerCase());
+    const ids = (chapters ?? [])
+      .filter((c) => names.includes(String(c.name ?? "").trim().toLowerCase()))
+      .map((c) => c.id);
+    query = query.in("chapter_id", ids.length > 0 ? ids : ["00000000-0000-0000-0000-000000000000"]);
     columnFilters.chapter = chapterV;
   }
   const [{ data, count }, filterOptions] = await Promise.all([

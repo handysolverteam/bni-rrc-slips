@@ -1,5 +1,6 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paged";
+import type { QueryIndex, QueryRow } from "./query-index";
 
 export type MemberStat = {
   name: string;
@@ -58,8 +59,14 @@ const amount = (v: number | string | null): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+/**
+ * Snapshot (what goes into the prompt) plus the member × week query index
+ * (server-only: answers chapter_query tool calls, never serialized).
+ */
+export type SlipsData = { snapshot: SlipsSnapshot; index: QueryIndex };
+
 /** Compact, privacy-safe dataset of the whole slips database for the AI. */
-export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
+export async function getSlipsData(): Promise<SlipsData> {
   const sb = getSupabaseServer();
   const chapterName = process.env.NEXT_PUBLIC_CHAPTER_NAME || "BNI Chapter";
 
@@ -161,6 +168,20 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
     });
   }
 
+  // Sparse member × week matrix for chapter_query tool calls — built in the
+  // same pass as the snapshot, kept server-side, never added to the prompt.
+  const qrows = new Map<string, QueryRow>();
+  const qrowOf = (weekId: string | null | undefined, memberKey: string, name: string): QueryRow | null => {
+    if (!weekId || !memberKey) return null;
+    const id = `${weekId}|${memberKey}`;
+    let row = qrows.get(id);
+    if (!row) {
+      row = { w: weekId, m: memberKey, n: name, rg: 0, ri: 0, ro: 0, rr: 0, oto: 0, vis: 0, te: 0, ta: 0 };
+      qrows.set(id, row);
+    }
+    return row;
+  };
+
   for (const r of refRes) {
     const from = ensure(r.from_name);
     const to = ensure(r.to_name);
@@ -170,6 +191,14 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
       else if (r.inside_outside === "Outside") from.referralsOutside += 1;
     }
     if (to) to.referralsReceived += 1;
+    const qrFrom = qrowOf(r.bni_week_id, key(r.from_name), from?.name ?? r.from_name);
+    if (qrFrom) {
+      qrFrom.rg += 1;
+      if (r.inside_outside === "Inside") qrFrom.ri += 1;
+      else if (r.inside_outside === "Outside") qrFrom.ro += 1;
+    }
+    const qrTo = qrowOf(r.bni_week_id, key(r.to_name), to?.name ?? r.to_name);
+    if (qrTo) qrTo.rr += 1;
     const b = bucketOf(r.bni_week_id);
     if (b) {
       b.stat.referrals += 1;
@@ -188,6 +217,10 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
     if (init) init.oneToOnes += 1;
     const met = ensure(r.met_with_name);
     if (met && (!init || key(met.name) !== key(init.name))) met.oneToOnes += 1;
+    const qInit = qrowOf(r.bni_week_id, key(r.initiated_by_name), init?.name ?? r.initiated_by_name);
+    if (qInit) qInit.oto += 1;
+    const qMet = qrowOf(r.bni_week_id, key(r.met_with_name), met?.name ?? r.met_with_name);
+    if (qMet && qMet !== qInit) qMet.oto += 1;
     const b = bucketOf(r.bni_week_id);
     if (b) {
       // Weighted like the report: both home members = 2, other-chapter side = 1.
@@ -201,6 +234,11 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
     tyfcbAmount += amt;
     const s = ensure(r.member_name);
     if (s) s.tyfcbTotal += amt;
+    const qT = qrowOf(r.bni_week_id, key(r.member_name), s?.name ?? r.member_name);
+    if (qT) {
+      qT.te += 1;
+      qT.ta += amt;
+    }
     const b = bucketOf(r.bni_week_id);
     if (b) {
       b.stat.tyfcbEntries += 1;
@@ -220,6 +258,8 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
           s.invitedVisitors.push(guest);
         }
       }
+      const qV = qrowOf(r.bni_week_id, key(r.invited_by_name), s?.name ?? r.invited_by_name);
+      if (qV) qV.vis += 1;
     }
     const b = bucketOf(r.bni_week_id);
     if (b) b.stat.visitors += 1;
@@ -251,7 +291,7 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
   );
   const visitors = visRes.length;
 
-  return {
+  const snapshot: SlipsSnapshot = {
     chapterName,
     generatedAt: new Date().toISOString(),
     totals: {
@@ -268,5 +308,12 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
     latestWithDataLabel:
       weekly.find((w) => w.referrals > 0 || w.oneToOnes > 0 || w.visitors > 0 || w.tyfcbEntries > 0)?.label ?? null,
     members,
+  };
+  return {
+    snapshot,
+    index: {
+      weeks: weeksRows.map((w) => ({ id: w.id, label: w.label, date: w.meeting_date })),
+      rows: [...qrows.values()],
+    },
   };
 }

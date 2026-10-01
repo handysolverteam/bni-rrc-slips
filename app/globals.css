@@ -472,11 +472,15 @@ button.danger:hover:not(:disabled) { background: var(--red-soft); }
 /* ---------- Chat ---------- */
 .chat-card { padding: 0; overflow: hidden; }
 .chat-wrap { display: flex; flex-direction: column; height: 68vh; min-height: 480px; }
+/* Form controls (textarea/buttons) default to the browser's own font —
+   everything typed or shown in the chat box uses the app font instead. */
+.chat-wrap button,
+.chat-wrap textarea { font-family: inherit; }
 .chat-log { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 10px; background: #faf7f1; }
 .chat-msg { display: flex; }
 .chat-msg.user { justify-content: flex-end; }
 .chat-msg.ai { justify-content: flex-start; }
-.chat-stack { display: flex; flex-direction: column; max-width: 80%; }
+.chat-stack { display: flex; flex-direction: column; max-width: 80%; position: relative; }
 .chat-msg.user .chat-stack { align-items: flex-end; }
 .chat-time { font-size: 11px; color: #8f8774; margin: 3px 5px 0; }
 .chat-stack .chat-bubble { max-width: 100%; }
@@ -517,7 +521,11 @@ button.danger:hover:not(:disabled) { background: var(--red-soft); }
   background: var(--accent-soft); color: var(--accent-hover);
   border-color: rgba(214, 84, 44, 0.3); box-shadow: none;
 }
-.chat-input { display: flex; gap: 8px; padding: 12px 14px 14px; }
+/* align-items: flex-end — the buttons must NOT stretch to the textarea's
+   height when the composer is expanded; they stay collapsed-size AND stay
+   anchored at the bottom (one fixed position) while the textarea grows. */
+.chat-input { display: flex; gap: 8px; padding: 12px 14px 14px; align-items: flex-end; }
+.chat-input > button { flex: 0 0 auto; }
 .chat-input textarea {
   flex: 1; resize: none; line-height: 1.45; vertical-align: middle;
   font-size: 14px; padding: 10px 12px; border-radius: 10px;
@@ -545,6 +553,110 @@ button.danger:hover:not(:disabled) { background: var(--red-soft); }
 }
 /* Expand/collapse for the composer: a large writing area vs the one-line bar. */
 .chat-input.input-big textarea { min-height: 34vh; max-height: 52vh; }
+
+/* ··· actions button: hover-revealed at the stack's top corners —
+   user message = top-left, AI message = top-right. Timestamp stays below
+   the bubble (plain .chat-time). Content is the VERTICAL kebab (⋮). */
+.chat-menu-btn {
+  position: absolute; top: 8px;
+  padding: 0 4px; font-size: 17px; line-height: 1.1; border-radius: 6px;
+  background: transparent; border-color: transparent; box-shadow: none;
+  color: #8f8774; font-weight: 700;
+  opacity: 0; transition: opacity 0.12s;
+}
+.chat-msg.user .chat-menu-btn { left: -18px; }
+.chat-msg.ai .chat-menu-btn { right: -18px; }
+.chat-msg:hover .chat-menu-btn,
+.chat-menu-btn:focus-visible,
+.chat-menu-btn.is-open { opacity: 1; }
+/* Specificity must beat the global `button:hover:not(:disabled)` white box —
+   the kebab never gets a background. */
+.chat-msg .chat-menu-btn:hover {
+  background: transparent; border-color: transparent; box-shadow: none; color: var(--ink);
+}
+/* Fixed so the scrollable .chat-log can never clip the dropdown. */
+.chat-menu {
+  position: fixed; z-index: 1300; min-width: 152px; padding: 4px;
+  background: #fff; border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  display: flex; flex-direction: column;
+}
+.chat-menu button {
+  padding: 7px 10px; font-size: 13px; text-align: left; font-weight: 500;
+  background: transparent; border: none; border-radius: 7px; color: var(--ink);
+}
+.chat-menu button:hover { background: #f3eee2; box-shadow: none; }
+
+/* Pending attachment chips above the composer. */
+.chat-files { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px 0; }
+.chat-file {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 240px;
+  font-size: 12.5px; padding: 5px 6px 5px 10px; border-radius: 999px;
+  background: #f3eee2; border: 1px solid #e3dcc9; color: var(--ink);
+  overflow: hidden; white-space: nowrap;
+}
+.chat-file button {
+  padding: 0 5px; font-size: 14px; line-height: 1.4; border: none;
+  background: transparent; border-radius: 50%; color: #8f8774;
+}
+.chat-file button:hover { background: #e6dfd0; color: var(--ink); box-shadow: none; }
+/* Attachment name chips inside message bubbles. */
+.chat-attach-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.chat-attach {
+  font-size: 11.5px; padding: 2px 8px; border-radius: 999px;
+  background: #f3eee2; border: 1px solid #e3dcc9; color: #6f6754;
+}
+.chat-msg.user .chat-attach {
+  background: rgba(255, 255, 255, 0.22); border-color: rgba(255, 255, 255, 0.35); color: #fff;
+}
+/* "Tagged" chip on a sent query — click scrolls to the tagged message. */
+.chat-tagged {
+  display: block; width: 100%; text-align: left; margin-bottom: 6px;
+  padding: 5px 8px; border-radius: 8px; border: 1px solid #e3dcc9;
+  background: #f3eee2; color: #6f6754; cursor: pointer;
+  font-family: inherit; font-weight: 500; box-shadow: none;
+}
+.chat-msg.user .chat-tagged {
+  background: rgba(255, 255, 255, 0.18); border-color: rgba(255, 255, 255, 0.35); color: #fff;
+}
+.chat-tagged:hover { border-color: #cfc4a9; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.chat-msg.user .chat-tagged:hover { border-color: rgba(255, 255, 255, 0.7); }
+.chat-tagged-label {
+  display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+  opacity: 0.8; margin-bottom: 1px;
+}
+.chat-tagged-text {
+  display: block; font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Brief highlight on the tagged message after a chip click. */
+.chat-msg.flash .chat-bubble { animation: chatMsgFlash 1.8s ease; }
+@keyframes chatMsgFlash {
+  0%, 55% { box-shadow: 0 0 0 3px rgba(214, 84, 44, 0.55); }
+  100% { box-shadow: 0 0 0 3px rgba(214, 84, 44, 0); }
+}
+/* Composer attach button (paperclip). */
+.attach-btn { padding: 9px 10px; display: inline-flex; align-items: center; }
+.attach-btn:hover:not(:disabled) { background: #f3eee2; }
+
+/* "Replying to …" bar above the composer (HandyChat-style). */
+.chat-reply {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin: 10px 14px 0; padding: 8px 10px;
+  border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: 10px; background: #f9f4ea;
+}
+.chat-reply-inner { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.chat-reply-label { font-size: 12px; font-weight: 700; color: var(--accent-hover); }
+.chat-reply-text {
+  font-size: 12.5px; color: #6f6754; white-space: pre-wrap; word-break: break-word;
+  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.chat-reply > button {
+  padding: 0 6px; font-size: 17px; line-height: 1.4; border: none;
+  background: transparent; color: #8f8774; border-radius: 6px;
+}
+.chat-reply > button:hover { background: #efe9dc; color: var(--ink); box-shadow: none; }
 .chat-layout { display: grid; grid-template-columns: 260px 1fr; gap: 14px; align-items: start; }
 .chat-sidebar {
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);

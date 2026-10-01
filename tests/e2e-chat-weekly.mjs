@@ -68,15 +68,22 @@ const truth = {
 console.log(`ground truth: ${w.label} ->`, JSON.stringify(truth));
 
 // ---- ask the chat ---------------------------------------------------------
+// Free-tier Gemini throttles burst runs (429/503 across models) — retry with
+// backoff so a rate-limit blip does not cascade into false failures.
 async function ask(message) {
-  const res = await fetch(`${APP}/api/chat/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
-    signal: AbortSignal.timeout(90_000),
-  });
-  const data = await res.json().catch(() => ({}));
-  return { ok: res.ok && typeof data.text === "string" && data.text.trim(), text: data.text ?? "", error: data.error };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const res = await fetch(`${APP}/api/chat/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+      signal: AbortSignal.timeout(90_000),
+    });
+    const data = await res.json().catch(() => ({}));
+    const ok = res.ok && typeof data.text === "string" && data.text.trim();
+    if (ok) return { ok, text: data.text, error: data.error };
+    if (attempt < 3) await new Promise((r) => setTimeout(r, 30_000));
+    else return { ok, text: data.text ?? "", error: data.error };
+  }
 }
 const numbersIn = (text) =>
   (String(text).match(/\d[\d,]*/g) ?? []).map((s) => Number(s.replace(/,/g, "")));

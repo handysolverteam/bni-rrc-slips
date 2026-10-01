@@ -50,7 +50,12 @@ export async function GET(request: Request) {
       ceu: url.searchParams.get("w_ceu") ?? "",
     };
     const effOf = (key: string): string => weekOverrides[key]?.trim() || weekId;
-    const wideOf = (key: string): boolean => effOf(key) === "all";
+    // The export carries the BNI Week column whenever rows can span
+    // meetings: all-weeks scope or a multi-week (comma) selection.
+    const wideOf = (key: string): boolean => {
+      const eff = effOf(key);
+      return eff === "all" || eff.includes(",");
+    };
     const format = (url.searchParams.get("format") ?? "xlsx").toLowerCase();
     if (!weekId) return Response.json({ error: "week is required" }, { status: 400 });
     if (!["xlsx", "csv", "pdf", "json"].includes(format)) {
@@ -59,10 +64,26 @@ export async function GET(request: Request) {
 
     const sb = getSupabaseServer();
     const allWeeks = weekId === "all";
+    const labelCache = new Map<string, string>();
+    /** Label for "all", one week id, or a comma-separated list (joined in selection order). */
     async function weekLabelOf(id: string): Promise<string> {
       if (id === "all") return "All weeks";
-      const { data: week } = await sb.from("bni_weeks").select("label").eq("id", id).maybeSingle();
-      return (week as { label?: string } | null)?.label ?? "week";
+      const cached = labelCache.get(id);
+      if (cached) return cached;
+      const ids = id.split(",").map((s) => s.trim()).filter(Boolean);
+      let label: string;
+      if (ids.length > 1) {
+        const { data } = await sb.from("bni_weeks").select("id,label").in("id", ids);
+        const byId = new Map(
+          ((data ?? []) as { id: string; label: string }[]).map((w) => [w.id, w.label]),
+        );
+        label = ids.map((i) => byId.get(i) ?? "week").join(", ");
+      } else {
+        const { data: week } = await sb.from("bni_weeks").select("label").eq("id", ids[0] ?? "").maybeSingle();
+        label = (week as { label?: string } | null)?.label ?? "week";
+      }
+      labelCache.set(id, label);
+      return label;
     }
     const sections = await fetchReportSections(weekId, q, col, weekOverrides);
     const picked = tab === "all" ? sections : sections.filter((s) => s.key === tab);
@@ -96,8 +117,10 @@ export async function GET(request: Request) {
       }
     }
     const filterLine = filterBits.join(" | ");
-    // Screen summary — stat-card section counts + grand total (One-to-One
-    // weighted per the owner rule) exported ahead of the data in every format.
+    // Screen summary — stat-card section counts (One-to-One weighted per the
+    // owner rule) rendered ahead of the data in every format. summary.total is
+    // carried in the JSON payload for machine consumers only: the exported
+    // files carry no slips grand total.
     const summary = {
       rows: picked.map((s) => ({
         section: s.title,
@@ -150,7 +173,6 @@ export async function GET(request: Request) {
       const lines = [`Week,${JSON.stringify(titleWeek)}`, `Filters,${JSON.stringify(filterLine)}`];
       lines.push("", "Summary", ["Section", "Count", "Details"].join(","));
       for (const r of summary.rows) lines.push([r.section, r.count, r.info].map(cell).join(","));
-      lines.push(["Total", summary.total, "slip(s)"].map(cell).join(","));
       for (const s of picked) {
         const cols = visibleColumns(s.rows, wideOf(s.key), s.key);
         const headers = cols.map((c) => c.label);
@@ -172,14 +194,13 @@ export async function GET(request: Request) {
 
     if (format === "xlsx") {
       const wb = XLSX.utils.book_new();
-      // Summary opens first: week/filters, stat-card rows, grand total.
+      // Summary opens first: week/filters + stat-card rows (no slips grand total).
       const sumWs = XLSX.utils.aoa_to_sheet([
         [`Week Report — ${titleWeek}`],
         [`Filters: ${filterLine}`],
         [],
         ["Section", "Count", "Details"],
         ...summary.rows.map((r) => [r.section, r.count, r.info]),
-        ["Total", summary.total, "slip(s)"],
       ]);
       sumWs["!cols"] = [{ wch: 18 }, { wch: 8 }, { wch: 26 }];
       XLSX.utils.book_append_sheet(wb, sumWs, "Summary");
@@ -225,10 +246,7 @@ export async function GET(request: Request) {
     });
     autoTable(doc, {
       head: [["Section", "Count", "Details"]],
-      body: [
-        ...summary.rows.map((r) => [r.section, String(r.count), r.info]),
-        ["Total", String(summary.total), "slip(s)"],
-      ],
+      body: summary.rows.map((r) => [r.section, String(r.count), r.info]),
       styles: { fontSize: 8 },
       headStyles: { fillColor: [38, 50, 56], textColor: 255 },
     });

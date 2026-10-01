@@ -14,6 +14,7 @@ export async function fetchAllRows<T>(
   columns: string,
   opts: {
     eq?: [string, string][];
+    in?: [string, string[]][];
     order?: { column: string; ascending?: boolean };
     pageSize?: number;
   } = {},
@@ -29,6 +30,7 @@ export async function fetchAllRows<T>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let q: any = sb.from(table).select(columns);
     for (const [c, v] of opts.eq ?? []) q = q.eq(c, v);
+    for (const [c, v] of opts.in ?? []) q = q.in(c, v);
     if (opts.order) q = q.order(opts.order.column, { ascending: opts.order.ascending ?? true });
     const { data, error } = await q.range(from, from + pageSize - 1);
     if (error) throw new Error(`${table}: ${error.message}`);

@@ -68,6 +68,7 @@ export default function SlipsTable({
                       label={c.label}
                       allLabel={c.key === "bni_week" ? "All weeks" : undefined}
                       clearValue={c.key === "bni_week" ? "all" : undefined}
+                      multiSelect
                     />
                   ) : (
                     <span className="th-label">{c.label}</span>

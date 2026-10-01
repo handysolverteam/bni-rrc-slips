@@ -62,20 +62,21 @@ export const clearWeekOptionsCache = (): void => {
 };
 
 /**
- * Week scope for a list page. The header `c_bni_week` filter wins over the
- * legacy `?week=` param (kept for direct links); neither set falls back to
- * the default (latest imported) week. `weekFilter` is the value to show in
- * the header column filter ("all" | week id | "" when nothing resolves).
+ * Week scope for a list page. The header `c_bni_week` filter (one id or a
+ * comma-separated multi-select) wins over the legacy `?week=` param (kept
+ * for direct links); neither set falls back to the default (latest imported)
+ * week. `weekFilter` is the value to show in the header column filter
+ * ("all" | one id | comma-separated ids | "" when nothing resolves).
  */
 export async function listWeekScope(
   sp: Record<string, string | undefined>,
 ): Promise<{ weekId: string; weekFilter: string }> {
   const param = sp.c_bni_week ?? sp.week;
   if (param === "all") return { weekId: "", weekFilter: "all" };
-  let weekId = param || "";
-  if (!weekId) {
+  const ids = (param || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (ids.length === 0) {
     const [d, l] = await Promise.all([defaultWeekId(), latestImportedWeekId()]);
-    weekId = d || l || "";
+    return { weekId: d || l || "", weekFilter: d || l || "" };
   }
-  return { weekId, weekFilter: weekId };
+  return { weekId: ids.join(","), weekFilter: ids.join(",") };
 }

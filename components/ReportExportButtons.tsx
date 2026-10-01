@@ -83,7 +83,8 @@ export default function ReportExportButtons({
     doc.text(filterLines, 40, 54);
     doc.setTextColor(0, 0, 0);
     let first = true;
-    // Summary first: stat-card section counts + grand total, same as xlsx/csv.
+    // Summary first: stat-card section counts, same as xlsx/csv (no slips
+    // grand total — that row is not part of the exported file).
     autoTable(doc, {
       startY: first ? 58 + filterLines.length * 10 : undefined,
       head: [["Summary", "", ""]],
@@ -92,10 +93,7 @@ export default function ReportExportButtons({
     });
     autoTable(doc, {
       head: [["Section", "Count", "Details"]],
-      body: [
-        ...data.summary.rows.map((r) => [r.section, String(r.count), r.info]),
-        ["Total", String(data.summary.total), "slip(s)"],
-      ],
+      body: data.summary.rows.map((r) => [r.section, String(r.count), r.info]),
       styles: { fontSize: 8 },
       headStyles: { fillColor: [38, 50, 56], textColor: 255 },
     });

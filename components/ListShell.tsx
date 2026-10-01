@@ -49,6 +49,7 @@ export default function ListShell({
   const search = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const activeWeek = weeks.find((w) => w.id === weekId);
+  const weekCount = weekId.split(",").map((s) => s.trim()).filter(Boolean).length;
   const go = (url: string) => startTransition(() => router.push(url));
   // Keep every active filter (q, week, c_* columns) across pagination.
   const pageQuery = (p: number) => {
@@ -81,6 +82,8 @@ export default function ListShell({
           <p className="sub muted">
             Filtered to {activeWeek.label}
           </p>
+        ) : weekCount > 1 ? (
+          <p className="sub muted">Filtered to {weekCount} weeks</p>
         ) : null}
       </div>
 

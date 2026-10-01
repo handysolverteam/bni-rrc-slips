@@ -54,9 +54,10 @@ const money = (v: number | string | null): string =>
     ? ""
     : Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** Slip rows mapped into the Report's table shape. weekId "all" = every week.
- * weekOverrides lets one table use its own scope ("all" or a week id);
- * empty/missing falls back to the universal weekId.
+/** Slip rows mapped into the Report's table shape. weekId "all" = every week,
+ * or a comma-separated list of week ids for multi-meeting scope;
+ * weekOverrides lets one table use its own scope ("all", a week id or a
+ * comma-separated list); empty/missing falls back to the universal weekId.
  * Column filters are per-table: col[sectionKey] = { from, to, detail }. */
 export type ReportColFilters = Partial<
   Record<ReportSectionKey, { from?: string; to?: string; detail?: string }>
@@ -78,29 +79,39 @@ export async function fetchReportSections(
   const visScope = scopeOf("visitor");
   const ceuScope = scopeOf("ceu");
 
-  const scopedEq = (scope: string): [string, string][] =>
-    scope === "all" ? [] : [["bni_week_id", scope]];
+  const scopedFilters = (
+    scope: string,
+  ): { eq?: [string, string][]; in?: [string, string[]][] } => {
+    if (scope === "all") return {};
+    const ids = scope
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (ids.length > 1) return { in: [["bni_week_id", ids]] };
+    // Single id; an empty scope still matches nothing (as before).
+    return { eq: [["bni_week_id", ids[0] ?? ""]] };
+  };
 
   type R = Record<string, string | boolean | number | null | { label?: string } | { label?: string }[]>;
   const [oto, ref, tyfcb, vis, ceu] = await Promise.all([
     fetchAllRows<R>("slip_one_to_ones", "initiated_by_name,met_with_name,other_chapter_member,initiated_by_is_other_chapter,met_with_is_other_chapter,bni_weeks(label)", {
-      eq: scopedEq(otoScope),
+      ...scopedFilters(otoScope),
       order: { column: "created_at" },
     }),
     fetchAllRows<R>("slip_referrals", "from_name,to_name,inside_outside,other_chapter_member,from_is_other_chapter,to_is_other_chapter,bni_weeks(label)", {
-      eq: scopedEq(refScope),
+      ...scopedFilters(refScope),
       order: { column: "created_at" },
     }),
     fetchAllRows<R>("slip_tyfcb", "member_name,amount,other_chapter_member,thanker_name,bni_weeks(label)", {
-      eq: scopedEq(tyfcbScope),
+      ...scopedFilters(tyfcbScope),
       order: { column: "created_at" },
     }),
     fetchAllRows<R>("slip_visitors", "full_name,invited_by_name,bni_weeks(label)", {
-      eq: scopedEq(visScope),
+      ...scopedFilters(visScope),
       order: { column: "created_at" },
     }),
     fetchAllRows<R>("slip_ceus", "member_name,credits,bni_weeks(label)", {
-      eq: scopedEq(ceuScope),
+      ...scopedFilters(ceuScope),
       order: { column: "created_at" },
     }),
   ]);
@@ -186,18 +197,23 @@ export async function fetchReportSections(
   // Optional text filter: global q matches From/To/Detail; per-table
   // column filters narrow only their own table. Counts re-number.
   const needle = q.trim().toLowerCase();
-  const clean = (v: string | undefined): string => (v ?? "").trim().toLowerCase();
+  // Multi-select cell filter: "a" keeps rows containing "a"; "a,b" keeps a
+  // row matching ANY value (OR). Picks come from the distinct-value dropdown.
+  const terms = (v: string | undefined): string[] =>
+    (v ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const matchAny = (hay: string, list: string[]): boolean =>
+    list.length === 0 || list.some((t) => hay.toLowerCase().includes(t));
   const applyFilter = (key: ReportSectionKey, rows: ReportRow[]): ReportRow[] => {
     const cf = {
-      from: clean(col[key]?.from),
-      to: clean(col[key]?.to),
-      detail: clean(col[key]?.detail),
+      from: terms(col[key]?.from),
+      to: terms(col[key]?.to),
+      detail: terms(col[key]?.detail),
     };
     const kept = rows.filter((r) => {
       if (needle && !`${r.from} ${r.to} ${r.detail}`.toLowerCase().includes(needle)) return false;
-      if (cf.from && !r.from.toLowerCase().includes(cf.from)) return false;
-      if (cf.to && !r.to.toLowerCase().includes(cf.to)) return false;
-      if (cf.detail && !r.detail.toLowerCase().includes(cf.detail)) return false;
+      if (!matchAny(r.from, cf.from)) return false;
+      if (!matchAny(r.to, cf.to)) return false;
+      if (!matchAny(r.detail, cf.detail)) return false;
       return true;
     });
     return kept.map((r, i) => ({ ...r, count: i + 1 }));
@@ -354,7 +370,7 @@ export function rowCells(r: ReportRow, cols: ReportColumn[]): string[] {
   return cols.map((c) => cellOf(r, c.key));
 }
 
-/** Screen-style Total footer row for exports ("Total" under From, sum under TYFCB/CEU). */
+/** Total footer row for screens and exports ("Total" under From, sum under TYFCB/CEU). */
 export function totalRowCells(cols: ReportColumn[], totalAmount: number): string[] {
   const amt = totalAmount.toLocaleString("en-IN");
   return cols.map((c) => (c.key === "from" ? "Total" : c.key === "tyfcb" || c.key === "ceu" ? amt : ""));

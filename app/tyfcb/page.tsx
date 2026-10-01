@@ -3,6 +3,7 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 import { getCachedWeekOptions, listWeekScope } from "@/lib/server-weeks";
 import { distinctValues } from "@/lib/distinct";
 import { weekFilterOptions } from "@/lib/weeks";
+import { applyColumnFilter, applyWeekFilter, multiParts } from "@/lib/list-filters";
 
 export const dynamic = "force-dynamic";
 
@@ -22,19 +23,21 @@ export default async function TyfcbPage({
     .select("*, bni_weeks(label)", { count: "exact" })
     .order("created_at", { ascending: false });
   if (q) query = query.ilike("member_name", `%${q}%`);
-  if (weekId) query = query.eq("bni_week_id", weekId);
+  if (weekId) query = applyWeekFilter(query, weekId);
   const columnFilters: Record<string, string> = {};
   if (weekFilter) columnFilters.bni_week = weekFilter;
   for (const k of ["member_name", "other_chapter_member"]) {
     const v = (sp[`c_${k}`] || "").trim();
     if (v) {
-      query = query.ilike(k, `%${v}%`);
+      query = applyColumnFilter(query, k, v);
       columnFilters[k] = v;
     }
   }
   const amountV = (sp.c_amount || "").trim();
-  if (amountV && Number.isFinite(Number(amountV))) {
-    query = query.eq("amount", Number(amountV));
+  if (amountV) {
+    const nums = multiParts(amountV).map(Number).filter((n) => Number.isFinite(n));
+    if (nums.length === 1) query = query.eq("amount", nums[0]);
+    else if (nums.length > 1) query = query.in("amount", nums);
     columnFilters.amount = amountV;
   }
   const [{ data, count }, weeks, baseOptions] = await Promise.all([

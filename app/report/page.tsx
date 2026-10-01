@@ -64,6 +64,7 @@ function SectionTable({
       defaultValue={colFilters[key]}
       options={colOptions[key]}
       label={label}
+      multiSelect
     />
   );
   return (
@@ -80,6 +81,7 @@ function SectionTable({
                   options={[{ value: "all", label: "All weeks" }, ...weeks.map((w) => ({ value: w.id, label: w.label }))]}
                   label="BNI Week"
                   allLabel="Universal"
+                  multiSelect
                 />
               </th>
               <th>{headFilter("from", fromTo.from)}</th>
@@ -154,7 +156,17 @@ export default async function ReportPage({
     detail: sp[`cf_${key}_detail`] || "",
   });
   const allWeeks = weekId === "all";
-  const activeWeek = weeks.find((w) => w.id === weekId);
+  // week holds one id, a comma-separated list, or "all" (multi-select box).
+  const weekIds = allWeeks
+    ? []
+    : weekId.split(",").map((s) => s.trim()).filter(Boolean);
+  const activeWeeks = weekIds
+    .map((id) => weeks.find((w) => w.id === id))
+    .filter((w): w is (typeof weeks)[number] => w !== undefined);
+  const weeksLabel =
+    activeWeeks.length > 3
+      ? `${activeWeeks.length} meetings`
+      : activeWeeks.map((w) => w.label).join(" + ");
 
   const sectionsPromise = weekId
     ? fetchReportSections(weekId, q, {
@@ -213,14 +225,14 @@ export default async function ReportPage({
             Week Report
             <span className="count-badge">{total} slip(s)</span>
           </h1>
-          {allWeeks ? <p className="sub muted">All weeks</p> : activeWeek ? <p className="sub muted">{activeWeek.label}</p> : null}
+          {allWeeks ? <p className="sub muted">All weeks</p> : weeksLabel ? <p className="sub muted">{weeksLabel}</p> : null}
         </div>
         <div className="report-head-actions">
           <ImportPanel variant="toolbar" defaultCollapsed />
           <ReportExportButtons
             weekId={weekId}
             tab={tab}
-            scopeLabel={allWeeks ? "all-weeks" : (activeWeek?.label ?? "week")}
+            scopeLabel={allWeeks ? "all-weeks" : (weeksLabel || "week")}
           />
         </div>
       </div>
@@ -246,6 +258,7 @@ export default async function ReportPage({
             hiddenParams={{ tab }}
             includeAllOption
             hideSearch
+            multiSelect
           />
           {hasFilters || !allWeeks ? (
             <span className="clear-right">

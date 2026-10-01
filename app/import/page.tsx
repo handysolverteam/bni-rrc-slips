@@ -42,7 +42,7 @@ export default function ImportPage() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [openSkip, setOpenSkip] = useState<string | null>(null);
   // Header filters (client-side, like the other tables' column filters):
-  // "Imported On" picks a single day, "Week" picks a week label.
+  // "Imported On" picks a single day, "Week" multi-selects week labels.
   const [dateFilter, setDateFilter] = useState("");
   const [weekFilter, setWeekFilter] = useState("");
 
@@ -58,7 +58,7 @@ export default function ImportPage() {
   const filtered = useMemo(
     () =>
       batches.filter((b) => {
-        if (weekFilter && (b.bni_weeks?.label ?? "—") !== weekFilter) return false;
+        if (weekFilter && !weekFilter.split(",").includes(b.bni_weeks?.label ?? "—")) return false;
         if (dateFilter && localDateKey(b.created_at) !== dateFilter) return false;
         return true;
       }),
@@ -130,6 +130,7 @@ export default function ImportPage() {
                         label="Week"
                         allLabel="All weeks"
                         onApply={setWeekFilter}
+                        multiSelect
                       />
                     </th>
                     <th>Imported</th>

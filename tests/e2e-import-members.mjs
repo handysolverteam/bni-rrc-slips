@@ -144,8 +144,10 @@ const base = await dbSummary(weekId);
 const baseMembers = await count("members", {});
 const baseExport = await exportSummary(weekId);
 check(
+  // Baseline may grow with real imports; it must never shrink below the
+  // known floor and the export summary must match the DB exactly.
   "baseline is the known good state",
-  base.total === 213 && baseExport.total === 213 && baseExport.total === base.total,
+  base.total >= 213 && baseExport.total === base.total,
   `db=${base.total} export=${baseExport?.total} members=${baseMembers}`,
 );
 
