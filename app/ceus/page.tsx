@@ -6,7 +6,7 @@ import { weekFilterOptions } from "@/lib/weeks";
 
 export const dynamic = "force-dynamic";
 
-export default async function OneToOnesPage({
+export default async function CeusPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
@@ -18,31 +18,38 @@ export default async function OneToOnesPage({
   const { weekId, weekFilter } = await listWeekScope(sp);
   const sb = getSupabaseServer();
   let query = sb
-    .from("slip_one_to_ones")
+    .from("slip_ceus")
     .select("*, bni_weeks(label)", { count: "exact" })
     .order("created_at", { ascending: false });
-  if (q) query = query.or(`initiated_by_name.ilike.%${q}%,met_with_name.ilike.%${q}%`);
+  if (q) query = query.ilike("member_name", `%${q}%`);
   if (weekId) query = query.eq("bni_week_id", weekId);
   const columnFilters: Record<string, string> = {};
   if (weekFilter) columnFilters.bni_week = weekFilter;
-  for (const k of ["initiated_by_name", "met_with_name", "other_chapter_member"]) {
+  for (const k of ["member_name"]) {
     const v = (sp[`c_${k}`] || "").trim();
     if (v) {
       query = query.ilike(k, `%${v}%`);
       columnFilters[k] = v;
     }
   }
+  const creditsV = (sp.c_credits || "").trim();
+  if (creditsV && Number.isFinite(Number(creditsV))) {
+    query = query.eq("credits", Number(creditsV));
+    columnFilters.credits = creditsV;
+  }
   const [{ data, count }, weeks, baseOptions] = await Promise.all([
     query.range((page - 1) * pageSize, page * pageSize - 1),
     getCachedWeekOptions(),
     Promise.all([
-      distinctValues("slip_one_to_ones", "initiated_by_name"),
-      distinctValues("slip_one_to_ones", "met_with_name"),
-      distinctValues("slip_one_to_ones", "other_chapter_member"),
-    ]).then(([initiated_by_name, met_with_name, other_chapter_member]) => ({
-      initiated_by_name,
-      met_with_name,
-      other_chapter_member,
+      distinctValues("slip_ceus", "member_name"),
+      distinctValues("slip_ceus", "credits"),
+    ]).then(([member_name, credits]) => ({
+      member_name,
+      credits: credits
+        .map(Number)
+        .filter(Number.isFinite)
+        .sort((a, b) => a - b)
+        .map((n) => ({ value: String(n), label: String(n) })),
     })),
   ]);
   const rows = (data ?? []).map((r: Record<string, unknown>) => ({
@@ -52,24 +59,23 @@ export default async function OneToOnesPage({
 
   return (
     <ListShell
-      title="Slip 121"
-      kind="one-to-one"
+      title="Slip CEU"
+      kind="ceu"
       total={count ?? 0}
       page={page}
       pageSize={pageSize}
-      basePath="/one-to-ones"
+      basePath="/ceus"
       q={q}
       weekId={weekId}
       weeks={weeks}
       hideWeekBar
       columns={[
         { key: "bni_week", label: "BNI Week" },
-        { key: "initiated_by_name", label: "Initiated By" },
-        { key: "met_with_name", label: "Met With" },
-        { key: "other_chapter_member", label: "Other Member's Chapter" },
+        { key: "member_name", label: "BNI Member" },
+        { key: "credits", label: "CEU Credits" },
       ]}
       rows={rows}
-      filterable={["bni_week", "initiated_by_name", "met_with_name", "other_chapter_member"]}
+      filterable={["bni_week", "member_name", "credits"]}
       columnFilters={columnFilters}
       filterOptions={{ ...baseOptions, bni_week: weekFilterOptions(weeks) }}
     />

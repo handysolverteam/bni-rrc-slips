@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import SlipsTable from "@/components/SlipsTable";
 import FilterBar from "@/components/FilterBar";
+import type { ComboOption } from "@/components/SearchSelect";
 import type { WeekOption } from "@/lib/weeks";
 
 type Col = { key: string; label: string };
@@ -24,6 +25,7 @@ export default function ListShell({
   filterable = [],
   columnFilters = {},
   filterOptions = {},
+  hideWeekBar = false,
 }: {
   title: string;
   total: number;
@@ -39,15 +41,21 @@ export default function ListShell({
   kind?: string;
   filterable?: string[];
   columnFilters?: Record<string, string>;
-  filterOptions?: Record<string, string[]>;
+  filterOptions?: Record<string, ComboOption[]>;
+  /** Week lives in the header cell filter instead of the top bar. */
+  hideWeekBar?: boolean;
 }) {
   const router = useRouter();
+  const search = useSearchParams();
   const [isPending, startTransition] = useTransition();
-  const weekParam = weekId || "all";
-  const pageQuery = (p: number) =>
-    `${basePath}?q=${encodeURIComponent(q)}&week=${encodeURIComponent(weekParam)}&page=${p}`;
   const activeWeek = weeks.find((w) => w.id === weekId);
   const go = (url: string) => startTransition(() => router.push(url));
+  // Keep every active filter (q, week, c_* columns) across pagination.
+  const pageQuery = (p: number) => {
+    const params = new URLSearchParams(search.toString());
+    params.set("page", String(p));
+    return `${basePath}?${params.toString()}`;
+  };
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // Compact page list: 1 … c-1 c c+1 … N
@@ -81,7 +89,7 @@ export default function ListShell({
           basePath={basePath}
           q={q}
           weekId={weekId}
-          weeks={weeks}
+          weeks={hideWeekBar ? [] : weeks}
           hideSearch
           onNavigate={go}
         />

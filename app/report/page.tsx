@@ -51,7 +51,13 @@ function SectionTable({
   const cols = OPTIONAL_COLS.filter((c) => rows.some((r) => r[c.key].trim() !== ""));
   const baseCount = 5; // No, BNI Week, From, To, Type
   const fromTo = fromToLabelsFor(sectionKey);
-  const amtIdx = cols.findIndex((c) => c.key === "tyfcb");
+  // Sum column: TYFCB Amount for money sections, CEU Credits for the CEU section.
+  const sumKey = cols.some((c) => c.key === "tyfcb")
+    ? ("tyfcb" as const)
+    : cols.some((c) => c.key === "ceu")
+      ? ("ceu" as const)
+      : null;
+  const amtIdx = sumKey ? cols.findIndex((c) => c.key === sumKey) : -1;
   const headFilter = (key: "from" | "to" | "detail", label: string) => (
     <ColumnFilter
       paramKey={`cf_${sectionKey}_${key}`}
@@ -156,11 +162,13 @@ export default async function ReportPage({
         referral: colFor("referral"),
         tyfcb: colFor("tyfcb"),
         visitor: colFor("visitor"),
+        ceu: colFor("ceu"),
       }, {
         "one-to-one": sp["w_one-to-one"] || "",
         referral: sp["w_referral"] || "",
         tyfcb: sp["w_tyfcb"] || "",
         visitor: sp["w_visitor"] || "",
+        ceu: sp["w_ceu"] || "",
       })
     : Promise.resolve([]);
   const [sections, [fromOptions, toOptions, detailOptions]] = await Promise.all([
@@ -170,6 +178,7 @@ export default async function ReportPage({
       distinctValues("slip_referrals", "from_name"),
       distinctValues("slip_one_to_ones", "initiated_by_name"),
       distinctValues("slip_visitors", "invited_by_name"),
+      distinctValues("slip_ceus", "member_name"),
     ]).then((lists) => mergeDistinct(...lists)),
     Promise.all([
       distinctValues("slip_referrals", "to_name"),
@@ -186,10 +195,10 @@ export default async function ReportPage({
   ]);
   const colOptions = { from: fromOptions, to: toOptions, detail: detailOptions };
   const visible = tab === "all" ? sections : sections.filter((s) => s.key === tab);
-  const total = sections.reduce((n, s) => n + s.rows.length, 0);
+  const total = sections.reduce((n, s) => n + s.metricCount, 0);
   const hasFilters =
     q.trim() !== "" ||
-    ["one-to-one", "referral", "tyfcb", "visitor"].some(
+    ["one-to-one", "referral", "tyfcb", "visitor", "ceu"].some(
       (k) =>
         (sp[`w_${k}`] || "").trim() !== "" ||
         ["from", "to", "detail"].some((f) => (sp[`cf_${k}_${f}`] || "").trim() !== ""),
@@ -219,7 +228,7 @@ export default async function ReportPage({
       <div className="cards stat-cards">
         {sections.map((s) => (
           <div key={s.key} className="section-card" data-stat={s.key}>
-            <div className="num">{s.rows.length}</div>
+            <div className="num">{s.metricCount}</div>
             <div className="label">{s.title}</div>
             <div className="go">{s.stat ?? s.totalLabel}</div>
           </div>
@@ -258,7 +267,7 @@ export default async function ReportPage({
           rowCount={s.rows.length}
           badge={
             <span className="count-badge">
-              {s.rows.length} {s.totalLabel}
+              {s.metricCount} {s.totalLabel}
             </span>
           }
         >

@@ -32,14 +32,13 @@ type Preview = {
   boldUsed: boolean;
   errors: string[];
   rowIssues: RowIssues;
-  chapterMoves: { count: number; samples: string[] };
-  ceuRows: number;
 };
 
 /**
  * Shared import panel — identical UI on /import and /report:
  * multi-file picker, per-file preview cards (week, rows, bold,
- * new-vs-duplicate), one confirmation for all duplicates, per-file results.
+ * typing-mistake rows), one confirmation when bad rows exist, per-file
+ * results. Duplicates are never flagged: every entry is imported as-is.
  * variant "card": self-contained card with its own head (/import page).
  * variant "toolbar": solid accent button + dropdown panel — sits inside a
  * page toolbar next to other actions (report header).
@@ -97,8 +96,6 @@ export default function ImportPanel({
         ...data,
         filename: f.name,
         rowIssues: data.rowIssues ?? { skippedCount: 0, skippedSamples: [], warningCount: 0, warningSamples: [] },
-        chapterMoves: data.chapterMoves ?? { count: 0, samples: [] },
-        ceuRows: data.ceuRows ?? 0,
         counts: data.counts ?? {},
       };
     } catch (err) {
@@ -122,16 +119,10 @@ export default function ImportPanel({
     setReading(false);
   }
 
-  const duplicates = previews.filter((p) => p.weekExists && p.slipCount > 0);
+  // Only typing mistakes pause the import — duplicate entries are
+  // correct and never ask for confirmation (owner rule).
   const badFiles = previews.filter((p) => p.rowIssues.skippedCount > 0);
-  const moveFiles = previews.filter((p) => p.chapterMoves.count > 0);
-  // CEU rows have no duplicate check: importing them into a week that
-  // already holds CEUs doubles the data — always confirm those.
-  const ceuDupes = previews.filter(
-    (p) => p.ceuRows > 0 && (p.counts?.slip_ceus ?? 0) > 0,
-  );
-  const needsConfirm =
-    duplicates.length > 0 || badFiles.length > 0 || moveFiles.length > 0 || ceuDupes.length > 0;
+  const needsConfirm = badFiles.length > 0;
   const done = results.filter((r) => r.kind === "success");
   const failed = results.filter((r) => r.kind === "error");
 
@@ -145,35 +136,11 @@ export default function ImportPanel({
   }
 
   function confirmMessage(): string {
-    const parts: string[] = [];
-    if (duplicates.length > 0) {
-      parts.push(
-        duplicates.map((p) => `"${p.weekLabel}" already holds ${p.slipCount} slip(s)`).join("; ") +
-          ". Importing again keeps every existing row and adds only new ones.",
-      );
-    }
-    if (badFiles.length > 0) {
-      parts.push(
-        badFiles
-          .map((p) => `"${p.filename}" has ${p.rowIssues.skippedCount} bad row(s) (${p.rowIssues.skippedSamples.join("; ")})`)
-          .join("; ") + ". Those rows will be skipped — import the rest?",
-      );
-    }
-    if (moveFiles.length > 0) {
-      parts.push(
-        moveFiles
-          .map((p) => `"${p.filename}" moves ${p.chapterMoves.count} member(s) to another chapter (${p.chapterMoves.samples.join("; ")})`)
-          .join("; ") + ". Import with these moves?",
-      );
-    }
-    if (ceuDupes.length > 0) {
-      parts.push(
-        ceuDupes
-          .map((p) => `"${p.filename}" adds ${p.ceuRows} CEU row(s) to a week already holding ${p.counts.slip_ceus}`)
-          .join("; ") + ". CEUs have no duplicate check — re-importing doubles them. Import anyway?",
-      );
-    }
-    return parts.join(" ");
+    return (
+      badFiles
+        .map((p) => `"${p.filename}" has ${p.rowIssues.skippedCount} bad row(s) (${p.rowIssues.skippedSamples.join("; ")})`)
+        .join("; ") + ". Those rows will be skipped — import the rest?"
+    );
   }
 
   async function doImport() {
@@ -227,7 +194,7 @@ export default function ImportPanel({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    // Duplicates and/or number-instead-of-name rows: ask once for everything.
+    // Typing mistakes (bad rows): pause and ask before importing.
     if (needsConfirm) {
       setConfirming(true);
       return;
@@ -252,7 +219,7 @@ export default function ImportPanel({
         {reading ? <p className="muted">Reading files…</p> : null}
 
           {previews.map((p) => (
-            <div key={p.filename} className={`preview-card ${p.weekExists && p.slipCount > 0 ? "warn" : "ok"}`}>
+            <div key={p.filename} className={`preview-card ${p.rowIssues.skippedCount > 0 ? "warn" : "ok"}`}>
               <div className="preview-head">
                 <strong>{p.filename}</strong>
                 <button
@@ -270,8 +237,8 @@ export default function ImportPanel({
               {p.boldUsed ? " · bold chapter info found" : ""}
             </p>
               {p.weekExists && p.slipCount > 0 ? (
-                <p className="preview-warn">
-                  Already imported ({p.slipCount} slip(s)). Importing again keeps existing rows and adds only new ones.
+                <p className="preview-note">
+                  Week already holds {p.slipCount} slip(s) — every row in this file is imported (duplicates are kept).
                 </p>
               ) : (
                 <p className="preview-ok">New week — nothing imported yet.</p>
@@ -286,17 +253,6 @@ export default function ImportPanel({
                 <p className="preview-note">
                   {p.rowIssues.warningCount} row(s) import with defaults
                   ({p.rowIssues.warningSamples.join("; ")}).
-                </p>
-              ) : null}
-              {p.chapterMoves.count > 0 ? (
-                <p className="preview-note">
-                  {p.chapterMoves.count} member(s) will move chapters
-                  ({p.chapterMoves.samples.join("; ")}).
-                </p>
-              ) : null}
-              {p.ceuRows > 0 && (p.counts?.slip_ceus ?? 0) > 0 ? (
-                <p className="preview-warn">
-                  Week already holds {p.counts.slip_ceus} CEU row(s) — importing {p.ceuRows} more will duplicate them.
                 </p>
               ) : null}
           </div>
@@ -367,7 +323,7 @@ export default function ImportPanel({
 
       {confirming ? (
         <ConfirmDialog
-          title={duplicates.length > 0 ? `Import ${duplicates.length > 1 ? "these weeks" : "this week"} again?` : "Import with skipped rows?"}
+          title="Import with skipped rows?"
           message={confirmMessage()}
           confirmLabel={files.length > 1 ? `Import ${files.length} files` : "Import"}
           busy={busy}

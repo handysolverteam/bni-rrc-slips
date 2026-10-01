@@ -1,8 +1,8 @@
 import ListShell from "@/components/ListShell";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { defaultWeekId, getCachedWeekOptions } from "@/lib/server-weeks";
+import { getCachedWeekOptions, listWeekScope } from "@/lib/server-weeks";
 import { distinctValues } from "@/lib/distinct";
-import { latestImportedWeekId } from "@/lib/report-view";
+import { weekFilterOptions } from "@/lib/weeks";
 
 export const dynamic = "force-dynamic";
 
@@ -15,14 +15,7 @@ export default async function TyfcbPage({
   const page = Math.max(1, Number(sp.page || 1));
   const pageSize = 100;
   const q = sp.q || "";
-  const weekId =
-    sp.week === "all"
-      ? ""
-      : sp.week ||
-        (await Promise.all([defaultWeekId(), latestImportedWeekId()]).then(
-          ([d, l]) => d || l,
-        )) ||
-        "";
+  const { weekId, weekFilter } = await listWeekScope(sp);
   const sb = getSupabaseServer();
   let query = sb
     .from("slip_tyfcb")
@@ -31,6 +24,7 @@ export default async function TyfcbPage({
   if (q) query = query.ilike("member_name", `%${q}%`);
   if (weekId) query = query.eq("bni_week_id", weekId);
   const columnFilters: Record<string, string> = {};
+  if (weekFilter) columnFilters.bni_week = weekFilter;
   for (const k of ["member_name", "other_chapter_member"]) {
     const v = (sp[`c_${k}`] || "").trim();
     if (v) {
@@ -38,15 +32,26 @@ export default async function TyfcbPage({
       columnFilters[k] = v;
     }
   }
-  const [{ data, count }, weeks, filterOptions] = await Promise.all([
+  const amountV = (sp.c_amount || "").trim();
+  if (amountV && Number.isFinite(Number(amountV))) {
+    query = query.eq("amount", Number(amountV));
+    columnFilters.amount = amountV;
+  }
+  const [{ data, count }, weeks, baseOptions] = await Promise.all([
     query.range((page - 1) * pageSize, page * pageSize - 1),
     getCachedWeekOptions(),
     Promise.all([
       distinctValues("slip_tyfcb", "member_name"),
       distinctValues("slip_tyfcb", "other_chapter_member"),
-    ]).then(([member_name, other_chapter_member]) => ({
+      distinctValues("slip_tyfcb", "amount"),
+    ]).then(([member_name, other_chapter_member, amount]) => ({
       member_name,
       other_chapter_member,
+      amount: amount
+        .map(Number)
+        .filter(Number.isFinite)
+        .sort((a, b) => a - b)
+        .map((n) => ({ value: String(n), label: n.toLocaleString("en-IN") })),
     })),
   ]);
   const rows = (data ?? []).map((r: Record<string, unknown>) => ({
@@ -65,6 +70,7 @@ export default async function TyfcbPage({
       q={q}
       weekId={weekId}
       weeks={weeks}
+      hideWeekBar
       columns={[
         { key: "bni_week", label: "BNI Week" },
         { key: "member_name", label: "BNI Member" },
@@ -72,9 +78,9 @@ export default async function TyfcbPage({
         { key: "other_chapter_member", label: "Thanking Member's Chapter" },
       ]}
       rows={rows}
-      filterable={["member_name", "other_chapter_member"]}
+      filterable={["bni_week", "member_name", "amount", "other_chapter_member"]}
       columnFilters={columnFilters}
-      filterOptions={filterOptions}
+      filterOptions={{ ...baseOptions, bni_week: weekFilterOptions(weeks) }}
     />
   );
 }

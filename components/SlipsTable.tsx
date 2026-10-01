@@ -1,4 +1,5 @@
 import ColumnFilter from "@/components/ColumnFilter";
+import type { ComboOption } from "@/components/SearchSelect";
 
 type Col = { key: string; label: string };
 // Name column -> its "belongs to another chapter" flag (set from .xlsx bold).
@@ -43,7 +44,7 @@ export default function SlipsTable({
   rows: Record<string, unknown>[];
   filterable?: string[];
   initialFilters?: Record<string, string>;
-  filterOptions?: Record<string, string[]>;
+  filterOptions?: Record<string, ComboOption[]>;
   emptyHint?: string;
   loading?: boolean;
 }) {
@@ -65,6 +66,8 @@ export default function SlipsTable({
                       defaultValue={initialFilters[c.key] ?? ""}
                       options={filterOptions[c.key] ?? []}
                       label={c.label}
+                      allLabel={c.key === "bni_week" ? "All weeks" : undefined}
+                      clearValue={c.key === "bni_week" ? "all" : undefined}
                     />
                   ) : (
                     <span className="th-label">{c.label}</span>

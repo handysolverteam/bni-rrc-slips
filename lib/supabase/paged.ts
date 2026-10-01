@@ -1,5 +1,8 @@
 import { getSupabaseServer } from "./server";
 
+/** PostgREST `max-rows` on this project: one response never exceeds this. */
+const SERVER_MAX_ROWS = 1000;
+
 /**
  * Fetch every row of a query, page by page. Supabase silently clamps any
  * single response to its server max-rows (1000 on this project), so one
@@ -16,7 +19,10 @@ export async function fetchAllRows<T>(
   } = {},
 ): Promise<T[]> {
   const sb = getSupabaseServer();
-  const pageSize = opts.pageSize ?? 1000;
+  // A pageSize above max-rows is fatal: the response comes back truncated to
+  // 1000, rows.length < pageSize looks like the last page, and pagination
+  // stops early — silently losing data. Clamp to the server cap instead.
+  const pageSize = Math.min(opts.pageSize ?? SERVER_MAX_ROWS, SERVER_MAX_ROWS);
   const out: T[] = [];
   let from = 0;
   for (;;) {

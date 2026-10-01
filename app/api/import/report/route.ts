@@ -117,8 +117,9 @@ export async function POST(request: Request) {
     let skipped = 0;
     let tyfcbBlankAmount = 0;
     const errors: string[] = [...parseErrors];
-    // One entry per skipped row (validation + duplicates) so the Import
-    // history table can show exactly what was dropped and why.
+    // One entry per skipped row (typing mistakes only — duplicate rows
+    // are imported, never skipped) so the Import history table can show
+    // exactly what was dropped and why.
     const skipDetails: string[] = [];
     const pushSkip = (msg: string) => {
       if (skipDetails.length < 1000) skipDetails.push(msg);
@@ -142,8 +143,9 @@ export async function POST(request: Request) {
     // Chapter rule (lib/member-chapters.ts, shared with preview): a BOLD
     // name belongs to its Detail chapter; every other name belongs to HOME.
     // Exception: TYFCB names never file members (chapter undecided for
-    // now). One member per name: a bold Detail signal upgrades, never
-    // downgrades or duplicates. Visitor full names are never collected.
+    // now). The same name may belong to several chapters: each
+    // (name, chapter) pair is its own member row — never moved or merged.
+    // Visitor full names are never collected.
     const HOME_CHAPTER = resolveHomeChapter();
     // Pure pass: desired chapter per name, identical logic to preview.
     const desired = computeDesiredChapters(rows, HOME_CHAPTER);
@@ -180,7 +182,7 @@ export async function POST(request: Request) {
         if (!fromName || !toName) { pushRowError(`Row ${r.rowNumber}: Referral needs From + To`); continue; }
         if (isCountLikeName(fromName) || isCountLikeName(toName)) { pushRowError(`Row ${r.rowNumber}: Referral has a number instead of a name — skipped`); continue; }
         // Bold = other-chapter person: filed as a member of the Detail
-        // chapter (never skipped, never duplicated).
+        // chapter (never skipped).
         const fromOther = r.fromBold === true;
         const toOther = r.toBold === true;
         referralRows.push({ fromName, toName, fromKey: keyOf(r.from), toKey: keyOf(r.to), fromOther, toOther, other: detail, inside: insideOutside });
@@ -219,13 +221,15 @@ export async function POST(request: Request) {
     }
 
     // ---- 2) Resolve chapter + member ids: preloads + bulk inserts.
-    // One member per name: an existing row is reused; a bold Detail signal
-    // upgrades a home row to its correct chapter, never the reverse.
+    // One member row per (name, chapter): reuse it when it exists,
+    // create it otherwise. Same name in another chapter = separate row.
     const chapterIds = new Map<string, string>(); // lower chapter -> id
     const wantChapters = [...new Set([...desired.values()].map((v) => v.chapter))];
     if (wantChapters.length > 0) {
-      const { data: existingChapters } = await supabase.from("chapters").select("id,name").limit(2000);
-      for (const c of ((existingChapters ?? []) as { id: string; name: string }[])) {
+      // fetchAllRows, not .limit(2000): one response is capped at 1000 rows,
+      // and a chapter past that cap would look "missing" and be re-created.
+      const existingChapters = await fetchAllRows<{ id: string; name: string }>("chapters", "id,name", { pageSize: 1000 });
+      for (const c of existingChapters) {
         chapterIds.set(String(c.name).toLowerCase(), c.id);
       }
       const missingChapters = wantChapters.filter((n) => !chapterIds.has(n.toLowerCase()));
@@ -247,7 +251,6 @@ export async function POST(request: Request) {
         if (id) chapterIds.set(name.toLowerCase(), id);
       }
     }
-    const homeChapterId = chapterIds.get(HOME_CHAPTER.toLowerCase()) ?? null;
 
     type ExistingMember = { id: string; name: string; chapter_id: string };
     const memberIds = new Map<string, string>(); // lower name -> member id
@@ -264,24 +267,17 @@ export async function POST(request: Request) {
         const cid = chapterIds.get(w.chapter.toLowerCase());
         if (!cid) continue;
         const rows = byName.get(k) ?? [];
+        // Same name may belong to multiple chapters (owner rule): reuse
+        // the row for the wanted chapter when there is one, otherwise add
+        // a new (name, chapter) row. Existing rows are never moved or
+        // merged — a person can be a member/visitor/referral party under
+        // the same name in several chapters.
         const same = rows.find((r) => r.chapter_id === cid);
         if (same) {
           memberIds.set(k, same.id);
           continue;
         }
-        if (rows.length === 0) {
-          toCreate.push({ key: k, name: w.name, chapter_id: cid });
-          continue;
-        }
-        // Upgrade path: move a home row to its correct (bold-signalled)
-        // chapter; otherwise keep the first existing row. Never downgrade.
-        const homeRow = homeChapterId ? rows.find((r) => r.chapter_id === homeChapterId) : undefined;
-        if (cid !== homeChapterId && homeRow) {
-          await supabase.from("members").update({ chapter_id: cid }).eq("id", homeRow.id);
-          memberIds.set(k, homeRow.id);
-        } else {
-          memberIds.set(k, rows[0].id);
-        }
+        toCreate.push({ key: k, name: w.name, chapter_id: cid });
       }
       if (toCreate.length > 0) {
         const { data: created, error: createError } = await supabase
@@ -312,15 +308,6 @@ export async function POST(request: Request) {
                 .maybeSingle();
               id = (ins.data as { id: string } | null)?.id ?? null;
             }
-            if (!id) {
-              const anyFound = await supabase
-                .from("members")
-                .select("id")
-                .ilike("name", t.name)
-                .limit(1)
-                .maybeSingle();
-              id = (anyFound.data as { id: string } | null)?.id ?? null;
-            }
             if (id) memberIds.set(t.key, id);
           }
         }
@@ -328,27 +315,9 @@ export async function POST(request: Request) {
     }
     const midOf = (k: string | null): string | null => (k ? (memberIds.get(k) ?? null) : null);
 
-    // ---- 3) Build payloads, skipping duplicates already stored for this week.
-    // Keys mirror the dedupe unique indexes (lower() + nulls-as-empty).
-    const dkey = (parts: (string | number | null | undefined)[]) =>
-      JSON.stringify(parts.map((p) => (p ?? "").toString().toLowerCase()));
-
-    async function existingKeys(
-      table: string,
-      cols: string,
-      toKey: (e: Record<string, string | number | null>) => (string | number | null | undefined)[],
-    ): Promise<Set<string>> {
-      try {
-        const rows = await fetchAllRows<Record<string, string | number | null>>(table, cols, {
-          eq: [["bni_week_id", weekId]],
-          pageSize: 2000,
-        });
-        return new Set(rows.map((e) => dkey([weekId, ...toKey(e)])));
-      } catch {
-        return new Set();
-      }
-    }
-
+    // ---- 3) Build payloads and insert EVERY row.
+    // Owner rule: all file entries are correct — identical rows and
+    // re-imports are kept as-is; only typing mistakes are skipped above.
     async function bulkInsert(table: string, payloads: Record<string, unknown>[]) {
       for (let i = 0; i < payloads.length; i += 1000) {
         const chunk = payloads.slice(i, i + 1000);
@@ -361,39 +330,16 @@ export async function POST(request: Request) {
         for (const row of chunk) {
           const { error: rowError } = await supabase.from(table).insert(row);
           if (rowError && (rowError as { code?: string }).code === "23505") {
+            // Only possible while migration 003 (dedupe index drop) is pending.
             skipped++;
-            pushSkip(`${SLIP_LABELS[table] ?? table}: duplicate rejected by a database rule`);
+            pushSkip(`${SLIP_LABELS[table] ?? table}: duplicate rejected by a database rule — run supabase/migrations/003_allow_duplicate_slips.sql`);
           } else if (rowError) pushRowError(`${table}: ${rowError.message}`);
           else imported++;
         }
       }
     }
 
-    async function insertFresh(
-      table: string,
-      payloads: Record<string, unknown>[],
-      selectCols: string,
-      toKey: (e: Record<string, string | number | null>) => (string | number | null | undefined)[],
-    ) {
-      if (payloads.length === 0) return;
-      const seen = await existingKeys(table, selectCols, toKey);
-      const fresh = payloads.filter((p) => {
-        const k = dkey([weekId, ...toKey(p as Record<string, string | number | null>)]);
-        if (seen.has(k)) {
-          skipped++;
-          const parts = toKey(p as Record<string, string | number | null>)
-            .map((v) => (v ?? "").toString())
-            .filter(Boolean);
-          pushSkip(`${SLIP_LABELS[table] ?? table} duplicate: ${parts.join(" → ") || "row"} — already imported for this week`);
-          return false;
-        }
-        seen.add(k);
-        return true;
-      });
-      await bulkInsert(table, fresh);
-    }
-
-    await insertFresh(
+    await bulkInsert(
       "slip_referrals",
       referralRows.map((r) => ({
         bni_week_id: weekId,
@@ -407,11 +353,9 @@ export async function POST(request: Request) {
         to_is_other_chapter: r.toOther,
         import_batch_id: batchId,
       })),
-      "from_name,to_name,other_chapter_member,inside_outside",
-      (e) => [e.from_name, e.to_name, e.other_chapter_member, e.inside_outside],
     );
 
-    await insertFresh(
+    await bulkInsert(
       "slip_one_to_ones",
       otoRows.map((r) => ({
         bni_week_id: weekId,
@@ -424,11 +368,9 @@ export async function POST(request: Request) {
         met_with_is_other_chapter: r.metOther,
         import_batch_id: batchId,
       })),
-      "initiated_by_name,met_with_name,other_chapter_member",
-      (e) => [e.initiated_by_name, e.met_with_name, e.other_chapter_member],
     );
 
-    await insertFresh(
+    await bulkInsert(
       "slip_tyfcb",
       tyfcbRows.map((r) => ({
         bni_week_id: weekId,
@@ -440,11 +382,9 @@ export async function POST(request: Request) {
         thanker_is_other_chapter: r.thankerOther,
         import_batch_id: batchId,
       })),
-      "member_name,amount,other_chapter_member",
-      (e) => [e.member_name, Number(e.amount ?? 0), e.other_chapter_member],
     );
 
-    await insertFresh(
+    await bulkInsert(
       "slip_visitors",
       visitorRows.map((r) => ({
         bni_week_id: weekId,
@@ -453,11 +393,8 @@ export async function POST(request: Request) {
         invited_by_name: r.inviterRaw,
         import_batch_id: batchId,
       })),
-      "full_name,invited_by_name",
-      (e) => [e.full_name, e.invited_by_name],
     );
 
-    // slip_ceus has no dedupe index: always insert.
     await bulkInsert(
       "slip_ceus",
       ceuRows.map((r) => ({

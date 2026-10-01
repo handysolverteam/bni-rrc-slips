@@ -1,8 +1,8 @@
 import ListShell from "@/components/ListShell";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { defaultWeekId, getCachedWeekOptions } from "@/lib/server-weeks";
+import { getCachedWeekOptions, listWeekScope } from "@/lib/server-weeks";
 import { distinctValues } from "@/lib/distinct";
-import { latestImportedWeekId } from "@/lib/report-view";
+import { weekFilterOptions } from "@/lib/weeks";
 
 export const dynamic = "force-dynamic";
 
@@ -15,14 +15,7 @@ export default async function VisitorsPage({
   const page = Math.max(1, Number(sp.page || 1));
   const pageSize = 100;
   const q = sp.q || "";
-  const weekId =
-    sp.week === "all"
-      ? ""
-      : sp.week ||
-        (await Promise.all([defaultWeekId(), latestImportedWeekId()]).then(
-          ([d, l]) => d || l,
-        )) ||
-        "";
+  const { weekId, weekFilter } = await listWeekScope(sp);
   const sb = getSupabaseServer();
   let query = sb
     .from("slip_visitors")
@@ -31,6 +24,7 @@ export default async function VisitorsPage({
   if (q) query = query.or(`full_name.ilike.%${q}%,invited_by_name.ilike.%${q}%`);
   if (weekId) query = query.eq("bni_week_id", weekId);
   const columnFilters: Record<string, string> = {};
+  if (weekFilter) columnFilters.bni_week = weekFilter;
   for (const k of ["full_name", "company", "invited_by_name", "email", "phone"]) {
     const v = (sp[`c_${k}`] || "").trim();
     if (v) {
@@ -38,7 +32,7 @@ export default async function VisitorsPage({
       columnFilters[k] = v;
     }
   }
-  const [{ data, count }, weeks, filterOptions] = await Promise.all([
+  const [{ data, count }, weeks, baseOptions] = await Promise.all([
     query.range((page - 1) * pageSize, page * pageSize - 1),
     getCachedWeekOptions(),
     Promise.all([
@@ -71,6 +65,7 @@ export default async function VisitorsPage({
       q={q}
       weekId={weekId}
       weeks={weeks}
+      hideWeekBar
       columns={[
         { key: "full_name", label: "Full Name" },
         { key: "company", label: "Company" },
@@ -80,9 +75,9 @@ export default async function VisitorsPage({
         { key: "phone", label: "Phone" },
       ]}
       rows={rows}
-      filterable={["full_name", "company", "invited_by_name", "email", "phone"]}
+      filterable={["bni_week", "full_name", "company", "invited_by_name", "email", "phone"]}
       columnFilters={columnFilters}
-      filterOptions={filterOptions}
+      filterOptions={{ ...baseOptions, bni_week: weekFilterOptions(weeks) }}
     />
   );
 }

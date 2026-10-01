@@ -1,8 +1,8 @@
 import ListShell from "@/components/ListShell";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { defaultWeekId, getCachedWeekOptions } from "@/lib/server-weeks";
+import { getCachedWeekOptions, listWeekScope } from "@/lib/server-weeks";
 import { distinctValues } from "@/lib/distinct";
-import { latestImportedWeekId } from "@/lib/report-view";
+import { weekFilterOptions } from "@/lib/weeks";
 
 export const dynamic = "force-dynamic";
 
@@ -15,14 +15,7 @@ export default async function ReferralsPage({
   const page = Math.max(1, Number(sp.page || 1));
   const pageSize = 100;
   const q = sp.q || "";
-  const weekId =
-    sp.week === "all"
-      ? ""
-      : sp.week ||
-        (await Promise.all([defaultWeekId(), latestImportedWeekId()]).then(
-          ([d, l]) => d || l,
-        )) ||
-        "";
+  const { weekId, weekFilter } = await listWeekScope(sp);
   const sb = getSupabaseServer();
   let query = sb
     .from("slip_referrals")
@@ -31,6 +24,7 @@ export default async function ReferralsPage({
   if (q) query = query.or(`from_name.ilike.%${q}%,to_name.ilike.%${q}%`);
   if (weekId) query = query.eq("bni_week_id", weekId);
   const columnFilters: Record<string, string> = {};
+  if (weekFilter) columnFilters.bni_week = weekFilter;
   for (const k of ["from_name", "to_name", "other_chapter_member", "inside_outside"]) {
     const v = (sp[`c_${k}`] || "").trim();
     if (v) {
@@ -38,7 +32,7 @@ export default async function ReferralsPage({
       columnFilters[k] = v;
     }
   }
-  const [{ data, count }, weeks, filterOptions] = await Promise.all([
+  const [{ data, count }, weeks, baseOptions] = await Promise.all([
     query.range((page - 1) * pageSize, page * pageSize - 1),
     getCachedWeekOptions(),
     Promise.all([
@@ -69,6 +63,7 @@ export default async function ReferralsPage({
       q={q}
       weekId={weekId}
       weeks={weeks}
+      hideWeekBar
       columns={[
         { key: "bni_week", label: "BNI Week" },
         { key: "from_name", label: "Referral From" },
@@ -77,9 +72,9 @@ export default async function ReferralsPage({
         { key: "inside_outside", label: "Inside Or Outside" },
       ]}
       rows={rows}
-      filterable={["from_name", "to_name", "other_chapter_member", "inside_outside"]}
+      filterable={["bni_week", "from_name", "to_name", "other_chapter_member", "inside_outside"]}
       columnFilters={columnFilters}
-      filterOptions={filterOptions}
+      filterOptions={{ ...baseOptions, bni_week: weekFilterOptions(weeks) }}
     />
   );
 }

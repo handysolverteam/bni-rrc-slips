@@ -1,8 +1,8 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paged";
-import { createTtlCache } from "@/lib/cache";
+import { createTtlCache, sharedState } from "@/lib/cache";
 
-export type ReportSectionKey = "one-to-one" | "referral" | "tyfcb" | "visitor";
+export type ReportSectionKey = "one-to-one" | "referral" | "tyfcb" | "visitor" | "ceu";
 
 export type ReportRow = {
   count: number;
@@ -24,9 +24,15 @@ export type SectionData = {
   totalLabel: string;
   /** Extra summary line, e.g. total TYFCB amount. */
   stat: string | null;
-  /** Raw numeric total for the footer sum row (TYFCB only). */
+  /** Raw numeric total for the footer sum row (TYFCB/CEU only). */
   totalAmount: number | null;
   rows: ReportRow[];
+  /**
+   * Metric shown on stat cards/badges: rows.length everywhere except
+   * One-to-One, where a bold (other-chapter) side counts 1 and a
+   * both-home meeting counts 2 (owner rule).
+   */
+  metricCount: number;
 };
 
 export const REPORT_HEADERS = [
@@ -70,12 +76,13 @@ export async function fetchReportSections(
   const refScope = scopeOf("referral");
   const tyfcbScope = scopeOf("tyfcb");
   const visScope = scopeOf("visitor");
+  const ceuScope = scopeOf("ceu");
 
   const scopedEq = (scope: string): [string, string][] =>
     scope === "all" ? [] : [["bni_week_id", scope]];
 
   type R = Record<string, string | boolean | number | null | { label?: string } | { label?: string }[]>;
-  const [oto, ref, tyfcb, vis] = await Promise.all([
+  const [oto, ref, tyfcb, vis, ceu] = await Promise.all([
     fetchAllRows<R>("slip_one_to_ones", "initiated_by_name,met_with_name,other_chapter_member,initiated_by_is_other_chapter,met_with_is_other_chapter,bni_weeks(label)", {
       eq: scopedEq(otoScope),
       order: { column: "created_at" },
@@ -90,6 +97,10 @@ export async function fetchReportSections(
     }),
     fetchAllRows<R>("slip_visitors", "full_name,invited_by_name,bni_weeks(label)", {
       eq: scopedEq(visScope),
+      order: { column: "created_at" },
+    }),
+    fetchAllRows<R>("slip_ceus", "member_name,credits,bni_weeks(label)", {
+      eq: scopedEq(ceuScope),
       order: { column: "created_at" },
     }),
   ]);
@@ -158,6 +169,20 @@ export async function fetchReportSections(
     toBold: false,
   }));
 
+  const ceuRows: ReportRow[] = ceu.map((r, i) => ({
+    count: i + 1,
+    week: weekOf(r),
+    from: String(r.member_name ?? ""),
+    to: "",
+    slipType: "CEU",
+    insideOutside: "",
+    tyfcb: "",
+    ceu: String(r.credits ?? ""),
+    detail: "",
+    fromBold: false,
+    toBold: false,
+  }));
+
   // Optional text filter: global q matches From/To/Detail; per-table
   // column filters narrow only their own table. Counts re-number.
   const needle = q.trim().toLowerCase();
@@ -182,14 +207,19 @@ export async function fetchReportSections(
   const fRef = applyFilter("referral", refRows);
   const fTyfcb = applyFilter("tyfcb", tyfcbRows);
   const fVis = applyFilter("visitor", visRows);
+  const fCeu = applyFilter("ceu", ceuRows);
   const fTyfcbSum = fTyfcb.reduce(
     (n, r) => n + (Number(r.tyfcb.replace(/[^0-9.]/g, "")) || 0),
     0,
   );
+  const fCeuSum = fCeu.reduce((n, r) => n + (Number(r.ceu) || 0), 0);
+  // Owner counting rule: a 121 with a bold (other-chapter) side is 1,
+  // a meeting between two home members is 2.
+  const otoMetric = fOto.reduce((n, r) => n + (r.fromBold || r.toBold ? 1 : 2), 0);
 
   return [
-    { key: "one-to-one", title: "One-to-One", totalLabel: "121s", stat: null, totalAmount: null, rows: fOto },
-    { key: "referral", title: "Referral", totalLabel: "Referrals", stat: null, totalAmount: null, rows: fRef },
+    { key: "one-to-one", title: "One-to-One", totalLabel: "121s", stat: null, totalAmount: null, rows: fOto, metricCount: otoMetric },
+    { key: "referral", title: "Referral", totalLabel: "Referrals", stat: null, totalAmount: null, rows: fRef, metricCount: fRef.length },
     {
       key: "tyfcb",
       title: "TYFCB",
@@ -197,8 +227,18 @@ export async function fetchReportSections(
       stat: fTyfcb.length > 0 ? `${Math.round(fTyfcbSum).toLocaleString("en-IN")} total` : null,
       totalAmount: fTyfcb.length > 0 ? Math.round(fTyfcbSum) : null,
       rows: fTyfcb,
+      metricCount: fTyfcb.length,
     },
-    { key: "visitor", title: "Visitor", totalLabel: "Visitors", stat: null, totalAmount: null, rows: fVis },
+    { key: "visitor", title: "Visitor", totalLabel: "Visitors", stat: null, totalAmount: null, rows: fVis, metricCount: fVis.length },
+    {
+      key: "ceu",
+      title: "CEU",
+      totalLabel: "CEUs",
+      stat: fCeu.length > 0 ? `${Math.round(fCeuSum).toLocaleString("en-IN")} credits` : null,
+      totalAmount: fCeu.length > 0 ? Math.round(fCeuSum) : null,
+      rows: fCeu,
+      metricCount: fCeu.length,
+    },
   ];
 }
 
@@ -215,7 +255,7 @@ async function fetchLatestImportedWeekId(): Promise<string | null> {
 }
 
 // Changes only on import: cache per process for 5 minutes.
-const latestCache = createTtlCache<string | null>(5 * 60 * 1000);
+const latestCache = sharedState("reportView.latestWeek", () => createTtlCache<string | null>(5 * 60 * 1000));
 
 export const latestImportedWeekId = (): Promise<string | null> =>
   latestCache.get(fetchLatestImportedWeekId);
@@ -279,6 +319,9 @@ export function fromToLabelsFor(key: ReportSectionKey): { from: string; to: stri
       return { from: "Thanker", to: "BNI Member" };
     case "visitor":
       return { from: "Invited By", to: "Visitor" };
+    case "ceu":
+      // CEU rows carry only the attendee (From); To stays empty.
+      return { from: "BNI Member", to: "To" };
   }
 }
 
@@ -311,8 +354,8 @@ export function rowCells(r: ReportRow, cols: ReportColumn[]): string[] {
   return cols.map((c) => cellOf(r, c.key));
 }
 
-/** Screen-style Total footer row for exports ("Total" under From, sum under TYFCB Amount). */
+/** Screen-style Total footer row for exports ("Total" under From, sum under TYFCB/CEU). */
 export function totalRowCells(cols: ReportColumn[], totalAmount: number): string[] {
   const amt = totalAmount.toLocaleString("en-IN");
-  return cols.map((c) => (c.key === "from" ? "Total" : c.key === "tyfcb" ? amt : ""));
+  return cols.map((c) => (c.key === "from" ? "Total" : c.key === "tyfcb" || c.key === "ceu" ? amt : ""));
 }

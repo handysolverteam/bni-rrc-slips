@@ -1,7 +1,8 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import ImportPanel from "@/components/ImportPanel";
+import ColumnFilter from "@/components/ColumnFilter";
 
 type Batch = {
   id: string;
@@ -31,9 +32,38 @@ function skipEntries(b: Batch): string[] | null {
   return b.error_message.split(" | ").map((s) => s.trim()).filter(Boolean);
 }
 
+/** Local calendar day (YYYY-MM-DD) of an import timestamp — matches the "Imported On" cell. */
+function localDateKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export default function ImportPage() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [openSkip, setOpenSkip] = useState<string | null>(null);
+  // Header filters (client-side, like the other tables' column filters):
+  // "Imported On" picks a single day, "Week" picks a week label.
+  const [dateFilter, setDateFilter] = useState("");
+  const [weekFilter, setWeekFilter] = useState("");
+
+  const weekOptions = useMemo(() => {
+    const seen: string[] = [];
+    for (const b of batches) {
+      const label = b.bni_weeks?.label ?? "—";
+      if (!seen.includes(label)) seen.push(label);
+    }
+    return seen;
+  }, [batches]);
+
+  const filtered = useMemo(
+    () =>
+      batches.filter((b) => {
+        if (weekFilter && (b.bni_weeks?.label ?? "—") !== weekFilter) return false;
+        if (dateFilter && localDateKey(b.created_at) !== dateFilter) return false;
+        return true;
+      }),
+    [batches, weekFilter, dateFilter],
+  );
 
   async function refreshHistory() {
     try {
@@ -63,15 +93,58 @@ export default function ImportPage() {
               <table className="grid">
                 <thead>
                   <tr>
-                    <th>Imported On</th>
+                    <th>
+                      <span className="col-filter-wrap">
+                        <span
+                          className={`combo${dateFilter ? " has-value" : ""}`}
+                          title="Filter by import date"
+                        >
+                          <span className="combo-field">
+                            <input
+                              type="date"
+                              className="combo-input col-filter-date"
+                              value={dateFilter}
+                              aria-label="Imported On"
+                              onChange={(e) => setDateFilter(e.target.value)}
+                            />
+                            {dateFilter ? (
+                              <button
+                                type="button"
+                                className="combo-adorn"
+                                aria-label="Clear date filter"
+                                onClick={() => setDateFilter("")}
+                              >
+                                ✕
+                              </button>
+                            ) : null}
+                          </span>
+                        </span>
+                      </span>
+                    </th>
                     <th>File</th>
-                    <th>Week</th>
+                    <th>
+                      <ColumnFilter
+                        paramKey="week"
+                        defaultValue={weekFilter}
+                        options={weekOptions}
+                        label="Week"
+                        allLabel="All weeks"
+                        onApply={setWeekFilter}
+                      />
+                    </th>
                     <th>Imported</th>
                     <th>Skipped</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {batches.map((b) => {
+                  {filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="muted">
+                        No imports match the selected filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    filtered.map((b) => {
                     const open = openSkip === b.id;
                     const entries = skipEntries(b);
                     return (
@@ -124,7 +197,7 @@ export default function ImportPage() {
                         )}
                       </Fragment>
                     );
-                  })}
+                    }))}
                 </tbody>
               </table>
             </div>

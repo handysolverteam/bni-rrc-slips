@@ -24,14 +24,25 @@ export default async function MembersPage({
       columnFilters[k] = v;
     }
   }
+  const chapterV = (sp.c_chapter || "").trim();
+  if (chapterV) {
+    const { data: chapters } = await sb.from("chapters").select("id, name");
+    const hit = (chapters ?? []).find(
+      (c) => String(c.name ?? "").trim().toLowerCase() === chapterV.toLowerCase(),
+    );
+    query = query.eq("chapter_id", hit?.id ?? "00000000-0000-0000-0000-000000000000");
+    columnFilters.chapter = chapterV;
+  }
   const [{ data, count }, filterOptions] = await Promise.all([
     query.range((page - 1) * pageSize, page * pageSize - 1),
     Promise.all([
+      distinctValues("chapters", "name"),
       distinctValues("members", "name"),
       distinctValues("members", "category"),
       distinctValues("members", "company"),
       distinctValues("members", "phone"),
-    ]).then(([name, category, company, phone]) => ({
+    ]).then(([chapter, name, category, company, phone]) => ({
+      chapter,
       name,
       category,
       company,
@@ -64,7 +75,7 @@ export default async function MembersPage({
         { key: "phone", label: "Phone" },
       ]}
       rows={rows}
-      filterable={["name", "category", "company", "phone"]}
+      filterable={["name", "chapter", "category", "company", "phone"]}
       columnFilters={columnFilters}
       filterOptions={filterOptions}
     />

@@ -36,3 +36,6 @@ export async function visitorsGET(req: Request) {
 export async function tyfcbGET(req: Request) {
   return list("slip_tyfcb", req, (q) => `member_name.ilike.%${q}%`);
 }
+export async function ceusGET(req: Request) {
+  return list("slip_ceus", req, (q) => `member_name.ilike.%${q}%`);
+}

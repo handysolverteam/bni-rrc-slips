@@ -26,6 +26,16 @@ export type WeekOption = {
   week_no?: number | null;
 };
 
+/** Header "BNI Week" column-filter options: "All weeks" first, then each week. */
+export function weekFilterOptions(
+  weeks: WeekOption[],
+): { value: string; label: string }[] {
+  return [
+    { value: "all", label: "All weeks" },
+    ...weeks.map((w) => ({ value: w.id, label: w.label })),
+  ];
+}
+
 export function buildWeekLabel(isoDate: string): string {
   const parts = isoDate.split("-");
   if (parts.length !== 3) return "";

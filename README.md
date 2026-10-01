@@ -2,10 +2,10 @@
 
 Next.js + Supabase app for weekly BNI Report XLS import, slip browsing, and AI chat.
 
-## Setup (fresh Supabase account — 2 files, in order)
+## Setup (fresh Supabase account — migrations in order)
 1. `npm install`
 2. Copy `.env.example` to `.env.local`, fill Supabase URL + keys (+ `GEMINI_API_KEY` for chat).
-3. In Supabase SQL editor run `supabase/migrations/001_schema.sql`, then `supabase/seed.sql`.
+3. In Supabase SQL editor run `supabase/migrations/001_schema.sql`, `002_member_chapters.sql`, `003_allow_duplicate_slips.sql`, then `supabase/seed.sql`. Existing projects: run any missing migration — 003 drops the slip dedupe indexes so duplicate entries are never skipped.
 4. `npm run dev` → `/import` to upload a Report XLS (week is read from the file title).
 
 ## Docs

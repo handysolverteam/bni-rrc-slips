@@ -70,13 +70,10 @@ export function computeDesiredChapters(
       if (r.from && r.to && !isCountLikeName(fromName))
         wantName(r.from, r.fromBold === true, detail);
     } else {
+      // CEU attendees always file HOME (owner rule), even when bold.
       const name = fromName || toName;
       if (!name || isCountLikeName(name)) continue;
-      wantName(
-        r.from || r.to,
-        fromName ? r.fromBold === true : r.toBold === true,
-        detail,
-      );
+      want(r.from || r.to, home, false);
     }
   }
   return desired;

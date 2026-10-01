@@ -1,4 +1,4 @@
-import { createTtlCache } from "./cache";
+import { createTtlCache, sharedState } from "./cache";
 import { fetchAllRows } from "@/lib/supabase/paged";
 
 type ListCache = ReturnType<typeof createTtlCache<string[]>>;
@@ -6,7 +6,9 @@ type ListCache = ReturnType<typeof createTtlCache<string[]>>;
 // Distinct values power the column-filter dropdowns. They change only on
 // import, and computing one downloads the whole column — cache per process
 // for 5 minutes (import clears explicitly). Keyed by `table.column`.
-const caches = new Map<string, ListCache>();
+// sharedState: the import ROUTE and the page RENDER are separate module
+// graphs — without it, clearing from the route would miss the page's copy.
+const caches = sharedState("distinct.caches", () => new Map<string, ListCache>());
 
 function cacheFor(key: string): ListCache {
   let c = caches.get(key);

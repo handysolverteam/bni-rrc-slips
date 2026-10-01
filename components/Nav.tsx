@@ -11,6 +11,7 @@ const links = [
   { href: "/one-to-ones", label: "Slip 121", exact: false },
   { href: "/visitors", label: "Slip Visitors", exact: false },
   { href: "/tyfcb", label: "Slip TYFCB", exact: false },
+  { href: "/ceus", label: "Slip CEU", exact: false },
   { href: "/report", label: "Report", exact: false },
   { href: "/chat", label: "Chat", exact: false },
 ];

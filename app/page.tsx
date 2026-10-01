@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paged";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,7 @@ const sections = [
   { href: "/one-to-ones", label: "Slip 121", table: "slip_one_to_ones", kind: "one-to-one" },
   { href: "/visitors", label: "Slip Visitors", table: "slip_visitors", kind: "visitor" },
   { href: "/tyfcb", label: "Slip TYFCB", table: "slip_tyfcb", kind: "tyfcb" },
+  { href: "/ceus", label: "Slip CEU", table: "slip_ceus", kind: "ceu" },
 ];
 
 async function getCounts(): Promise<Record<string, number | null>> {
@@ -16,6 +18,20 @@ async function getCounts(): Promise<Record<string, number | null>> {
     const sb = getSupabaseServer();
     const entries = await Promise.all(
       sections.map(async (s) => {
+        // One-to-One card shows the owner count: a bold (other-chapter)
+        // side counts 1, a meeting between two home members counts 2.
+        if (s.table === "slip_one_to_ones") {
+          const rows = await fetchAllRows<{ initiated_by_is_other_chapter: boolean | null; met_with_is_other_chapter: boolean | null }>(
+            "slip_one_to_ones",
+            "initiated_by_is_other_chapter,met_with_is_other_chapter",
+            { pageSize: 1000 },
+          );
+          const weighted = rows.reduce(
+            (n, r) => n + (r.initiated_by_is_other_chapter === true || r.met_with_is_other_chapter === true ? 1 : 2),
+            0,
+          );
+          return [s.table, weighted] as const;
+        }
         const { count } = await sb.from(s.table).select("id", { count: "exact" }).limit(1); // NOTE: head:true silently returns count=null in this client version
         return [s.table, count] as const;
       })

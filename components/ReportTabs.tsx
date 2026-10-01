@@ -19,6 +19,7 @@ export default function ReportTabs({
     { key: "referral", label: "Referrals" },
     { key: "tyfcb", label: "TYFCB" },
     { key: "visitor", label: "Visitors" },
+    { key: "ceu", label: "CEU" },
   ];
 
   return (

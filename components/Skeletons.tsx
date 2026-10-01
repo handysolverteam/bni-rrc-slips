@@ -170,6 +170,7 @@ const HOME_SECTIONS = [
   { href: "/one-to-ones", label: "Slip 121", kind: "one-to-one", numW: 58 },
   { href: "/visitors", label: "Slip Visitors", kind: "visitor", numW: 40 },
   { href: "/tyfcb", label: "Slip TYFCB", kind: "tyfcb", numW: 58 },
+  { href: "/ceus", label: "Slip CEU", kind: "ceu", numW: 48 },
 ];
 
 export function HomeSkeleton() {
@@ -224,7 +225,7 @@ const REPORT_SECTIONS = [
     key: "one-to-one",
     title: "One-to-One",
     suffix: "121s",
-    rows: 62,
+    rows: 43,
     badgeW: 15,
     statW: 42,
     tyfcb: false,
@@ -234,9 +235,9 @@ const REPORT_SECTIONS = [
     key: "referral",
     title: "Referral",
     suffix: "Referrals",
-    rows: 135,
-    badgeW: 23,
-    statW: 63,
+    rows: 72,
+    badgeW: 15,
+    statW: 42,
     tyfcb: false,
     sum: false,
   },
@@ -244,7 +245,7 @@ const REPORT_SECTIONS = [
     key: "tyfcb",
     title: "TYFCB",
     suffix: "Slips",
-    rows: 94,
+    rows: 45,
     badgeW: 15,
     statW: 42,
     tyfcb: true,
@@ -254,11 +255,21 @@ const REPORT_SECTIONS = [
     key: "visitor",
     title: "Visitor",
     suffix: "Visitors",
-    rows: 6,
-    badgeW: 8,
-    statW: 21,
+    rows: 11,
+    badgeW: 15,
+    statW: 42,
     tyfcb: false,
     sum: false,
+  },
+  {
+    key: "ceu",
+    title: "CEU",
+    suffix: "CEUs",
+    rows: 12,
+    badgeW: 15,
+    statW: 42,
+    tyfcb: false,
+    sum: true,
   },
 ] as const;
 
@@ -266,14 +277,22 @@ function ReportSectionTable({
   sectionKey,
   rows,
   withTyfcb,
+  withCeu,
   withSum,
 }: {
   sectionKey: ReportSectionKey;
   rows: number;
   withTyfcb: boolean;
+  withCeu: boolean;
   withSum: boolean;
 }) {
-  const colCount = 5 + (withTyfcb ? 1 : 0) + 1; // base 5 + optional tyfcb + detail
+  // CEU rows never carry a Detail value, so the real table drops that column.
+  const withDetail = !withCeu;
+  // Real "One-to-One" slips wrap onto two lines in the Slip Type column,
+  // so those rows render taller (57px vs 39px) — mirror that height.
+  const barH = sectionKey === "one-to-one" ? 36 : 18;
+  const colCount =
+    5 + (withTyfcb ? 1 : 0) + (withCeu ? 1 : 0) + (withDetail ? 1 : 0);
   const fromTo = fromToLabelsFor(sectionKey);
   return (
     <div className="table-card">
@@ -313,14 +332,21 @@ function ReportSectionTable({
                   <span className="th-label">TYFCB Amount</span>
                 </th>
               ) : null}
-              <th>
-                <ColumnFilter
-                  paramKey={`sk_d_${sectionKey}`}
-                  defaultValue=""
-                  options={[]}
-                  label={detailLabelFor(sectionKey)}
-                />
-              </th>
+              {withCeu ? (
+                <th>
+                  <span className="th-label">CEU Credits</span>
+                </th>
+              ) : null}
+              {withDetail ? (
+                <th>
+                  <ColumnFilter
+                    paramKey={`sk_d_${sectionKey}`}
+                    defaultValue=""
+                    options={[]}
+                    label={detailLabelFor(sectionKey)}
+                  />
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -329,7 +355,7 @@ function ReportSectionTable({
                 {Array.from({ length: colCount }, (_, j) => (
                   <td key={j}>
                     <Bar
-                      h={18}
+                      h={barH}
                       w={`${CELL_W[(i + j) % CELL_W.length]}%`}
                       r={4}
                     />
@@ -349,7 +375,7 @@ function ReportSectionTable({
                     <Bar w={74} h={16} r={4} />
                   </strong>
                 </td>
-                <td />
+                {withDetail ? <td /> : null}
               </tr>
             </tfoot>
           ) : null}
@@ -390,6 +416,8 @@ export function ReportSkeleton() {
             <div className="go">
               {s.key === "tyfcb" ? (
                 <Bar w={104} h={13} r={4} />
+              ) : s.key === "ceu" ? (
+                <Bar w={74} h={13} r={4} />
               ) : (
                 s.suffix
               )}
@@ -450,6 +478,7 @@ export function ReportSkeleton() {
               sectionKey={s.key}
               rows={s.rows}
               withTyfcb={s.tyfcb}
+              withCeu={s.key === "ceu"}
               withSum={s.sum}
             />
           )}

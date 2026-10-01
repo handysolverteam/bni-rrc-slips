@@ -1,11 +1,13 @@
-import { createTtlCache } from "./cache";
+import { createTtlCache, sharedState } from "./cache";
+import { latestImportedWeekId } from "./report-view";
 import { getSupabaseServer } from "./supabase/server";
 import { isoWeekNumber, type WeekOption } from "./weeks";
 
 // The week calendar changes only on import: cache per process for 5 minutes.
-const cache = createTtlCache<WeekOption[]>(5 * 60 * 1000);
+// sharedState keeps ONE instance across page and route-handler bundles.
+const cache = sharedState("serverWeeks.options", () => createTtlCache<WeekOption[]>(5 * 60 * 1000));
 // Default week = weeks list + import_batches scan; recompute only on import.
-const defaultCache = createTtlCache<string | null>(5 * 60 * 1000);
+const defaultCache = sharedState("serverWeeks.default", () => createTtlCache<string | null>(5 * 60 * 1000));
 
 async function fetchWeekOptions(): Promise<WeekOption[]> {
   const sb = getSupabaseServer();
@@ -58,3 +60,22 @@ export const clearWeekOptionsCache = (): void => {
   cache.clear();
   defaultCache.clear();
 };
+
+/**
+ * Week scope for a list page. The header `c_bni_week` filter wins over the
+ * legacy `?week=` param (kept for direct links); neither set falls back to
+ * the default (latest imported) week. `weekFilter` is the value to show in
+ * the header column filter ("all" | week id | "" when nothing resolves).
+ */
+export async function listWeekScope(
+  sp: Record<string, string | undefined>,
+): Promise<{ weekId: string; weekFilter: string }> {
+  const param = sp.c_bni_week ?? sp.week;
+  if (param === "all") return { weekId: "", weekFilter: "all" };
+  let weekId = param || "";
+  if (!weekId) {
+    const [d, l] = await Promise.all([defaultWeekId(), latestImportedWeekId()]);
+    weekId = d || l || "";
+  }
+  return { weekId, weekFilter: weekId };
+}

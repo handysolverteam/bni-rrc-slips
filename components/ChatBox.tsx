@@ -3,12 +3,22 @@
 import { useEffect, useRef, useState } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
-type Msg = { sender: "user" | "ai"; text: string };
+type Msg = { sender: "user" | "ai"; text: string; createdAt?: string };
 
 const GREETING: Msg = {
   sender: "ai",
   text: "Hi! I'm your Slips AI. Ask me anything about referrals, one-to-ones, visitors, TYFCB, or members.",
 };
+
+/** Device-local time, AM/PM. Messages from another day also show the date. */
+function fmtTime(iso?: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
+  if (d.toDateString() === new Date().toDateString()) return time;
+  return `${d.toLocaleDateString([], { day: "numeric", month: "short" })} ${time}`;
+}
 
 const SUGGESTIONS = [
   "Who gave the most referrals?",
@@ -33,6 +43,8 @@ export default function ChatBox({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
+  const [maximized, setMaximized] = useState(false);
+  const [inputBig, setInputBig] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   // Set when THIS box created its session: the sessionId prop change that
   // follows must not trigger a history reload (it would wipe the reply
@@ -54,9 +66,10 @@ export default function ChatBox({
       .then((res) => res.json())
       .then((data) => {
         const loaded: Msg[] = Array.isArray(data.messages)
-          ? data.messages.map((m: { sender: string; text: string }) => ({
+          ? data.messages.map((m: { sender: string; text: string; created_at?: string }) => ({
               sender: m.sender === "user" ? ("user" as const) : ("ai" as const),
               text: m.text,
+              createdAt: m.created_at,
             }))
           : [];
         setMessages(loaded.length > 0 ? loaded : [GREETING]);
@@ -68,6 +81,15 @@ export default function ChatBox({
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
+
+  useEffect(() => {
+    if (!maximized) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMaximized(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [maximized]);
 
   async function send(text: string) {
     const clean = text.trim();
@@ -92,7 +114,7 @@ export default function ChatBox({
       }
     }
 
-    const next = [...messages.filter((m) => m !== GREETING || messages.length > 1), { sender: "user" as const, text: clean }];
+    const next = [...messages.filter((m) => m !== GREETING || messages.length > 1), { sender: "user" as const, text: clean, createdAt: new Date().toISOString() }];
     setMessages(next);
     setInput("");
 
@@ -110,7 +132,7 @@ export default function ChatBox({
       if (!res.ok) {
         setError(data.error ?? "Something went wrong.");
       } else {
-        setMessages((current) => [...current, { sender: "ai" as const, text: data.text }]);
+        setMessages((current) => [...current, { sender: "ai" as const, text: data.text, createdAt: new Date().toISOString() }]);
         onActivity();
       }
     } catch (err) {
@@ -135,20 +157,28 @@ export default function ChatBox({
   }
 
   return (
-    <div className="chat-wrap">
+    <div className={`chat-wrap${maximized ? " chat-maximized" : ""}`}>
       <div className="chat-toolbar">
         <span className="muted">{loadingHistory ? "Loading history…" : `${messages.length} message(s)`}</span>
-        {sessionId ? (
-          <button type="button" onClick={() => setConfirmingClear(true)} disabled={busy}>
-            Clear chat
+        <span className="chat-toolbar-right">
+          <button type="button" onClick={() => setMaximized((v) => !v)}>
+            {maximized ? "Minimize" : "Maximize"}
           </button>
-        ) : null}
+          {sessionId ? (
+            <button type="button" onClick={() => setConfirmingClear(true)} disabled={busy}>
+              Clear chat
+            </button>
+          ) : null}
+        </span>
       </div>
 
       <div className="chat-log" ref={logRef}>
         {messages.map((m, i) => (
           <div key={i} className={`chat-msg ${m.sender}`}>
-            <div className="chat-bubble">{m.text}</div>
+            <div className="chat-stack">
+              <div className="chat-bubble">{m.text}</div>
+              {fmtTime(m.createdAt) ? <span className="chat-time">{fmtTime(m.createdAt)}</span> : null}
+            </div>
           </div>
         ))}
         {busy ? (
@@ -180,7 +210,7 @@ export default function ChatBox({
       </div>
 
       <form
-        className="chat-input"
+        className={`chat-input${inputBig ? " input-big" : ""}`}
         onSubmit={(e) => {
           e.preventDefault();
           send(input);
@@ -202,6 +232,13 @@ export default function ChatBox({
           maxLength={2000}
           rows={1}
         />
+        <button
+          type="button"
+          onClick={() => setInputBig((v) => !v)}
+          title={inputBig ? "Shrink the input box" : "Expand the input box"}
+        >
+          {inputBig ? "Collapse" : "Expand"}
+        </button>
         <button className="primary" type="submit" disabled={busy || !input.trim()}>
           {busy ? "…" : "Send"}
         </button>
