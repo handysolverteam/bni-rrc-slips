@@ -2,12 +2,13 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { verifyFirebaseIdToken } from "@/lib/firebase/admin";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { DEFAULT_TENANT_ID, grantHomeChapter } from "@/lib/tenant-grant";
 
 export const SESSION_COOKIE = "bni_session";
 export const TENANT_COOKIE = "bni_tenant";
 
-/** Fixed id created by supabase/migrations/004_tenants.sql (backfill target). */
-export const DEFAULT_TENANT_ID = "d1000000-0000-4000-8000-000000000001";
+/** Re-exported so existing imports keep working (defined in lib/tenant-grant). */
+export { DEFAULT_TENANT_ID };
 
 /**
  * Roles were removed (2026-10-05): every tenant member can import, browse,
@@ -17,7 +18,8 @@ export const DEFAULT_TENANT_ID = "d1000000-0000-4000-8000-000000000001";
 export type TenantContext =
   /** Signed in, member of the returned active tenant. */
   | { uid: string; tenantId: string }
-  /** Signed in, but no tenant_members rows for this uid (manual provisioning needed). */
+  /** Signed in, but the Home Chapter auto-grant failed (its tenants row is
+   *  missing) — the UI shows the uid + SQL fallback. */
   | { uid: string; noAccess: true }
   /** Server-to-server caller authenticated with the service-role key. Root (uid
    *  null) unless it sends x-user-uid to act as that user (then chat ownership
@@ -31,14 +33,17 @@ export type TenantContext =
  * 1. Browser: HttpOnly `bni_session` cookie (verified Firebase ID token) ->
  *    uid -> `tenant_members` -> active tenant from the `bni_tenant` cookie
  *    (falls back to the first membership when the cookie is absent/foreign).
+ *    **Open sign-in**: a uid with zero memberships is auto-granted the Home
+ *    Chapter first (`grantHomeChapter`), so a first Google sign-in works with
+ *    no setup; `noAccess` survives only when that grant failed.
  * 2. Server-to-server (e2e tests, scripts): `Authorization: Bearer <service
- *    role key>`; tenant via `x-tenant-id` header or `?tenant=` param,
+ *    role key>`; tenant via `x-user-uid` header or `?tenant=` param,
  *    defaulting to the default tenant. Optional `x-user-uid` makes the call
- *    act as that user (chat ownership from that uid).
+ *    act as that user (chat ownership from that uid) — never auto-granted,
+ *    so a missing membership still returns `noAccess`.
  *
  * Returns null when unauthenticated — callers answer 401 (API) or redirect
- * to /login (pages). A membership-less uid gets `noAccess` so the UI can
- * print the provisioning SQL.
+ * to /login (pages).
  */
 export async function getTenantContext(req?: Request): Promise<TenantContext> {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -88,12 +93,18 @@ export async function getTenantContext(req?: Request): Promise<TenantContext> {
     return null;
   }
 
-const sb = getSupabaseServer();
+  const sb = getSupabaseServer();
   const { data: memberships } = await sb
     .from("tenant_members")
     .select("tenant_id")
     .eq("uid", uid);
-  if (!memberships || memberships.length === 0) return { uid, noAccess: true };
+  if (!memberships || memberships.length === 0) {
+    // Open sign-in: grant the Home Chapter on first visit instead of
+    // sending the user to the manual-provisioning screen.
+    const granted = await grantHomeChapter(sb, uid);
+    if (!granted) return { uid, noAccess: true };
+    return { uid, tenantId: granted };
+  }
 
   const active = jar.get(TENANT_COOKIE)?.value;
   const match = memberships.find((m) => m.tenant_id === active) ?? memberships[0];

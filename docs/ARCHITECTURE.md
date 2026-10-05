@@ -12,6 +12,7 @@ bni-rrc-slips/
   lib/
     supabase/server.ts   # getSupabaseServer (service_role on server, anon fallback)
     server-auth.ts       # getTenantContext() -> {uid, tenantId} | noAccess | null (no roles); service callers may pass x-user-uid
+    tenant-grant.ts      # grantHomeChapter(sb, uid) -> Home tenant id | null; open sign-in (auto-grant, idempotent)
     report-import.ts     # parseReportFile(buffer) -> rows; mapInsideOutside(); pure, tested
     report-view.ts       # fetchReportSections(tenantId, ...) — all report/export queries
     list-filters.ts lists.ts distinct.ts server-weeks.ts  # every query takes/uses tenantId
@@ -39,7 +40,7 @@ bni-rrc-slips/
 **Tenant** — every page render / API call → `getTenantContext()`:
 1. verify `bni_session` cookie → `uid`
 2. read `bni_tenant` cookie → membership lookup in `tenant_members` (falls back to first membership)
-3. `{ uid, tenantId }` → all Supabase queries add `.eq("tenant_id", tenantId)`; chat queries add `.eq("owner_uid", uid)`; `null` → 401 / redirect `/login`; signed-in but no memberships → no-access screen (uid + provisioning SQL).
+3. `{ uid, tenantId }` → all Supabase queries add `.eq("tenant_id", tenantId)`; chat queries add `.eq("owner_uid", uid)`; `null` → 401 / redirect `/login`; **zero memberships on the browser path → the Home Chapter is granted automatically** (`lib/tenant-grant.ts` idempotent upsert) so sign-in is open to everyone — only if that grant fails does the UI fall back to the no-access screen (uid + provisioning SQL).
 
 **Switch** — TenantSwitcher → `POST /api/tenant { tenantId }` (403 if not a member) → cookie set → full reload → every server render re-scopes (lists, weeks, report, import batches, chat snapshot/sessions).
 
@@ -54,7 +55,7 @@ bni-rrc-slips/
 **WhatsApp share** — pure client-side, no API route: `lib/whatsapp.ts` builds `https://wa.me/?text=<encoded>` from `whatsappShareUrl()` and formats the transcript with `buildChatShare()` → `{ text, total, included }` (greeting dropped, `You:`/`Slips AI:` per turn, `[file: …]` for attachments, and past the 20 000-char URL budget the oldest turns dropped so `included < total`). `ChatBox`'s toolbar button "Share chat" sends the whole transcript and, whenever `included < total`, states the `N of M` count in the toolbar; the per-message ⋮ menu's "Share to WhatsApp" sends that message only — both `window.open(url, "_blank")` in a user gesture, so WhatsApp opens prefilled and the app itself never transmits anything.
 
 ## Decisions (multi-tenant MVP)
-- **Tenant = chapter**, many-to-many memberships + switcher, provisioning via SQL only (per product decisions).
+- **Tenant = chapter**, many-to-many memberships + switcher. **Open sign-in**: the Home Chapter is auto-granted on first sign-in (`lib/tenant-grant.ts`, open to every Google account, no admin UI); other chapters are provisioned by SQL insert per tenant.
 - **No roles** (removed 2026-10-05, re-appliable later): every member of a tenant can import, browse, export, toggle members and chat — the only server-side gates are *authenticated* (`bni_session` cookie) and *member of this tenant*, both resolved by `getTenantContext()`. Migration 005 stays applied and `tenant_members.role` is unused, so re-adding roles later is pure code (no new DDL).
 - **Per-user chats via `chat_sessions.owner_uid`**: ownership is checked in the API layer next to the tenant filter (list/create/rename/delete/messages/persist), not in RLS. Chats stay tenant-scoped too (owner scoping never replaces tenant scoping). Plain service-key callers (tests/scripts) have no uid → root view of the tenant's sessions; a service caller can pass `x-user-uid` to act as a specific member (also how the chat e2e test exercises owner scoping without a live Firebase session).
 - **Auth via verified-ID-token cookie**, not middleware: `verifyFirebaseIdToken` (jose + Google JWKS) already exists and works without service-account keys; cookie is readable by server components and route handlers alike. Middleware was rejected — it cannot set cookies and JWKS verification per-request at the edge is heavier than needed here.

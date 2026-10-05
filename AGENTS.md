@@ -24,6 +24,9 @@
   and membership are enforced, in `lib/server-auth.ts`. `tenant_members.role`
   (migration 005) is still in the DB but unused, so roles can be re-applied later.
 - Sign-in is Google (email) only; `app/login/page.tsx` has no phone/OTP flow.
+- **Open sign-in**: the first sign-in auto-grants the **Home Chapter**
+  (`lib/tenant-grant.ts`, idempotent upsert) — no SQL per user. Membership in
+  any *other* chapter stays a manual SQL insert.
 - Migrations `001`–`005` are applied. No `DATABASE_URL` in `.env.local`, so the
   user runs any new DDL in the Supabase SQL editor.
 - Build = `npm run build`; e2e suites in `tests/` need the prod server on
