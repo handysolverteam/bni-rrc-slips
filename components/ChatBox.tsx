@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { formatChatTranscript, whatsappShareUrl } from "@/lib/whatsapp";
+import { buildChatShare, whatsappShareUrl } from "@/lib/whatsapp";
 
 type Attachment = { name: string; mime: string };
 type TagRef = { text: string };
@@ -410,21 +410,33 @@ export default function ChatBox({
 
   const openMenuMsg = menu ? messages[menu.i] : undefined;
   const openMenuIdx = menu && openMenuMsg ? menu.i : null;
-  const transcript = formatChatTranscript(messages, chatTitle ?? "");
+  const share = buildChatShare(messages, chatTitle ?? "");
 
   return (
     <div className={`chat-wrap${maximized ? " chat-maximized" : ""}`}>
       <div className="chat-toolbar">
-        <span className="muted">{loadingHistory ? "Loading history…" : `${messages.length} message(s)`}</span>
+        <span className="muted">
+          {loadingHistory ? "Loading history…" : `${messages.length} message(s)`}
+          {share.included < share.total ? (
+            <span className="chat-share-note">
+              {" "}· Share chat will send the newest {share.included} of {share.total} messages — older ones exceed WhatsApp's
+              link limit
+            </span>
+          ) : null}
+        </span>
         <span className="chat-toolbar-right">
           <button type="button" onClick={() => setMaximized((v) => !v)}>
             {maximized ? "Minimize" : "Maximize"}
           </button>
           <button
             type="button"
-            onClick={() => shareOnWhatsApp(transcript)}
-            disabled={!transcript}
-            title="Open WhatsApp with this conversation"
+            onClick={() => shareOnWhatsApp(share.text)}
+            disabled={!share.text}
+            title={
+              share.included < share.total
+                ? `Opens WhatsApp with the newest ${share.included} of ${share.total} messages`
+                : "Open WhatsApp with this conversation"
+            }
           >
             Share chat
           </button>

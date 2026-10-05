@@ -85,7 +85,7 @@ One deployment now serves many BNI chapters. Each chapter is a **tenant** with f
 ## Share a chat to WhatsApp
 - From `/chat`, a member can hand a conversation over to WhatsApp — typically to forward an answer to a chapter member who does not use the app.
 - Two ways, both opening WhatsApp with the text already written; the member picks the recipient themselves and nothing is sent until they press send in WhatsApp:
-  - **Share chat** (chat toolbar) — the whole conversation as a transcript headed by the chat's title, each turn labelled `You:` / `Slips AI:`. The bot's auto-intro line is left out, and a very long transcript drops its oldest turns with an explicit "(Earlier messages omitted)" note.
+  - **Share chat** (chat toolbar) — the whole conversation as a transcript headed by the chat's title, each turn labelled `You:` / `Slips AI:`. The bot's auto-intro line is left out. Ordinary conversations are always shared in full; only a transcript too long for a WhatsApp link (over 20 000 characters, i.e. very long chats) drops its oldest turns, and the toolbar says so **before** sharing ("will send the newest N of M messages").
   - **Share to WhatsApp** (a message's ⋮ menu) — only that one message.
 - Sharing is read-only and stays in the browser: nothing is posted, stored or re-sent by the app.
 

@@ -575,6 +575,9 @@ button.danger:hover:not(:disabled) { background: var(--red-soft); }
   padding: 10px 14px; border-bottom: 1px solid var(--line); background: #fff;
 }
 .chat-toolbar-right { display: flex; gap: 8px; align-items: center; }
+/* Shown in the toolbar whenever a share would be cut short, so the member
+   knows the count BEFORE sending instead of finding a note in the message. */
+.chat-share-note { color: #8a6d3b; font-size: 12px; }
 /* Full-screen chat: fixed overlay above the page (sidebar included). Escape or
    the Minimize button restores it. */
 .chat-maximized {

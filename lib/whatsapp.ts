@@ -5,9 +5,15 @@
  * the app itself never transmits or stores anything.
  */
 
-/** URL budget for one shared transcript — long enough for a normal chat,
- *  short enough that every browser and WhatsApp still accept the link. */
-export const SHARE_MAX_CHARS = 6000;
+/**
+ * URL budget for one shared transcript. Sized so a REAL conversation is
+ * always shared whole — the previous 6 000 cut off the oldest turns of a
+ * normal chat, which read as "the share lost most of the conversation".
+ * 20 000 characters is ~25+ exchanges (far past WhatsApp's own 65 536-char
+ * message limit) and still well inside every browser's URL limit once the
+ * percent-encoding is applied.
+ */
+export const SHARE_MAX_CHARS = 20_000;
 
 /** One message as the chat holds it (markers already split off). */
 export type ShareMessage = {
@@ -21,6 +27,11 @@ export type ShareMessage = {
 export function whatsappShareUrl(text: string): string {
   return `https://wa.me/?text=${encodeURIComponent(text)}`;
 }
+
+/** What a chat share will actually send. `included < total` means older turns
+ *  had to be dropped for the URL budget — the UI says so BEFORE sharing
+ *  instead of leaving a note at the top of the message. */
+export type ChatShare = { text: string; total: number; included: number };
 
 /** The bot's opening line (GREETING in components/ChatBox.tsx) — it appears in
  *  every chat and says nothing about this conversation, so a shared transcript
@@ -38,23 +49,22 @@ function renderTurn(m: ShareMessage): string {
 
 /**
  * Whole conversation as WhatsApp text: optional chat-title header, one
- * `You:` / `Slips AI:` block per turn. Over `SHARE_MAX_CHARS` the OLDEST
- * turns are dropped (newest matter most for a forwarded answer) behind an
- * explicit "(Earlier messages omitted)" note; the newest turn is never cut,
- * so a single huge reply stays readable instead of ending mid-sentence.
- * Returns "" when there is nothing to share (greeting-only chat).
+ * `You:` / `Slips AI:` block per turn. Only a transcript past
+ * `SHARE_MAX_CHARS` loses anything, and then the OLDEST turns go (the newest
+ * answer is the point of the forward) behind an explicit
+ * "(Earlier messages omitted)" note; a single oversized turn is kept whole
+ * rather than cut mid-sentence. `text` is "" for a greeting-only chat.
  */
-export function formatChatTranscript(messages: ShareMessage[], title = ""): string {
+export function buildChatShare(messages: ShareMessage[], title = ""): ChatShare {
   const turns = messages
     .filter((m) => !(m.sender === "ai" && m.text.trim().startsWith(GREETING_PREFIX)))
     .map(renderTurn);
-  if (turns.length === 0) return "";
+  if (turns.length === 0) return { text: "", total: 0, included: 0 };
 
   const heading = title.trim();
   const header = heading && heading !== "New chat" ? `${heading}\n\n` : "";
-  const join = (lines: string[]) => header + lines.join("\n\n");
-  const full = join(turns);
-  if (full.length <= SHARE_MAX_CHARS) return full;
+  const full = header + turns.join("\n\n");
+  if (full.length <= SHARE_MAX_CHARS) return { text: full, total: turns.length, included: turns.length };
 
   const note = "(Earlier messages omitted)\n\n";
   const fits = (lines: string[]) => (header + note + lines.join("\n\n")).length <= SHARE_MAX_CHARS;
@@ -62,6 +72,10 @@ export function formatChatTranscript(messages: ShareMessage[], title = ""): stri
   while (first < turns.length - 1 && !fits(turns.slice(first))) first += 1;
   // first === 0 → nothing could be dropped (one oversized turn): share it as
   // written instead of claiming turns were omitted.
-  if (first === 0) return full;
-  return header + note + turns.slice(first).join("\n\n");
+  if (first === 0) return { text: full, total: turns.length, included: turns.length };
+  return {
+    text: header + note + turns.slice(first).join("\n\n"),
+    total: turns.length,
+    included: turns.length - first,
+  };
 }
