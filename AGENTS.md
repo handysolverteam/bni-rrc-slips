@@ -19,8 +19,10 @@
 - Default/home tenant: `d1000000-0000-4000-8000-000000000001`, name
   `BNI Influencers`, `home_chapter_name` NULL → home falls back to
   `NEXT_PUBLIC_CHAPTER_NAME`.
-- Roles are enforced server-side in `lib/server-auth.ts`: `admin` = everything,
-  `member` = read-only data + own chat.
+- **No roles.** Roles (admin/member) were removed on 2026-10-05: every member
+  of a tenant can import, browse, export, toggle members and chat. Only sign-in
+  and membership are enforced, in `lib/server-auth.ts`. `tenant_members.role`
+  (migration 005) is still in the DB but unused, so roles can be re-applied later.
 - Sign-in is Google (email) only; `app/login/page.tsx` has no phone/OTP flow.
 - Migrations `001`–`005` are applied. No `DATABASE_URL` in `.env.local`, so the
   user runs any new DDL in the Supabase SQL editor.

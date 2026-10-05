@@ -8,7 +8,7 @@ Import a weekly BNI `Report` XLS (columns: From, To, Slip Type, Inside/Outside, 
 2. App POSTs the file to `/api/import/report`.
 3. Server parses, upserts members/weeks, inserts slips, returns `{ imported, skipped, errors }`.
 4. User browses 6 read-only paginated screens:
-   - `/members` — Bni Member (Active, Name, Chapter, Category, Company, Phone — Category/Company/Phone are empty placeholders until CRUD; the Active column is an admin-only active/inactive toggle)
+   - `/members` — Bni Member (Active, Name, Chapter, Category, Company, Phone — Category/Company/Phone are empty placeholders until CRUD; the Active column is the active/inactive toggle)
    - `/referrals` — Slip Referrals (BNI Week, Referral From, Referral To, Other Member's Chapter, Inside/Outside)
    - `/one-to-ones` — Slip 121 (BNI Week, Initiated By, Met With, Other Member's Chapter, Photo Proof, Gains Shared)
    - `/visitors` — Slip Visitors (Full Name, Company, Invited By, BNI Week, Email, Phone, Attending, etc.)
@@ -21,9 +21,8 @@ No CRUD in MVP. CRUD later.
 ## Active / inactive members
 - Every member is **active by default** (`members.is_inactive` defaults to false); import never marks anyone inactive, and historical rows stay exactly as imported.
 - The `/members` table gets an **Active toggle in the first column, before Name**.
-- **Admins** see the toggle and can mark a member active/inactive in place (no edit page). They also **see inactive members** in the list.
-- **`member` role users see only active members** — both the toggle column and the inactive rows are hidden for them.
-- Marking someone inactive never deletes anything: their slips, chat answers, exports and member row all stay; it only removes them from the member list for read-only users.
+- **Every app user** can mark a member active/inactive in place (no edit page) and **sees inactive members** in the list.
+- Marking someone inactive never deletes anything: their slips, chat answers, exports and member row all stay.
 
 ## XLS mapping assumptions (explicit — bold not readable by `xlsx`)
 Source columns: `From | To | Slip Type | Inside/Outside | TYFCB | CEU Credits | Detail`.
@@ -53,11 +52,9 @@ One deployment now serves many BNI chapters. Each chapter is a **tenant** with f
 
 ## Definitions
 - **Tenant** = one BNI chapter (the isolation boundary for all data).
-- **Membership** = a signed-in user (Firebase uid) belongs to a tenant. Many-to-many: one user → many tenants, one tenant → many users. Each membership carries a **role**: `admin` or `member`.
+- **Membership** = a signed-in user (Firebase uid) belongs to a tenant. Many-to-many: one user → many tenants, one tenant → many users. Every member of a tenant has the **same** capabilities — there are no roles.
 - **Active tenant** = the chapter the app is currently showing; chosen explicitly via the switcher, remembered across visits.
-- **Role** = what the user may do inside their active tenant:
-  - `admin` — full access: import report files, browse every screen, export, chat. Created directly in Supabase (SQL insert), default role.
-  - `member` — read-only: browse all screens, export, and chat about their own conversations; no import (the import APIs, `/import` page and import buttons are hidden/denied). Created directly in Supabase with `role 'member'`.
+- **Roles: removed** (were `admin` / `member`, migration 005). Every user of a tenant can import, browse, export, toggle members and chat. The unused `tenant_members.role` column stays in the database so roles can be re-applied later; nothing reads it.
 
 ## Core workflow
 1. User signs in as today (Google SSO on `/login`).
@@ -66,20 +63,18 @@ One deployment now serves many BNI chapters. Each chapter is a **tenant** with f
    - **One membership** → that tenant is active automatically.
    - **Several memberships** → last active tenant is restored; otherwise the first one. A **chapter switcher** in the top nav lists the user's tenants and switches on click.
 3. Every screen (6 lists, `/report`, `/import`, `/chat`) and every API call operates ONLY on the active tenant's data: member list, week lists, slip rows, export files, import batches, chat sessions/answers.
-4. Import (admins only) writes members/slips/batches tagged with the active tenant; re-importing the same file into another tenant creates that tenant's own rows (shared nothing).
+4. Import writes members/slips/batches tagged with the active tenant; re-importing the same file into another tenant creates that tenant's own rows (shared nothing).
 5. Chat answers only about the active tenant's slips; switching chapter switches the chat history to that chapter's sessions. The suggested-question chips under the composer follow the conversation: after each answer the AI proposes the next questions from what was just discussed (a fresh chat shows the generic starter questions).
-6. Chats are **per user**: every user only ever sees their own chat sessions and messages (including admins); chapter data remains shared by role.
+6. Chats are **per user**: every user only ever sees their own chat sessions and messages; chapter data remains shared.
 7. Unauthenticated API/page access is rejected (401 / redirect to `/login`). A signed-in user can only ever read or write tenants they are a member of.
-8. Role is checked on every write: a `member` gets **403** from `POST /api/import/preview` and `POST /api/import/report`, the `/import` page redirects them home, and the Import nav/home/report buttons do not render for them.
 
 ## Success criteria (multi-tenant)
 - **Isolation**: data from two tenants never mixes — member/week/slip/report/import/chat queries are scoped to the active tenant (verified by an isolation test).
 - **Auth**: API routes without a valid session return 401; pages redirect to `/login`; a member of tenant A cannot read tenant B even with a hand-crafted request (active-tenant cookie is validated against memberships).
 - **Switcher**: switching chapter updates every screen's data, the week filters, and the chat history; the choice survives a reload.
 - **Backfill**: all pre-existing data remains visible (it becomes the default tenant), nothing lost, no duplicate rows.
-- **Provisioning**: a brand-new user with no membership gets the no-access screen with their uid; one SQL insert grants them a chapter (`role 'admin'` default, `'member'` for read-only).
-- **RBAC**: an `admin` imports and sees all import UI; a `member` gets 403 from both import APIs, never sees the Import nav/home/report buttons, and is redirected off `/import` (verified by an rbac test).
-- **Per-user chats**: two users in the same tenant never see each other's chat sessions/messages (verified by an rbac test); chats still stay inside their tenant (isolation test).
+- **Provisioning**: a brand-new user with no membership gets the no-access screen with their uid; one SQL insert grants them a chapter.
+- **Per-user chats**: two users in the same tenant never see each other's chat sessions/messages (verified by the chat suite); chats still stay inside their tenant (isolation test).
 - `npm run build` passes and the existing chat/import e2e tests still pass.
 
 ## Share a chat to WhatsApp
@@ -90,4 +85,5 @@ One deployment now serves many BNI chapters. Each chapter is a **tenant** with f
 - Sharing is read-only and stays in the browser: nothing is posted, stored or re-sent by the app.
 
 ## Out of scope (this release)
-- In-app tenant admin (create tenant / invite users / change roles in the UI), self-serve signup, RLS policy rework, billing, per-tenant branding/env (the `NEXT_PUBLIC_CHAPTER_NAME` home-chapter rule moves to the tenant record). Role changes are SQL updates for now.
+- In-app tenant admin (create tenant / invite users in the UI), self-serve signup, RLS policy rework, billing, per-tenant branding/env (the `NEXT_PUBLIC_CHAPTER_NAME` home-chapter rule moves to the tenant record).
+- **Roles are deliberately out of scope for now** — every tenant member has full access; roles may be re-applied later (the `role` column is still in the DB).

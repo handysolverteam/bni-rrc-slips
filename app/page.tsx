@@ -62,13 +62,11 @@ export default async function Home() {
           Detail) — pick a BNI Week on import, then browse everything below.
         </p>
         <div className="hero-actions">
-          {guard.role === "admin" && (
-            <Link href="/import">
-              <button type="button" className="primary">
-                Import Report XLS
-              </button>
-            </Link>
-          )}
+          <Link href="/import">
+            <button type="button" className="primary">
+              Import Report XLS
+            </button>
+          </Link>
         </div>
       </div>
 

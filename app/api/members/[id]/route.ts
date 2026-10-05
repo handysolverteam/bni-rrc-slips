@@ -1,18 +1,17 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { clearDistinctCache } from "@/lib/distinct";
-import { adminOnly, forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
+import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 /**
  * PATCH /api/members/{id}  { isInactive: boolean }
- * Admin-only active/inactive toggle. Tenant-scoped: the id must belong to the
- * caller's active tenant, so a crafted id from another chapter is a 404.
+ * Active/inactive toggle, open to any signed-in member of the active tenant
+ * (roles were removed). Tenant-scoped: the id must belong to the caller's
+ * active tenant, so a crafted id from another chapter is a 404.
  */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const auth = await getTenantContext(req);
   if (!auth) return unauthorized();
   if ("noAccess" in auth) return forbidden();
-  const denied = adminOnly(auth);
-  if (denied) return denied;
 
   const { id } = await ctx.params;
   if (!id) return Response.json({ error: "Missing member id." }, { status: 400 });

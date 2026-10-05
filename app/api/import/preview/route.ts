@@ -1,21 +1,19 @@
 import { findWeekByDate, parseUpload, weekSlipCounts } from "@/lib/import-upload";
 import { validateReportRows } from "@/lib/report-import";
-import { adminOnly, forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
+import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 /**
  * Inspect an uploaded Report file WITHOUT importing it: resolves the week
  * from the file title and reports row problems so the UI can pause and ask
  * for permission when typing mistakes are found. Duplicates are NOT
  * flagged — every entry is kept on import (owner rule).
- * Admin-only: a member gets 403 before the file is read.
+ * Requires a signed-in member of the active chapter (roles were removed).
  */
 export async function POST(request: Request) {
   try {
     const ctx = await getTenantContext(request);
     if (!ctx) return unauthorized();
     if ("noAccess" in ctx) return forbidden();
-    const denied = adminOnly(ctx);
-    if (denied) return denied;
 
     const form = await request.formData();
     const file = form.get("file");

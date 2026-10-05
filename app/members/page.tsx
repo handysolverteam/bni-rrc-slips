@@ -15,8 +15,6 @@ export default async function MembersPage({
   const guard = await requirePageTenant();
   if ("noAccess" in guard) return <NoAccess uid={guard.uid} />;
   const tenantId = guard.tenantId;
-  // Only admins get the Active toggle column and see inactive members.
-  const isAdmin = guard.role === "admin";
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page || 1));
   const pageSize = 100;
@@ -27,7 +25,6 @@ export default async function MembersPage({
     .select("*, chapters(name)", { count: "exact" })
     .eq("tenant_id", tenantId)
     .order("name");
-  if (!isAdmin) query = query.eq("is_inactive", false);
   if (q) query = query.ilike("name", `%${q}%`);
   const columnFilters: Record<string, string> = {};
   for (const k of ["name", "category", "company", "phone"]) {
@@ -50,8 +47,8 @@ export default async function MembersPage({
     query = query.in("chapter_id", ids.length > 0 ? ids : ["00000000-0000-0000-0000-000000000000"]);
     columnFilters.chapter = chapterV;
   }
-  // Non-admins get active-only dropdown options too, so no option is a dead end.
-  const memberEq: [string, unknown][] = isAdmin ? [] : [["is_inactive", false]];
+// Everyone sees active and inactive members, so dropdowns list both.
+const memberEq: [string, unknown][] = [];
   const [{ data, count }, filterOptions] = await Promise.all([
     query.range((page - 1) * pageSize, page * pageSize - 1),
     Promise.all([
@@ -88,7 +85,7 @@ export default async function MembersPage({
       weekId=""
       weeks={[]}
       columns={[
-        ...(isAdmin ? [{ key: "active", label: "Active" }] : []),
+        ...[{ key: "active", label: "Active" }],
         { key: "name", label: "Name" },
         { key: "chapter", label: "Chapter" },
         { key: "category", label: "Category" },
