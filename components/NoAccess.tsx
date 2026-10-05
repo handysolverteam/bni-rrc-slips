@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * Signed in, but no tenant_members rows for this uid yet (provisioning is
- * manual/SQL — there is no admin UI in this release). Prints the uid and the
- * exact insert an operator runs in the Supabase SQL editor.
+ * Signed in, but the Home Chapter auto-grant failed (its tenants row is
+ * missing) or the operator only wants to add this uid to another chapter.
+ * Prints the uid and the exact insert an operator runs in the Supabase SQL
+ * editor. Normal first-time sign-ins never reach this screen.
  */
 export default function NoAccess({ uid }: { uid: string }) {
   const sql = `insert into public.tenant_members (tenant_id, uid)
@@ -15,9 +16,9 @@ on conflict do nothing;`;
       <div className="card" style={{ maxWidth: 680, margin: "48px auto", padding: 24 }}>
         <h1 style={{ fontSize: 20, marginBottom: 8 }}>No chapter access yet</h1>
         <p className="muted" style={{ marginBottom: 16 }}>
-          You are signed in, but no chapter has been granted to this account. Ask the operator to
-          run the statement below in the Supabase SQL editor (edit the tenant id to the chapter you
-          should belong to), then reload this page.
+          This account could not be granted a chapter automatically, and no chapter membership was
+          found for it. Run the statement below in the Supabase SQL editor (edit the tenant id to
+          the chapter you should belong to), then reload this page.
         </p>
         <p style={{ fontSize: 13, marginBottom: 4 }}>
           <strong>Your user id</strong>

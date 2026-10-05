@@ -59,7 +59,7 @@ One deployment now serves many BNI chapters. Each chapter is a **tenant** with f
 ## Core workflow
 1. User signs in as today (Google SSO on `/login`).
 2. App looks up the user's memberships.
-   - **No memberships** → a "No chapter access" screen shows the user's uid and the exact SQL an operator runs to grant access (provisioning stays manual/SQL — no admin UI in this release).
+   - **No memberships** → the **Home Chapter is granted automatically on first sign-in** (sign-in stays open to everyone — no SQL, no admin UI). The "No chapter access" screen with uid + SQL appears only when that auto-grant fails, e.g. the Home Chapter `tenants` row is missing.
    - **One membership** → that tenant is active automatically.
    - **Several memberships** → last active tenant is restored; otherwise the first one. A **chapter switcher** in the top nav lists the user's tenants and switches on click.
 3. Every screen (6 lists, `/report`, `/import`, `/chat`) and every API call operates ONLY on the active tenant's data: member list, week lists, slip rows, export files, import batches, chat sessions/answers.
@@ -73,7 +73,7 @@ One deployment now serves many BNI chapters. Each chapter is a **tenant** with f
 - **Auth**: API routes without a valid session return 401; pages redirect to `/login`; a member of tenant A cannot read tenant B even with a hand-crafted request (active-tenant cookie is validated against memberships).
 - **Switcher**: switching chapter updates every screen's data, the week filters, and the chat history; the choice survives a reload.
 - **Backfill**: all pre-existing data remains visible (it becomes the default tenant), nothing lost, no duplicate rows.
-- **Provisioning**: a brand-new user with no membership gets the no-access screen with their uid; one SQL insert grants them a chapter.
+- **Provisioning**: a brand-new Google account is granted the **Home Chapter automatically on first sign-in** — sign-in works for everyone with zero setup (verified by the autogrant test). Adding a user to a *different* chapter stays one SQL insert (no admin UI).
 - **Per-user chats**: two users in the same tenant never see each other's chat sessions/messages (verified by the chat suite); chats still stay inside their tenant (isolation test).
 - `npm run build` passes and the existing chat/import e2e tests still pass.
 
