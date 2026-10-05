@@ -13,9 +13,22 @@ const ACTIVE_GEMINI_MODELS = [
   "gemini-3.1-flash-lite",
 ];
 
+/**
+ * Per-attempt budget. A production-sized prompt (~20k tokens) with the answer
+ * budget below measured ~12.7s end to end, so 15s left too little room — a
+ * timeout there falls through to a weaker fallback model. 20s keeps all three
+ * fallbacks inside the route's `maxDuration = 60` (3 × 20s).
+ */
+const MODEL_ATTEMPT_TIMEOUT_MS = 20_000;
+
 export type ChatHistoryMessage = { sender: "user" | "ai"; text: string };
 
-export type GeminiResult = { text: string | null; detail?: string };
+export type GeminiResult = {
+  text: string | null;
+  detail?: string;
+  /** Follow-up questions stripped from the reply (see extractSuggestions). */
+  suggestions?: string[];
+};
 
 /**
  * One chat attachment. `inline` payloads (images/PDF) go to Gemini as
@@ -62,11 +75,13 @@ function analyzeReply(data: unknown): {
   text: string | null;
   calls: ToolCall[];
   note?: string;
+  truncated?: boolean;
 } {
   const body = asRecord(data);
   const candidates = body ? body.candidates : undefined;
   const candidate = asRecord(Array.isArray(candidates) ? candidates[0] : undefined);
   const parts = asRecord(candidate ? candidate.content : undefined)?.parts;
+  const finishReason = typeof candidate?.finishReason === "string" ? candidate.finishReason : "";
 
   if (!Array.isArray(parts)) {
     const blockReason = asRecord(body ? body.promptFeedback : undefined)?.blockReason;
@@ -96,17 +111,56 @@ function analyzeReply(data: unknown): {
     }
   }
   if (answers.length > 0) {
-    return { text: answers.join("\n\n").replace(/\*\*/g, "").trim(), calls };
+    return {
+      text: answers.join("\n\n").replace(/\*\*/g, "").trim(),
+      calls,
+      // MAX_TOKENS = the model ran out of budget mid-answer; tell the caller
+      // so a partial list is never presented as complete.
+      truncated: finishReason === "MAX_TOKENS",
+    };
   }
   if (calls.length > 0) return { text: null, calls };
 
-  const finishReason = candidate?.finishReason;
   if (thoughtOnly) return { text: null, calls: [], note: "thought parts only" };
   return {
     text: null,
     calls: [],
-    note: typeof finishReason === "string" && finishReason ? `empty (${finishReason})` : "empty response",
+    note: finishReason ? `empty (${finishReason})` : "empty response",
   };
+}
+
+const SUGGESTIONS_HEADER = "SUGGESTIONS:";
+const SUGGESTION_MAX_LEN = 120;
+const MAX_SUGGESTIONS = 5;
+
+/**
+ * The model appends a `SUGGESTIONS:` block of follow-up questions (system
+ * rule 7) so the chat can offer chips that match the current thread. Strip it
+ * out of the answer and hand it back separately — the visible reply must not
+ * show it. The block is only accepted when it runs to the end of the reply
+ * and every non-blank line in it is a question: anything off-format keeps the
+ * answer byte-for-byte as written, so no answer content can ever be swallowed
+ * by a malformed tail (the client then just falls back to its starter chips).
+ * `|` and `]` are removed because the marker form `[suggestions: q1 | q2]` is
+ * parsed by the client's non-bracket regex.
+ */
+function extractSuggestions(raw: string): { text: string; suggestions: string[] } {
+  const at = raw.lastIndexOf(SUGGESTIONS_HEADER);
+  if (at < 0) return { text: raw, suggestions: [] };
+  const suggestions: string[] = [];
+  for (const line of raw.slice(at + SUGGESTIONS_HEADER.length).split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const q = trimmed
+      .replace(/^[\s\-•*0-9.)"'`]+/, "")
+      .replace(/[\]\|]/g, "")
+      .trim();
+    if (!q) continue; // blank / marker-only line (e.g. the closing `**` of a bold header)
+    if (!q.endsWith("?") || q.length > SUGGESTION_MAX_LEN) return { text: raw, suggestions: [] };
+    if (suggestions.length < MAX_SUGGESTIONS) suggestions.push(q);
+  }
+  if (suggestions.length === 0) return { text: raw, suggestions: [] };
+  return { text: raw.slice(0, at).replace(/\s+$/, ""), suggestions };
 }
 
 function buildSystemInstruction(snapshot: SlipsSnapshot): string {
@@ -129,6 +183,7 @@ function buildSystemInstruction(snapshot: SlipsSnapshot): string {
     "4. Refer to each member by their exact snapshot name, with no parenthetical annotations.",
     "5. Format with short paragraphs and simple lists. Keep answers concise. Do not use asterisks for emphasis — plain text only, especially for member and chapter names.",
     "6. Always end with one relevant follow-up question.",
+    `7. AFTER that question, as the very last lines of your reply, output a suggestions block: the line ${SUGGESTIONS_HEADER} and then 4 short follow-up questions, one per line, each ending with "?", with no bullets or numbering and each under ${SUGGESTION_MAX_LEN} characters. They are the questions a member is most likely to ask NEXT, grounded in the answer you just gave and in the snapshot (deeper or adjacent facts, not the follow-up question from rule 6 and not anything you already answered).`,
     "",
     "PREVIOUS CONVERSATION:",
   ].join("\n");
@@ -141,8 +196,14 @@ function formatHistory(history: ChatHistoryMessage[]): string {
     .join("\n");
 }
 
+/** A reply cut short by the output budget: the text is partial, so the
+ *  caller must say so rather than let the user read a clipped list as the
+ *  whole answer. */
+const TRUNCATION_NOTICE =
+  "\n\n[This answer was cut short by the length limit — it is incomplete. Ask me again for the rest.]";
+
 type ModelAttempt =
-  | { kind: "text"; text: string }
+  | { kind: "text"; text: string; truncated?: boolean }
   | { kind: "calls"; calls: ToolCall[] }
   | { kind: "error"; detail: string; status?: number };
 
@@ -162,17 +223,29 @@ async function callModel(
   try {
     // Key travels in the header only -- never in the URL (server logs).
     // Keep each attempt short so all fallbacks fit the serverless budget.
+    //
+    // Budget numbers are measured, not guessed (see docs/SYSTEM.md). Thinking
+    // tokens share the output budget, so the old 2048 cap let reasoning spend
+    // ~1970 tokens and cut the answer off mid-list (finishReason MAX_TOKENS):
+    // the model then promised N names and delivered far fewer. 4096 gives the
+    // answer room, and the 512 thinking cap keeps a production-sized prompt
+    // (~20k tokens) near 5s instead of ~11s — well inside the 15s per-attempt
+    // timeout that the 3 tool rounds also have to fit into.
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     const payload: Record<string, unknown> = {
       contents,
-      generationConfig: { maxOutputTokens: 2048, temperature },
+      generationConfig: {
+        maxOutputTokens: 4096,
+        thinkingConfig: { thinkingBudget: 512 },
+        temperature,
+      },
     };
     if (useTools) payload.tools = [{ functionDeclarations: [CHAPTER_QUERY_TOOL] }];
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-goog-api-key": apiKey },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(MODEL_ATTEMPT_TIMEOUT_MS),
     });
     if (!response.ok) return { kind: "error", detail: `HTTP ${response.status}`, status: response.status };
     let data: unknown;
@@ -183,7 +256,7 @@ async function callModel(
     }
     const reply = analyzeReply(data);
     if (reply.calls.length > 0) return { kind: "calls", calls: reply.calls };
-    if (reply.text) return { kind: "text", text: reply.text };
+    if (reply.text) return { kind: "text", text: reply.text, truncated: reply.truncated };
     return { kind: "error", detail: reply.note ?? "empty response" };
   } catch (error) {
     return {
@@ -262,7 +335,17 @@ export async function askGemini(
         toolsBroken.add(model);
         attempt = await callModel(model, contents, false, apiKey, temperature);
       }
-      if (attempt.kind === "text") return { text: attempt.text };
+      if (attempt.kind === "text") {
+        // A clipped answer stays usable, but the user (and the next turn's
+        // history) must know it is incomplete instead of guessing "display
+        // truncation" and confabulating a reason for it. The suggestions block
+        // is parsed first so the notice appended here never lands inside it.
+        const { text: answer, suggestions } = extractSuggestions(attempt.text);
+        return {
+          text: attempt.truncated ? answer + TRUNCATION_NOTICE : answer,
+          suggestions,
+        };
+      }
       if (attempt.kind === "calls") {
         calls = attempt.calls;
         break;

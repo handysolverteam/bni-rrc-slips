@@ -8,12 +8,21 @@ import { clearDistinctCache } from "@/lib/distinct";
 import { clearLatestImportedWeekCache } from "@/lib/report-view";
 import { clearSlipsSnapshotCache } from "@/lib/chat/snapshot-cache";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { adminOnly, forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 /** Bulk import can exceed the default serverless timeout on file uploads. */
 export const maxDuration = 60;
 
+/** Admin-only write surface: a member gets 403 before the file is read. */
 export async function POST(request: Request) {
   try {
+    const ctx = await getTenantContext(request);
+    if (!ctx) return unauthorized();
+    if ("noAccess" in ctx) return forbidden();
+    const denied = adminOnly(ctx);
+    if (denied) return denied;
+    const tenantId = ctx.tenantId;
+
     const form = await request.formData();
     const file = form.get("file");
 
@@ -109,7 +118,7 @@ export async function POST(request: Request) {
 
     const { data: batch } = await supabase
       .from("import_batches")
-      .insert({ filename: file.name, bni_week_id: week.id })
+      .insert({ filename: file.name, bni_week_id: week.id, tenant_id: tenantId })
       .select()
       .single();
 
@@ -146,7 +155,19 @@ export async function POST(request: Request) {
     // now). The same name may belong to several chapters: each
     // (name, chapter) pair is its own member row — never moved or merged.
     // Visitor full names are never collected.
-    const HOME_CHAPTER = resolveHomeChapter();
+    // Home chapter (blank-Detail names): tenant's home_chapter_name first;
+    // else env ONLY for the default tenant (BNI Influencers), else the
+    // tenant's own name. Identical rule lives in lib/member-chapters.ts.
+    // `id` must be selected too: resolveHomeChapter compares it with
+    // DEFAULT_TENANT_ID to decide whether the env chapter may be used.
+    const { data: tenantRow } = await supabase
+      .from("tenants")
+      .select("id, name, home_chapter_name")
+      .eq("id", tenantId)
+      .maybeSingle();
+    const HOME_CHAPTER = resolveHomeChapter(
+      (tenantRow as { id?: string; name?: string | null; home_chapter_name?: string | null } | null) ?? null,
+    );
     // Pure pass: desired chapter per name, identical logic to preview.
     const desired = computeDesiredChapters(rows, HOME_CHAPTER);
     const keyOf = (raw: string): string | null => {
@@ -228,7 +249,10 @@ export async function POST(request: Request) {
     if (wantChapters.length > 0) {
       // fetchAllRows, not .limit(2000): one response is capped at 1000 rows,
       // and a chapter past that cap would look "missing" and be re-created.
-      const existingChapters = await fetchAllRows<{ id: string; name: string }>("chapters", "id,name", { pageSize: 1000 });
+      const existingChapters = await fetchAllRows<{ id: string; name: string }>("chapters", "id,name", {
+        eq: [["tenant_id", tenantId]],
+        pageSize: 1000,
+      });
       for (const c of existingChapters) {
         chapterIds.set(String(c.name).toLowerCase(), c.id);
       }
@@ -236,7 +260,7 @@ export async function POST(request: Request) {
       if (missingChapters.length > 0) {
         const { data: created, error: createError } = await supabase
           .from("chapters")
-          .insert(missingChapters.map((name) => ({ name })))
+          .insert(missingChapters.map((name) => ({ name, tenant_id: tenantId })))
           .select("id,name");
         if (!createError && created) {
           for (const c of (created as { id: string; name: string }[])) {
@@ -246,7 +270,13 @@ export async function POST(request: Request) {
       }
       for (const name of missingChapters) {
         if (chapterIds.has(name.toLowerCase())) continue;
-        const found = await supabase.from("chapters").select("id").ilike("name", name).limit(1).maybeSingle();
+        const found = await supabase
+          .from("chapters")
+          .select("id")
+          .ilike("name", name)
+          .eq("tenant_id", tenantId)
+          .limit(1)
+          .maybeSingle();
         const id = (found.data as { id: string } | null)?.id ?? null;
         if (id) chapterIds.set(name.toLowerCase(), id);
       }
@@ -255,7 +285,10 @@ export async function POST(request: Request) {
     type ExistingMember = { id: string; name: string; chapter_id: string };
     const memberIds = new Map<string, string>(); // lower name -> member id
     if (desired.size > 0) {
-      const existingMembers = await fetchAllRows<ExistingMember>( "members", "id,name,chapter_id", { pageSize: 2000 });
+      const existingMembers = await fetchAllRows<ExistingMember>( "members", "id,name,chapter_id", {
+        eq: [["tenant_id", tenantId]],
+        pageSize: 2000,
+      });
       const byName = new Map<string, ExistingMember[]>();
       for (const m of existingMembers) {
         const k = String(m.name).toLowerCase();
@@ -282,7 +315,7 @@ export async function POST(request: Request) {
       if (toCreate.length > 0) {
         const { data: created, error: createError } = await supabase
           .from("members")
-          .insert(toCreate.map(({ name, chapter_id }) => ({ name, chapter_id })))
+          .insert(toCreate.map(({ name, chapter_id }) => ({ name, chapter_id, tenant_id: tenantId })))
           .select("id,name");
         if (!createError && created) {
           for (const m of (created as { id: string; name: string }[])) {
@@ -297,13 +330,14 @@ export async function POST(request: Request) {
               .select("id")
               .ilike("name", t.name)
               .eq("chapter_id", t.chapter_id)
+              .eq("tenant_id", tenantId)
               .limit(1)
               .maybeSingle();
             let id: string | null = (found.data as { id: string } | null)?.id ?? null;
             if (!id) {
               const ins = await supabase
                 .from("members")
-                .insert({ name: t.name, chapter_id: t.chapter_id })
+                .insert({ name: t.name, chapter_id: t.chapter_id, tenant_id: tenantId })
                 .select("id")
                 .maybeSingle();
               id = (ins.data as { id: string } | null)?.id ?? null;
@@ -342,6 +376,7 @@ export async function POST(request: Request) {
     await bulkInsert(
       "slip_referrals",
       referralRows.map((r) => ({
+        tenant_id: tenantId,
         bni_week_id: weekId,
         from_member_id: midOf(r.fromKey),
         to_member_id: midOf(r.toKey),
@@ -358,6 +393,7 @@ export async function POST(request: Request) {
     await bulkInsert(
       "slip_one_to_ones",
       otoRows.map((r) => ({
+        tenant_id: tenantId,
         bni_week_id: weekId,
         initiated_by_member_id: midOf(r.initKey),
         met_with_member_id: midOf(r.metKey),
@@ -373,6 +409,7 @@ export async function POST(request: Request) {
     await bulkInsert(
       "slip_tyfcb",
       tyfcbRows.map((r) => ({
+        tenant_id: tenantId,
         bni_week_id: weekId,
         member_id: midOf(r.nameKey),
         member_name: r.name,
@@ -387,6 +424,7 @@ export async function POST(request: Request) {
     await bulkInsert(
       "slip_visitors",
       visitorRows.map((r) => ({
+        tenant_id: tenantId,
         bni_week_id: weekId,
         full_name: r.fullName,
         invited_by_member_id: midOf(r.inviterKey),
@@ -398,6 +436,7 @@ export async function POST(request: Request) {
     await bulkInsert(
       "slip_ceus",
       ceuRows.map((r) => ({
+        tenant_id: tenantId,
         bni_week_id: weekId,
         member_id: midOf(r.nameKey),
         member_name: r.name,

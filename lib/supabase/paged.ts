@@ -13,7 +13,7 @@ export async function fetchAllRows<T>(
   table: string,
   columns: string,
   opts: {
-    eq?: [string, string][];
+    eq?: [string, unknown][];
     in?: [string, string[]][];
     order?: { column: string; ascending?: boolean };
     pageSize?: number;

@@ -3,6 +3,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { detailLabelFor, fetchReportSections, fromToLabelsFor, rowCells, totalRowCells, visibleColumns, type ReportSectionKey } from "@/lib/report-view";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,10 @@ function safeFilePart(label: string): string {
 /** Download the week report as xlsx / csv / pdf, current tab or all tabs. */
 export async function GET(request: Request) {
   try {
+    const ctx = await getTenantContext(request);
+    if (!ctx) return unauthorized();
+    if ("noAccess" in ctx) return forbidden();
+
     const url = new URL(request.url);
     const weekId = url.searchParams.get("week") ?? "";
     const tab = url.searchParams.get("tab") ?? "all";
@@ -85,7 +90,7 @@ export async function GET(request: Request) {
       labelCache.set(id, label);
       return label;
     }
-    const sections = await fetchReportSections(weekId, q, col, weekOverrides);
+    const sections = await fetchReportSections(ctx.tenantId, weekId, q, col, weekOverrides);
     const picked = tab === "all" ? sections : sections.filter((s) => s.key === tab);
     if (picked.length === 0) return Response.json({ error: "unknown tab" }, { status: 400 });
     const mixed = picked.some((s) => (weekOverrides[s.key] || "").trim() !== "");

@@ -1,4 +1,5 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { forbidden, getTenantContext, unauthorized, type TenantContext } from "@/lib/server-auth";
 
 function paging(req: Request) {
   const u = new URL(req.url);
@@ -10,10 +11,31 @@ function paging(req: Request) {
   };
 }
 
-async function list(table: string, req: Request, orFilter?: (q: string) => string) {
+/** Narrowed context: null / noAccess are already rejected by the caller. */
+type ActiveCtx = Extract<TenantContext, { tenantId: string }>;
+
+function buildBase(table: string, ctx: ActiveCtx) {
+  return getSupabaseServer()
+    .from(table)
+    .select("*", { count: "exact" })
+    .eq("tenant_id", ctx.tenantId)
+    .order("created_at", { ascending: false });
+}
+
+async function list(
+  table: string,
+  req: Request,
+  orFilter?: (q: string) => string,
+  scope?: (query: ReturnType<typeof buildBase>, ctx: ActiveCtx) => ReturnType<typeof buildBase>,
+) {
+  const ctx = await getTenantContext(req);
+  if (!ctx) return unauthorized();
+  if ("noAccess" in ctx) return forbidden();
+
   const { pageNum, pageSize, q } = paging(req);
-  const sb = getSupabaseServer();
-  let query = sb.from(table).select("*", { count: "exact" }).order("created_at", { ascending: false });
+  const active = ctx as ActiveCtx;
+  let query = buildBase(table, active);
+  if (scope) query = scope(query, active);
   if (q && orFilter) query = query.or(orFilter(q));
   const from = (pageNum - 1) * pageSize;
   const { data, count, error } = await query.range(from, from + pageSize - 1);
@@ -22,7 +44,13 @@ async function list(table: string, req: Request, orFilter?: (q: string) => strin
 }
 
 export async function membersGET(req: Request) {
-  return list("members", req, (q) => `name.ilike.%${q}%`);
+  return list(
+    "members",
+    req,
+    (q) => `name.ilike.%${q}%`,
+    // Non-admins never see inactive members (admins see all + the toggle).
+    (query, ctx) => (ctx.role === "admin" ? query : query.eq("is_inactive", false)),
+  );
 }
 export async function referralsGET(req: Request) {
   return list("slip_referrals", req, (q) => `from_name.ilike.%${q}%,to_name.ilike.%${q}%`);

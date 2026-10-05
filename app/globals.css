@@ -82,7 +82,7 @@ a { color: var(--accent); }
 }
 .brand-name { font-weight: 700; font-size: 16px; white-space: nowrap; }
 
-.topbar nav { display: flex; gap: 2px; overflow-x: auto; }
+.topbar nav { display: flex; gap: 2px; overflow-x: auto; flex: 1; min-width: 0; }
 .topbar nav a {
   text-decoration: none;
   color: var(--muted);
@@ -100,6 +100,31 @@ a { color: var(--accent); }
   font-weight: 700;
   box-shadow: inset 0 0 0 1px rgba(214, 84, 44, 0.25);
 }
+
+/* ---------- Chapter switcher (multi-tenant) ---------- */
+.tenant-switcher {
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  max-width: 230px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.tenant-switcher:hover { background: #f1ece0; }
+.tenant-switcher.single {
+  cursor: default;
+  background: var(--accent-soft);
+  border-color: rgba(214, 84, 44, 0.25);
+  color: var(--accent-hover);
+}
+.tenant-switcher.single:hover { background: var(--accent-soft); }
 
 /* ---------- Layout ---------- */
 .wrap { max-width: 1400px; margin: 0 auto; padding: 28px 20px 72px; }
@@ -287,6 +312,13 @@ table.grid tfoot tr.sum-row td {
 }
 .pill.inside { background: var(--green-soft); color: var(--green); border-color: rgba(31, 138, 76, 0.25); }
 .pill.outside { background: var(--purple-soft); color: var(--purple); border-color: rgba(106, 79, 199, 0.25); }
+
+/* Members table: admin-only Active toggle in the first column. */
+.active-toggle {
+  width: 16px; height: 16px; margin: 0; cursor: pointer;
+  accent-color: var(--green); vertical-align: middle;
+}
+.active-toggle:disabled { cursor: progress; opacity: 0.6; }
 
 /* ---------- Toolbar / forms ---------- */
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { formatChatTranscript, whatsappShareUrl } from "@/lib/whatsapp";
 
 type Attachment = { name: string; mime: string };
 type TagRef = { text: string };
@@ -11,6 +12,8 @@ type Msg = {
   createdAt?: string;
   attachments?: Attachment[];
   tag?: TagRef;
+  /** Follow-up questions proposed by the AI for this reply (see SUGGESTIONS). */
+  suggestions?: string[];
 };
 type PendingFile = { name: string; mime: string; data: string };
 
@@ -29,17 +32,20 @@ const EXT_MIME: Record<string, string> = {
 
 /**
  * History rows are persisted as `text` + trailing markers (see the chat
- * generate route): `[attached: name]` chips and one `[tagged: snippet]` ref —
- * split them back into display data.
+ * generate route): `[attached: name]` chips, one `[tagged: snippet]` ref and
+ * `[suggestions: q | q]` follow-up questions — split them back into display
+ * data.
  */
 function splitAttached(raw: string): {
   text: string;
   attachments: Attachment[];
   tag?: TagRef;
+  suggestions?: string[];
 } {
   let text = raw;
   const attachments: Attachment[] = [];
   let tag: TagRef | undefined;
+  let suggestions: string[] | undefined;
   for (;;) {
     const attached = /\n?\[attached: ([^\]\n]{1,160})\]$/.exec(text);
     if (attached) {
@@ -53,9 +59,16 @@ function splitAttached(raw: string): {
       text = text.slice(0, tagged.index);
       continue;
     }
+    const sugg = /\n?\[suggestions: ([^\]\n]{1,600})\]$/.exec(text);
+    if (sugg) {
+      const list = sugg[1].split("|").map((q) => q.trim()).filter(Boolean);
+      if (list.length > 0) suggestions = list;
+      text = text.slice(0, sugg.index);
+      continue;
+    }
     break;
   }
-  return { text, attachments, tag };
+  return { text, attachments, tag, suggestions };
 }
 
 const GREETING: Msg = {
@@ -73,6 +86,7 @@ function fmtTime(iso?: string): string | null {
   return `${d.toLocaleDateString([], { day: "numeric", month: "short" })} ${time}`;
 }
 
+/** Starter chips for a chat with no AI answer yet (or one that proposed none). */
 const SUGGESTIONS = [
   "Who gave the most referrals?",
   "Who received the most referrals?",
@@ -81,12 +95,25 @@ const SUGGESTIONS = [
   "Who did the most one-to-ones?",
 ];
 
+/** The chips follow the newest reply: first AI message that carries
+ *  suggestions, so the next questions always match the current thread. */
+function latestSuggestions(messages: Msg[]): string[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const s = messages[i].suggestions;
+    if (s && s.length > 0) return s;
+  }
+  return SUGGESTIONS;
+}
+
 export default function ChatBox({
   sessionId,
+  chatTitle,
   onSessionCreated,
   onActivity,
 }: {
   sessionId: string | null;
+  /** Session title — heads the transcript when the chat is shared. */
+  chatTitle?: string;
   onSessionCreated: (id: string) => void;
   onActivity: () => void;
 }) {
@@ -128,12 +155,13 @@ export default function ChatBox({
       .then((data) => {
         const loaded: Msg[] = Array.isArray(data.messages)
           ? data.messages.map((m: { sender: string; text: string; created_at?: string }) => {
-              const { text, attachments, tag } = splitAttached(m.text);
+              const { text, attachments, tag, suggestions } = splitAttached(m.text);
               return {
                 sender: m.sender === "user" ? ("user" as const) : ("ai" as const),
                 text,
                 attachments: attachments.length > 0 ? attachments : undefined,
                 tag,
+                suggestions,
                 createdAt: m.created_at,
               };
             })
@@ -239,7 +267,15 @@ export default function ChatBox({
       if (!res.ok) {
         setError(data.error ?? "Something went wrong.");
       } else {
-        setMessages((current) => [...current, { sender: "ai" as const, text: data.text, createdAt: new Date().toISOString() }]);
+        setMessages((current) => [
+          ...current,
+          {
+            sender: "ai" as const,
+            text: data.text,
+            suggestions: Array.isArray(data.suggestions) ? data.suggestions : undefined,
+            createdAt: new Date().toISOString(),
+          },
+        ]);
         onActivity();
       }
     } catch (err) {
@@ -260,6 +296,15 @@ export default function ChatBox({
       setCopyState("idle");
       setMenu(null);
     }, 900);
+  }
+
+  /** Open WhatsApp with `text` already in the composer. Called from a click
+   *  (so the popup is never blocked); the recipient picker is WhatsApp's and
+   *  the app sends nothing itself. */
+  function shareOnWhatsApp(text: string) {
+    setMenu(null);
+    if (!text.trim()) return;
+    window.open(whatsappShareUrl(text), "_blank", "noopener,noreferrer");
   }
 
   function selectMessage(i: number) {
@@ -365,6 +410,7 @@ export default function ChatBox({
 
   const openMenuMsg = menu ? messages[menu.i] : undefined;
   const openMenuIdx = menu && openMenuMsg ? menu.i : null;
+  const transcript = formatChatTranscript(messages, chatTitle ?? "");
 
   return (
     <div className={`chat-wrap${maximized ? " chat-maximized" : ""}`}>
@@ -373,6 +419,14 @@ export default function ChatBox({
         <span className="chat-toolbar-right">
           <button type="button" onClick={() => setMaximized((v) => !v)}>
             {maximized ? "Minimize" : "Maximize"}
+          </button>
+          <button
+            type="button"
+            onClick={() => shareOnWhatsApp(transcript)}
+            disabled={!transcript}
+            title="Open WhatsApp with this conversation"
+          >
+            Share chat
           </button>
           {sessionId ? (
             <button type="button" onClick={() => setConfirmingClear(true)} disabled={busy}>
@@ -450,7 +504,7 @@ export default function ChatBox({
       ) : null}
 
       <div className="chat-chips">
-        {SUGGESTIONS.map((s) => (
+        {latestSuggestions(messages).map((s) => (
           <button key={s} type="button" disabled={busy} onClick={() => send(s)}>
             {s}
           </button>
@@ -591,6 +645,15 @@ export default function ChatBox({
             }}
           >
             Tag
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              if (openMenuMsg) shareOnWhatsApp(openMenuMsg.text);
+            }}
+          >
+            Share to WhatsApp
           </button>
         </div>
       ) : null}

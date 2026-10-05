@@ -19,13 +19,22 @@ function cacheFor(key: string): ListCache {
   return c;
 }
 
-/** Distinct non-empty values of one text column, sorted for dropdowns. */
+/** Distinct non-empty values of one text column, sorted for dropdowns.
+ *  Scoped to the tenant (cache key includes the tenant id). Extra `eq`
+ *  filters narrow the source rows (e.g. active-only members). */
 export async function distinctValues(
+  tenantId: string,
   table: string,
   column: string,
+  extraEq: [string, unknown][] = [],
 ): Promise<string[]> {
-  return cacheFor(`${table}.${column}`).get(async () => {
-    const data = await fetchAllRows<Record<string, unknown>>(table, column);
+  const extra = extraEq.length
+    ? `|${extraEq.map(([k, v]) => `${k}=${String(v)}`).join("|")}`
+    : "";
+  return cacheFor(`${tenantId}:${table}.${column}${extra}`).get(async () => {
+    const data = await fetchAllRows<Record<string, unknown>>(table, column, {
+      eq: [["tenant_id", tenantId], ...extraEq],
+    });
     const set = new Set<string>();
     for (const r of data) {
       const v = String(r[column] ?? "")

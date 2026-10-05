@@ -18,6 +18,11 @@ const IGNORE_CHAPTER = "BNI Ignore Chapter"; // detail on non-bold rows — must
 const MEETING = "2026-09-30"; // existing week 40
 const TITLE = "Slips Audit Report for 30/09/2026\n";
 const HEAD = "From,To,Slip Type,Inside/Outside,TYFCB Amount,CEU Credits,Detail\n";
+// Multi-tenant: every API/page call authenticates as a server-to-server
+// caller (service-role bearer) against the default tenant, and every DB
+// ground-truth query is scoped to it.
+const TENANT = "d1000000-0000-4000-8000-000000000001";
+const AUTH = { Authorization: `Bearer ${kv("SUPABASE_SERVICE_ROLE_KEY")}` };
 
 const results = [];
 const check = (name, ok, detail = "") =>
@@ -60,11 +65,11 @@ const fd = (content, name, type = "text/csv") => {
   f.append("file", new File([content], name, { type }));
   return f;
 };
-const post = (path, form) => fetch(`${APP}${path}`, { method: "POST", body: form });
+const post = (path, form) => fetch(`${APP}${path}`, { method: "POST", body: form, headers: { ...AUTH } });
 
 // ---- db helpers -----------------------------------------------------------
 async function count(table, filter) {
-  let q = sb.from(table).select("id", { count: "exact" }).limit(1);
+  let q = sb.from(table).select("id", { count: "exact" }).eq("tenant_id", TENANT).limit(1);
   for (const [k, v] of Object.entries(filter)) q = q.eq(k, v);
   const { count: c } = await q;
   return c ?? 0;
@@ -82,6 +87,7 @@ async function dbSummary(weekId) {
   const { data: otos } = await sb
     .from("slip_one_to_ones")
     .select("initiated_by_is_other_chapter,met_with_is_other_chapter")
+    .eq("tenant_id", TENANT)
     .eq("bni_week_id", weekId);
   const otoWeighted = (otos ?? []).reduce(
     (n, r) => n + (r.initiated_by_is_other_chapter === true || r.met_with_is_other_chapter === true ? 1 : 2),
@@ -90,21 +96,21 @@ async function dbSummary(weekId) {
   return { otoWeighted, ref, tyfcb, vis, ceu, total: otoWeighted + ref + tyfcb + vis + ceu };
 }
 async function exportSummary(weekId) {
-  const r = await fetch(`${APP}/api/report/export?week=${weekId}&tab=all&format=json`);
+  const r = await fetch(`${APP}/api/report/export?week=${weekId}&tab=all&format=json`, { headers: { ...AUTH } });
   const j = await r.json();
   return j.summary;
 }
 async function membersNamed(names) {
-  const { data } = await sb.from("members").select("id,name,chapter_id").in("name", names);
+  const { data } = await sb.from("members").select("id,name,chapter_id").eq("tenant_id", TENANT).in("name", names);
   return data ?? [];
 }
 async function chapterIdByName(name) {
-  const { data } = await sb.from("chapters").select("id").ilike("name", name).maybeSingle();
+  const { data } = await sb.from("chapters").select("id").eq("tenant_id", TENANT).ilike("name", name).maybeSingle();
   return data?.id ?? null;
 }
 async function batchId(filename) {
   const { data } = await sb
-    .from("import_batches").select("id").eq("filename", filename)
+    .from("import_batches").select("id").eq("tenant_id", TENANT).eq("filename", filename)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   return data?.id ?? null;
 }
@@ -112,27 +118,27 @@ async function batchId(filename) {
 // ---- 0) pre-clean leftovers + capture baseline ----------------------------
 async function preClean() {
   const { data: oldBatches } = await sb
-    .from("import_batches").select("id,filename").or("filename.eq.e2e-seed.csv,filename.eq.e2e-bold.xlsx");
+    .from("import_batches").select("id,filename").eq("tenant_id", TENANT).or("filename.eq.e2e-seed.csv,filename.eq.e2e-bold.xlsx");
   for (const b of oldBatches ?? []) {
     for (const t of ["slip_referrals", "slip_one_to_ones", "slip_tyfcb", "slip_visitors", "slip_ceus"]) {
       await sb.from(t).delete().eq("import_batch_id", b.id);
     }
     await sb.from("import_batches").delete().eq("id", b.id);
   }
-  await sb.from("members").delete().like("name", "E2E %");
+  await sb.from("members").delete().eq("tenant_id", TENANT).like("name", "E2E %");
   const tc = await chapterIdByName(TEST_CHAPTER);
   if (tc) await sb.from("chapters").delete().eq("id", tc);
 }
 async function cleanup() {
   const { data: batches } = await sb
-    .from("import_batches").select("id,filename").or("filename.eq.e2e-seed.csv,filename.eq.e2e-bold.xlsx");
+    .from("import_batches").select("id,filename").eq("tenant_id", TENANT).or("filename.eq.e2e-seed.csv,filename.eq.e2e-bold.xlsx");
   for (const b of batches ?? []) {
     for (const t of ["slip_referrals", "slip_one_to_ones", "slip_tyfcb", "slip_visitors", "slip_ceus"]) {
       await sb.from(t).delete().eq("import_batch_id", b.id);
     }
     await sb.from("import_batches").delete().eq("id", b.id);
   }
-  await sb.from("members").delete().like("name", "E2E %");
+  await sb.from("members").delete().eq("tenant_id", TENANT).like("name", "E2E %");
   const tc = await chapterIdByName(TEST_CHAPTER);
   if (tc) await sb.from("chapters").delete().eq("id", tc);
 }
@@ -182,7 +188,7 @@ for (const no of ["E2E Visitor Guest", "E2E TYFCB Host", "E2E TYFCB Recipient", 
 const ignoreId = await chapterIdByName(IGNORE_CHAPTER);
 check("detail on non-bold rows never creates a chapter", !ignoreId, String(ignoreId));
 
-const ceuRows = await sb.from("slip_ceus").select("id,member_id").eq("member_name", "E2E Home Person");
+const ceuRows = await sb.from("slip_ceus").select("id,member_id").eq("tenant_id", TENANT).eq("member_name", "E2E Home Person");
 check("duplicate CEU rows both imported", (ceuRows.data ?? []).length === 2, `count=${(ceuRows.data ?? []).length}`);
 check("CEU rows linked to the member", (ceuRows.data ?? []).every((x) => !!x.member_id));
 
@@ -191,11 +197,11 @@ check("duplicate referrals attempted (>=1)", refDup >= 1, `count=${refDup}`);
 if (refDup === 1) info("referral duplicate rejected by DB — migration 003_allow_duplicate_slips.sql still pending (message recorded on the batch)");
 else if (refDup === 2) info("both duplicate referrals imported — migration 003 already applied");
 
-const refSeed = await sb.from("slip_referrals").select("from_member_id,to_member_id").eq("from_name", "E2E Seed Person").eq("to_name", "E2E Seed Guest").limit(1).maybeSingle();
+const refSeed = await sb.from("slip_referrals").select("from_member_id,to_member_id").eq("tenant_id", TENANT).eq("from_name", "E2E Seed Person").eq("to_name", "E2E Seed Guest").limit(1).maybeSingle();
 check("referral linked to member ids", !!refSeed.data?.from_member_id && !!refSeed.data?.to_member_id);
-const visRow = await sb.from("slip_visitors").select("invited_by_member_id").eq("full_name", "E2E Visitor Guest").limit(1).maybeSingle();
+const visRow = await sb.from("slip_visitors").select("invited_by_member_id").eq("tenant_id", TENANT).eq("full_name", "E2E Visitor Guest").limit(1).maybeSingle();
 check("visitor inviter linked, guest unlinked", !!visRow.data?.invited_by_member_id);
-const tyfcbRow = await sb.from("slip_tyfcb").select("member_id").eq("member_name", "E2E TYFCB Recipient").limit(1).maybeSingle();
+const tyfcbRow = await sb.from("slip_tyfcb").select("member_id").eq("tenant_id", TENANT).eq("member_name", "E2E TYFCB Recipient").limit(1).maybeSingle();
 check("TYFCB thanked member not linked/filed", tyfcbRow.data?.member_id == null, String(tyfcbRow.data?.member_id));
 
 // ---- 3) import bold XLSX: detail chapter + multi-chapter rows -------------
@@ -218,11 +224,11 @@ check(
 );
 const ceuPerson = allRows.filter((m) => m.name === "E2E CEU Person");
 check("bold CEU attendee still filed HOME", ceuPerson.length === 1 && ceuPerson[0].chapter_id === homeId, `rows=${ceuPerson.length}`);
-const ceuBoldRow = await sb.from("slip_ceus").select("member_id").eq("member_name", "E2E CEU Person").limit(1).maybeSingle();
+const ceuBoldRow = await sb.from("slip_ceus").select("member_id").eq("tenant_id", TENANT).eq("member_name", "E2E CEU Person").limit(1).maybeSingle();
 check("bold CEU slip linked to its HOME member row", !!ceuBoldRow.data?.member_id);
 
 // ---- 4) today's screens reflect the import (caches cleared on import) ----
-const filtered = await (await fetch(`${APP}/members?c_chapter=${encodeURIComponent(TEST_CHAPTER)}`)).text();
+const filtered = await (await fetch(`${APP}/members?c_chapter=${encodeURIComponent(TEST_CHAPTER)}`, { headers: { ...AUTH } })).text();
 // Rows serialize as \"name\":\"...\"; the Name column's filter options are a bare
 // string array of ALL member names, so only the row-key form proves the filter.
 const q = String.fromCharCode(34), bs = String.fromCharCode(92);
@@ -232,7 +238,7 @@ check(
   rowIn(filtered, "E2E Bold Person") && rowIn(filtered, "E2E Seed Person") && !rowIn(filtered, "E2E Home Person"),
   "chapter-filtered SSR rows",
 );
-const memberPage = await (await fetch(`${APP}/members`)).text();
+const memberPage = await (await fetch(`${APP}/members`, { headers: { ...AUTH } })).text();
 check("Chapter column filter offers the new chapter", memberPage.includes(TEST_CHAPTER), "distinct options refreshed");
 
 const dbNow = await dbSummary(weekId);
@@ -257,6 +263,94 @@ check(
 );
 check("export summary back to baseline", afterExport?.total === base.total, String(afterExport?.total));
 check("test chapter removed", !(await chapterIdByName(TEST_CHAPTER)));
+
+// ---- 6) home chapter rules for OTHER tenants (env never applies) ----------
+// Blank-Detail members file to the tenant's home_chapter_name when set,
+// else the tenant's own name; NEXT_PUBLIC_CHAPTER_NAME is default-tenant only.
+{
+  const T1 = "e2000000-0000-4000-8000-00000000001a"; // home_chapter_name configured
+  const T2 = "e2000000-0000-4000-8000-00000000002b"; // no home_chapter_name
+  const T1_NAME = "E2E Configured Tenant";
+  const T2_NAME = "E2E Named Tenant";
+  const CONFIGURED_HOME = "E2E Configured Home";
+  const homeCsv =
+    TITLE + HEAD +
+    "E2E T1 Person,,CEU,,,3,\n" +
+    "E2E T2 Person,,CEU,,,3,\n";
+  const homeFd = (content) => {
+    const f = new FormData();
+    f.append("file", new File([content], "e2e-home.csv", { type: "text/csv" }));
+    return f;
+  };
+  const postTo = (tenant, form) =>
+    fetch(`${APP}/api/import/report`, { method: "POST", body: form, headers: { ...AUTH, "x-tenant-id": tenant } });
+
+  async function memberChapterName(tenant, name) {
+    const { data } = await sb
+      .from("members")
+      .select("chapters(name)")
+      .eq("tenant_id", tenant)
+      .eq("name", name)
+      .maybeSingle();
+    const rel = data?.chapters;
+    return (Array.isArray(rel) ? rel[0] : rel)?.name ?? null;
+  }
+  async function wipeTenant(tenant) {
+    const { data: batches } = await sb.from("import_batches").select("id").eq("tenant_id", tenant);
+    for (const b of batches ?? []) {
+      for (const t of ["slip_referrals", "slip_one_to_ones", "slip_tyfcb", "slip_visitors", "slip_ceus"]) {
+        await sb.from(t).delete().eq("import_batch_id", b.id);
+      }
+    }
+    await sb.from("import_batches").delete().eq("tenant_id", tenant);
+    await sb.from("members").delete().eq("tenant_id", tenant);
+    await sb.from("chapters").delete().eq("tenant_id", tenant);
+    await sb.from("tenants").delete().eq("id", tenant);
+  }
+
+  // Idempotent re-runs: drop leftovers from a previous run first.
+  await wipeTenant(T1);
+  await wipeTenant(T2);
+  const t1 = await sb.from("tenants").insert({ id: T1, name: T1_NAME, home_chapter_name: CONFIGURED_HOME }).select("id").single();
+  const t2 = await sb.from("tenants").insert({ id: T2, name: T2_NAME, home_chapter_name: null }).select("id").single();
+  if (t1.error || t2.error) {
+    check("home-rule tenants created", false, String(t1.error?.message ?? t2.error?.message));
+  } else {
+    const r1 = await postTo(T1, homeFd(homeCsv));
+    const i1 = await r1.json();
+    const r2 = await postTo(T2, homeFd(homeCsv));
+    const i2 = await r2.json();
+    check("other-tenant imports ok", r1.ok && r2.ok, JSON.stringify({ i1: i1.importedCount ?? i1.error, i2: i2.importedCount ?? i2.error }));
+
+    const ch1 = await memberChapterName(T1, "E2E T1 Person");
+    check(
+      "configured home_chapter_name wins for other tenants",
+      ch1 === CONFIGURED_HOME,
+      `chapter=${ch1}`,
+    );
+    const ch2 = await memberChapterName(T2, "E2E T2 Person");
+    check(
+      "no configured home -> tenant's own name (never the env chapter)",
+      ch2 === T2_NAME && ch2 !== HOME,
+      `chapter=${ch2} envHome=${HOME}`,
+    );
+    const envInT1 = await sb.from("chapters").select("id").eq("tenant_id", T1).ilike("name", HOME).maybeSingle();
+    const envInT2 = await sb.from("chapters").select("id").eq("tenant_id", T2).ilike("name", HOME).maybeSingle();
+    check(
+      "NEXT_PUBLIC_CHAPTER_NAME never created in other tenants",
+      !envInT1.data && !envInT2.data,
+      JSON.stringify({ t1: envInT1.data, t2: envInT2.data }),
+    );
+  }
+
+  await wipeTenant(T1);
+  await wipeTenant(T2);
+  check(
+    "home-rule tenants cleaned up",
+    !(await sb.from("tenants").select("id").in("id", [T1, T2]).maybeSingle()).data,
+    "",
+  );
+}
 
 console.log(results.join("\n"));
 const failed = results.filter((x) => x.startsWith("FAIL")).length;

@@ -3,17 +3,48 @@ import { latestImportedWeekId } from "./report-view";
 import { getSupabaseServer } from "./supabase/server";
 import { isoWeekNumber, type WeekOption } from "./weeks";
 
-// The week calendar changes only on import: cache per process for 5 minutes.
-// sharedState keeps ONE instance across page and route-handler bundles.
-const cache = sharedState("serverWeeks.options", () => createTtlCache<WeekOption[]>(5 * 60 * 1000));
+// Week options change only on import: cache per process for 5 minutes,
+// keyed by tenant (sharedState keeps ONE instance across page and
+// route-handler bundles).
+type OptionCache = ReturnType<typeof createTtlCache<WeekOption[]>>;
+const cache = sharedState("serverWeeks.optionsByTenant", () => new Map<string, OptionCache>());
 // Default week = weeks list + import_batches scan; recompute only on import.
-const defaultCache = sharedState("serverWeeks.default", () => createTtlCache<string | null>(5 * 60 * 1000));
+type DefaultCache = ReturnType<typeof createTtlCache<string | null>>;
+const defaultCache = sharedState("serverWeeks.defaultByTenant", () => new Map<string, DefaultCache>());
 
-async function fetchWeekOptions(): Promise<WeekOption[]> {
+function optionsCacheFor(tenantId: string): OptionCache {
+  let c = cache.get(tenantId);
+  if (!c) {
+    c = createTtlCache<WeekOption[]>(5 * 60 * 1000);
+    cache.set(tenantId, c);
+  }
+  return c;
+}
+
+function defaultCacheFor(tenantId: string): DefaultCache {
+  let c = defaultCache.get(tenantId);
+  if (!c) {
+    c = createTtlCache<string | null>(5 * 60 * 1000);
+    defaultCache.set(tenantId, c);
+  }
+  return c;
+}
+
+/** Weeks this tenant has imported data for (the shared calendar itself is global). */
+async function fetchWeekOptions(tenantId: string): Promise<WeekOption[]> {
   const sb = getSupabaseServer();
+  const { data: batches, error: batchError } = await sb
+    .from("import_batches")
+    .select("bni_week_id")
+    .eq("tenant_id", tenantId)
+    .not("bni_week_id", "is", null);
+  if (batchError) throw new Error(batchError.message);
+  const ids = [...new Set((batches ?? []).map((b) => b.bni_week_id as string))];
+  if (ids.length === 0) return [];
   const { data, error } = await sb
     .from("bni_weeks")
     .select("id,label,meeting_date,week_no")
+    .in("id", ids)
     .order("week_no", { ascending: true, nullsFirst: false })
     .order("meeting_date", { ascending: true })
     .limit(300);
@@ -21,18 +52,20 @@ async function fetchWeekOptions(): Promise<WeekOption[]> {
   return ((data ?? []) as WeekOption[]).map((w, i) => ({ ...w, week_no: w.week_no ?? i + 1 }));
 }
 
-export const getCachedWeekOptions = (): Promise<WeekOption[]> => cache.get(fetchWeekOptions);
+export const getCachedWeekOptions = (tenantId: string): Promise<WeekOption[]> =>
+  optionsCacheFor(tenantId).get(() => fetchWeekOptions(tenantId));
 
 /** Week id whose week number is closest to the current ISO week, among weeks
- *  that have imported data (ties prefer the past week). */
-async function computeDefaultWeekId(): Promise<string | null> {
+ *  this tenant has imported (ties prefer the past week). */
+async function computeDefaultWeekId(tenantId: string): Promise<string | null> {
   const sb = getSupabaseServer();
   const { data: imported } = await sb
     .from("import_batches")
     .select("bni_week_id")
+    .eq("tenant_id", tenantId)
     .not("bni_week_id", "is", null);
   const importedIds = new Set((imported ?? []).map((b) => b.bni_week_id as string));
-  const weeks = (await getCachedWeekOptions()).filter((w) => importedIds.has(w.id));
+  const weeks = (await getCachedWeekOptions(tenantId)).filter((w) => importedIds.has(w.id));
   const now = new Date();
   const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
     now.getDate(),
@@ -53,8 +86,8 @@ async function computeDefaultWeekId(): Promise<string | null> {
   return best;
 }
 
-export const defaultWeekId = (): Promise<string | null> =>
-  defaultCache.get(computeDefaultWeekId);
+export const defaultWeekId = (tenantId: string): Promise<string | null> =>
+  defaultCacheFor(tenantId).get(() => computeDefaultWeekId(tenantId));
 
 export const clearWeekOptionsCache = (): void => {
   cache.clear();
@@ -69,13 +102,14 @@ export const clearWeekOptionsCache = (): void => {
  * ("all" | one id | comma-separated ids | "" when nothing resolves).
  */
 export async function listWeekScope(
+  tenantId: string,
   sp: Record<string, string | undefined>,
 ): Promise<{ weekId: string; weekFilter: string }> {
   const param = sp.c_bni_week ?? sp.week;
   if (param === "all") return { weekId: "", weekFilter: "all" };
   const ids = (param || "").split(",").map((s) => s.trim()).filter(Boolean);
   if (ids.length === 0) {
-    const [d, l] = await Promise.all([defaultWeekId(), latestImportedWeekId()]);
+    const [d, l] = await Promise.all([defaultWeekId(tenantId), latestImportedWeekId(tenantId)]);
     return { weekId: d || l || "", weekFilter: d || l || "" };
   }
   return { weekId: ids.join(","), weekFilter: ids.join(",") };

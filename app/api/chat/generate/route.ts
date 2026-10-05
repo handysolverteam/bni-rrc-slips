@@ -1,6 +1,7 @@
 import { getCachedSlipsData } from "@/lib/chat/snapshot-cache";
 import { askGemini, type ChatAttachment, type ChatHistoryMessage } from "@/lib/chat/gemini";
 import { spreadsheetToText } from "@/lib/chat/attachment-text";
+import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 /** Per-request message cap (DoS + LLM cost guard). */
 const MAX_CHAT_MESSAGE_LENGTH = 2000;
@@ -28,6 +29,10 @@ export const maxDuration = 60;
  * to Gemini inline; spreadsheets are converted to capped text first.
  */
 export async function POST(request: Request) {
+  const ctx = await getTenantContext(request);
+  if (!ctx) return unauthorized();
+  if ("noAccess" in ctx) return forbidden();
+
   const body = (await request.json().catch(() => null)) as {
     message?: string;
     history?: ChatHistoryMessage[];
@@ -60,7 +65,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { snapshot, index } = await getCachedSlipsData();
+    const { snapshot, index } = await getCachedSlipsData(ctx.tenantId);
     const result = await askGemini(
       message + buildReplyContext(body.replyTo),
       snapshot,
@@ -78,6 +83,13 @@ export async function POST(request: Request) {
       );
     }
     const text = result.text;
+    const suggestions = result.suggestions ?? [];
+    // The suggestion chips must survive a reload/session switch, so they ride
+    // along as a hidden marker on the AI row — the same mechanism as
+    // [tagged:]/[attached:], split off for display by splitAttached().
+    const suggestionMarker = suggestions.length
+      ? `\n[suggestions: ${suggestions.join(" | ")}]`
+      : "";
 
     if (body.sessionId) {
       // Persist the typed message plus [tagged: snippet] / [attached: name]
@@ -98,8 +110,17 @@ export async function POST(request: Request) {
         .filter((part) => part.length > 0)
         .join("\n");
       // Best-effort only, but never silent: a failed save is logged so a
-      // reply shown on screen can't vanish from history unnoticed.
-      await persistChatTurn(body.sessionId, storedText, text).catch((e) =>
+      // reply shown on screen can't vanish from history unnoticed. The
+      // tenant scope means another chapter's sessionId writes nothing; the
+      // owner scope (when the caller has a uid) means another user's
+      // sessionId writes nothing either.
+      await persistChatTurn(
+        body.sessionId,
+        ctx.tenantId,
+        ctx.uid,
+        storedText,
+        text + suggestionMarker,
+      ).catch((e) =>
         console.error("Chat history save failed", {
           sessionId: body.sessionId,
           error: e instanceof Error ? e.message : String(e),
@@ -107,7 +128,12 @@ export async function POST(request: Request) {
       );
     }
 
-    return Response.json({ text, source: "gemini", sessionId: body.sessionId ?? null });
+    return Response.json({
+      text,
+      source: "gemini",
+      sessionId: body.sessionId ?? null,
+      suggestions,
+    });
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Failed to generate a reply." },
@@ -119,17 +145,26 @@ export async function POST(request: Request) {
 /**
  * Best-effort persistence: stores both sides of the turn and bumps the
  * session. A still-untitled session takes its title from the first question.
- * Failures never break the reply (already generated).
+ * Failures never break the reply (already generated). Scoped by tenant AND,
+ * when the caller has a uid, by owner (a foreign sessionId persists nothing).
  */
-async function persistChatTurn(sessionId: string, userText: string, aiText: string) {
+async function persistChatTurn(
+  sessionId: string,
+  tenantId: string,
+  uid: string | null,
+  userText: string,
+  aiText: string,
+) {
   const { getSupabaseServer } = await import("@/lib/supabase/server");
   const sb = getSupabaseServer();
 
-  const { data: session } = await sb
+  let sessionQuery = sb
     .from("chat_sessions")
     .select("id,title")
     .eq("id", sessionId)
-    .maybeSingle();
+    .eq("tenant_id", tenantId);
+  if (uid) sessionQuery = sessionQuery.eq("owner_uid", uid);
+  const { data: session } = await sessionQuery.maybeSingle();
   if (!session) return;
 
   await sb.from("chat_messages").insert([

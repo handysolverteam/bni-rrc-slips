@@ -8,6 +8,8 @@ import {
   type ReportRow,
   type ReportSectionKey,
 } from "@/lib/report-view";
+import { requirePageTenant } from "@/lib/server-auth";
+import NoAccess from "@/components/NoAccess";
 import ImportPanel from "@/components/ImportPanel";
 import SectionCollapse from "@/components/SectionCollapse";
 import ColumnFilter from "@/components/ColumnFilter";
@@ -141,11 +143,14 @@ export default async function ReportPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
+  const guard = await requirePageTenant();
+  if ("noAccess" in guard) return <NoAccess uid={guard.uid} />;
+  const tenantId = guard.tenantId;
   const sp = await searchParams;
   const [weeks, latest, defaultId] = await Promise.all([
-    getCachedWeekOptions(),
-    latestImportedWeekId(),
-    sp.week ? Promise.resolve(null) : defaultWeekId(),
+    getCachedWeekOptions(tenantId),
+    latestImportedWeekId(tenantId),
+    sp.week ? Promise.resolve(null) : defaultWeekId(tenantId),
   ]);
   const weekId = sp.week || defaultId || latest || weeks[0]?.id || "";
   const tab = (sp.tab as ReportSectionKey | "all" | undefined) || "all";
@@ -169,7 +174,7 @@ export default async function ReportPage({
       : activeWeeks.map((w) => w.label).join(" + ");
 
   const sectionsPromise = weekId
-    ? fetchReportSections(weekId, q, {
+    ? fetchReportSections(tenantId, weekId, q, {
         "one-to-one": colFor("one-to-one"),
         referral: colFor("referral"),
         tyfcb: colFor("tyfcb"),
@@ -187,21 +192,21 @@ export default async function ReportPage({
     sectionsPromise,
     Promise.all([
     Promise.all([
-      distinctValues("slip_referrals", "from_name"),
-      distinctValues("slip_one_to_ones", "initiated_by_name"),
-      distinctValues("slip_visitors", "invited_by_name"),
-      distinctValues("slip_ceus", "member_name"),
+      distinctValues(tenantId, "slip_referrals", "from_name"),
+      distinctValues(tenantId, "slip_one_to_ones", "initiated_by_name"),
+      distinctValues(tenantId, "slip_visitors", "invited_by_name"),
+      distinctValues(tenantId, "slip_ceus", "member_name"),
     ]).then((lists) => mergeDistinct(...lists)),
     Promise.all([
-      distinctValues("slip_referrals", "to_name"),
-      distinctValues("slip_one_to_ones", "met_with_name"),
-      distinctValues("slip_tyfcb", "member_name"),
-      distinctValues("slip_visitors", "full_name"),
+      distinctValues(tenantId, "slip_referrals", "to_name"),
+      distinctValues(tenantId, "slip_one_to_ones", "met_with_name"),
+      distinctValues(tenantId, "slip_tyfcb", "member_name"),
+      distinctValues(tenantId, "slip_visitors", "full_name"),
     ]).then((lists) => mergeDistinct(...lists)),
     Promise.all([
-      distinctValues("slip_referrals", "other_chapter_member"),
-      distinctValues("slip_one_to_ones", "other_chapter_member"),
-      distinctValues("slip_tyfcb", "other_chapter_member"),
+      distinctValues(tenantId, "slip_referrals", "other_chapter_member"),
+      distinctValues(tenantId, "slip_one_to_ones", "other_chapter_member"),
+      distinctValues(tenantId, "slip_tyfcb", "other_chapter_member"),
     ]).then((lists) => mergeDistinct(...lists)),
     ]),
   ]);
@@ -228,7 +233,7 @@ export default async function ReportPage({
           {allWeeks ? <p className="sub muted">All weeks</p> : weeksLabel ? <p className="sub muted">{weeksLabel}</p> : null}
         </div>
         <div className="report-head-actions">
-          <ImportPanel variant="toolbar" defaultCollapsed />
+          {guard.role === "admin" && <ImportPanel variant="toolbar" defaultCollapsed />}
           <ReportExportButtons
             weekId={weekId}
             tab={tab}

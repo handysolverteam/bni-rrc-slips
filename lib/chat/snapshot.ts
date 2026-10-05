@@ -65,10 +65,30 @@ const amount = (v: number | string | null): number => {
  */
 export type SlipsData = { snapshot: SlipsSnapshot; index: QueryIndex };
 
-/** Compact, privacy-safe dataset of the whole slips database for the AI. */
-export async function getSlipsData(): Promise<SlipsData> {
+/**
+ * Compact, privacy-safe dataset of ONE tenant's slips database for the AI.
+ * Weeks come from this tenant's import history (the calendar itself is
+ * global); members + every slip table are tenant-scoped.
+ */
+export async function getSlipsData(tenantId: string): Promise<SlipsData> {
   const sb = getSupabaseServer();
-  const chapterName = process.env.NEXT_PUBLIC_CHAPTER_NAME || "BNI Chapter";
+  const { data: tenantRow } = await sb
+    .from("tenants")
+    .select("name,home_chapter_name")
+    .eq("id", tenantId)
+    .maybeSingle();
+  const chapterName =
+    (tenantRow as { name?: string | null } | null)?.name ||
+    process.env.NEXT_PUBLIC_CHAPTER_NAME ||
+    "BNI Chapter";
+
+  // This tenant's imported weeks: buckets + the week list in the index.
+  const { data: batchWeeks } = await sb
+    .from("import_batches")
+    .select("bni_week_id")
+    .eq("tenant_id", tenantId)
+    .not("bni_week_id", "is", null);
+  const weekIds = [...new Set((batchWeeks ?? []).map((b) => b.bni_week_id as string))];
 
   // NOTE: fetchAllRows, never .limit() — Supabase returns at most 1000 rows
   // per request, and the DB is already past the old hand-picked caps
@@ -77,19 +97,27 @@ export async function getSlipsData(): Promise<SlipsData> {
     fetchAllRows<{ name: string; category: string | null; chapters: { name: string } | { name: string }[] | null }>(
       "members",
       "name,category,chapters(name)",
-      // Order by a unique column: a non-unique sort key can repeat/skip rows
-      // when range-paging crosses a page boundary.
-      { order: { column: "id" }, pageSize: 1000 },
+      {
+        eq: [["tenant_id", tenantId]],
+        // Order by a unique column: a non-unique sort key can repeat/skip rows
+        // when range-paging crosses a page boundary.
+        order: { column: "id" },
+        pageSize: 1000,
+      },
     ),
     fetchAllRows<{ id: string; label: string; meeting_date: string }>(
       "bni_weeks",
       "id,label,meeting_date",
-      { order: { column: "meeting_date", ascending: false }, pageSize: 500 },
+      {
+        in: [["id", weekIds]],
+        order: { column: "meeting_date", ascending: false },
+        pageSize: 500,
+      },
     ),
     fetchAllRows<{ bni_week_id: string | null; from_name: string; to_name: string; inside_outside: string | null }>(
       "slip_referrals",
       "bni_week_id,from_name,to_name,inside_outside",
-      { order: { column: "id" }, pageSize: 1000 },
+      { eq: [["tenant_id", tenantId]], order: { column: "id" }, pageSize: 1000 },
     ),
     fetchAllRows<{
       bni_week_id: string | null;
@@ -100,17 +128,17 @@ export async function getSlipsData(): Promise<SlipsData> {
     }>(
       "slip_one_to_ones",
       "bni_week_id,initiated_by_name,met_with_name,initiated_by_is_other_chapter,met_with_is_other_chapter",
-      { order: { column: "id" }, pageSize: 1000 },
+      { eq: [["tenant_id", tenantId]], order: { column: "id" }, pageSize: 1000 },
     ),
     fetchAllRows<{ bni_week_id: string | null; member_name: string; amount: number | string | null }>(
       "slip_tyfcb",
       "bni_week_id,member_name,amount",
-      { order: { column: "id" }, pageSize: 1000 },
+      { eq: [["tenant_id", tenantId]], order: { column: "id" }, pageSize: 1000 },
     ),
     fetchAllRows<{ bni_week_id: string | null; full_name: string; invited_by_name: string | null }>(
       "slip_visitors",
       "bni_week_id,full_name,invited_by_name",
-      { order: { column: "id" }, pageSize: 1000 },
+      { eq: [["tenant_id", tenantId]], order: { column: "id" }, pageSize: 1000 },
     ),
   ]);
 

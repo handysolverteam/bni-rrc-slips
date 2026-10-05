@@ -95,6 +95,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     cancelPhoneOtp();
+    // Drop the HttpOnly session/tenant cookies first so server components
+    // stop resolving a tenant for a signed-out user.
+    await fetch("/api/auth/session", { method: "DELETE" }).catch(() => {});
     await signOutFirebase();
 
     // Best-effort: ask every trusted sibling app to sign out too, so logging out here

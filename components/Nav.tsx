@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 const links = [
   { href: "/", label: "Home", exact: true },
-  { href: "/import", label: "Import", exact: false },
+  { href: "/import", label: "Import", exact: false, admin: true },
   { href: "/members", label: "Bni Member", exact: false },
   { href: "/referrals", label: "Slip Referrals", exact: false },
   { href: "/one-to-ones", label: "Slip 121", exact: false },
@@ -16,11 +16,12 @@ const links = [
   { href: "/chat", label: "Chat", exact: false },
 ];
 
-export default function Nav() {
+export default function Nav({ role = "admin" }: { role?: "admin" | "member" }) {
   const pathname = usePathname();
+  const visible = role === "admin" ? links : links.filter((l) => !l.admin);
   return (
     <nav>
-      {links.map((l) => {
+      {visible.map((l) => {
         const active = l.exact ? pathname === l.href : pathname.startsWith(l.href);
         return (
           <Link key={l.href} href={l.href} className={active ? "active" : undefined}>

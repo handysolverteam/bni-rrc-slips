@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paged";
+import { requirePageTenant } from "@/lib/server-auth";
+import NoAccess from "@/components/NoAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +15,7 @@ const sections = [
   { href: "/ceus", label: "Slip CEU", table: "slip_ceus", kind: "ceu" },
 ];
 
-async function getCounts(): Promise<Record<string, number | null>> {
+async function getCounts(tenantId: string): Promise<Record<string, number | null>> {
   try {
     const sb = getSupabaseServer();
     const entries = await Promise.all(
@@ -24,7 +26,7 @@ async function getCounts(): Promise<Record<string, number | null>> {
           const rows = await fetchAllRows<{ initiated_by_is_other_chapter: boolean | null; met_with_is_other_chapter: boolean | null }>(
             "slip_one_to_ones",
             "initiated_by_is_other_chapter,met_with_is_other_chapter",
-            { pageSize: 1000 },
+            { eq: [["tenant_id", tenantId]], pageSize: 1000 },
           );
           const weighted = rows.reduce(
             (n, r) => n + (r.initiated_by_is_other_chapter === true || r.met_with_is_other_chapter === true ? 1 : 2),
@@ -32,7 +34,11 @@ async function getCounts(): Promise<Record<string, number | null>> {
           );
           return [s.table, weighted] as const;
         }
-        const { count } = await sb.from(s.table).select("id", { count: "exact" }).limit(1); // NOTE: head:true silently returns count=null in this client version
+        const { count } = await sb
+          .from(s.table)
+          .select("id", { count: "exact" })
+          .eq("tenant_id", tenantId)
+          .limit(1); // NOTE: head:true silently returns count=null in this client version
         return [s.table, count] as const;
       })
     );
@@ -43,7 +49,9 @@ async function getCounts(): Promise<Record<string, number | null>> {
 }
 
 export default async function Home() {
-  const counts = await getCounts();
+  const guard = await requirePageTenant();
+  if ("noAccess" in guard) return <NoAccess uid={guard.uid} />;
+  const counts = await getCounts(guard.tenantId);
 
   return (
     <div>
@@ -54,11 +62,13 @@ export default async function Home() {
           Detail) — pick a BNI Week on import, then browse everything below.
         </p>
         <div className="hero-actions">
-          <Link href="/import">
-            <button type="button" className="primary">
-              Import Report XLS
-            </button>
-          </Link>
+          {guard.role === "admin" && (
+            <Link href="/import">
+              <button type="button" className="primary">
+                Import Report XLS
+              </button>
+            </Link>
+          )}
         </div>
       </div>
 

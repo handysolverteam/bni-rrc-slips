@@ -150,6 +150,7 @@ export default function ChatPage() {
           <ChatBox
             key={epoch}
             sessionId={activeId}
+            chatTitle={sessions.find((s) => s.id === activeId)?.title ?? ""}
             onSessionCreated={(id) => refreshSessions(id)}
             onActivity={() => refreshSessions()}
           />

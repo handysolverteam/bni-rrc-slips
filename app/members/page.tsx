@@ -1,7 +1,9 @@
 import ListShell from "@/components/ListShell";
+import NoAccess from "@/components/NoAccess";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { distinctValues } from "@/lib/distinct";
 import { applyColumnFilter, multiParts } from "@/lib/list-filters";
+import { requirePageTenant } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,12 +12,22 @@ export default async function MembersPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
+  const guard = await requirePageTenant();
+  if ("noAccess" in guard) return <NoAccess uid={guard.uid} />;
+  const tenantId = guard.tenantId;
+  // Only admins get the Active toggle column and see inactive members.
+  const isAdmin = guard.role === "admin";
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page || 1));
   const pageSize = 100;
   const q = sp.q || "";
   const sb = getSupabaseServer();
-  let query = sb.from("members").select("*, chapters(name)", { count: "exact" }).order("name");
+  let query = sb
+    .from("members")
+    .select("*, chapters(name)", { count: "exact" })
+    .eq("tenant_id", tenantId)
+    .order("name");
+  if (!isAdmin) query = query.eq("is_inactive", false);
   if (q) query = query.ilike("name", `%${q}%`);
   const columnFilters: Record<string, string> = {};
   for (const k of ["name", "category", "company", "phone"]) {
@@ -27,7 +39,10 @@ export default async function MembersPage({
   }
   const chapterV = (sp.c_chapter || "").trim();
   if (chapterV) {
-    const { data: chapters } = await sb.from("chapters").select("id, name");
+    const { data: chapters } = await sb
+      .from("chapters")
+      .select("id, name")
+      .eq("tenant_id", tenantId);
     const names = multiParts(chapterV).map((s) => s.toLowerCase());
     const ids = (chapters ?? [])
       .filter((c) => names.includes(String(c.name ?? "").trim().toLowerCase()))
@@ -35,14 +50,16 @@ export default async function MembersPage({
     query = query.in("chapter_id", ids.length > 0 ? ids : ["00000000-0000-0000-0000-000000000000"]);
     columnFilters.chapter = chapterV;
   }
+  // Non-admins get active-only dropdown options too, so no option is a dead end.
+  const memberEq: [string, unknown][] = isAdmin ? [] : [["is_inactive", false]];
   const [{ data, count }, filterOptions] = await Promise.all([
     query.range((page - 1) * pageSize, page * pageSize - 1),
     Promise.all([
-      distinctValues("chapters", "name"),
-      distinctValues("members", "name"),
-      distinctValues("members", "category"),
-      distinctValues("members", "company"),
-      distinctValues("members", "phone"),
+      distinctValues(tenantId, "chapters", "name"),
+      distinctValues(tenantId, "members", "name", memberEq),
+      distinctValues(tenantId, "members", "category", memberEq),
+      distinctValues(tenantId, "members", "company", memberEq),
+      distinctValues(tenantId, "members", "phone", memberEq),
     ]).then(([chapter, name, category, company, phone]) => ({
       chapter,
       name,
@@ -55,6 +72,7 @@ export default async function MembersPage({
     const rel = m.chapters as { name?: string } | { name?: string }[] | null;
     return {
       ...m,
+      active: m.is_inactive !== true,
       chapter: (Array.isArray(rel) ? rel[0]?.name : rel?.name) ?? "",
     };
   });
@@ -70,6 +88,7 @@ export default async function MembersPage({
       weekId=""
       weeks={[]}
       columns={[
+        ...(isAdmin ? [{ key: "active", label: "Active" }] : []),
         { key: "name", label: "Name" },
         { key: "chapter", label: "Chapter" },
         { key: "category", label: "Category" },

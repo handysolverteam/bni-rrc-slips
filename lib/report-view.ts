@@ -64,6 +64,7 @@ export type ReportColFilters = Partial<
 >;
 
 export async function fetchReportSections(
+  tenantId: string,
   weekId: string,
   q = "",
   col: ReportColFilters = {},
@@ -82,14 +83,18 @@ export async function fetchReportSections(
   const scopedFilters = (
     scope: string,
   ): { eq?: [string, string][]; in?: [string, string[]][] } => {
-    if (scope === "all") return {};
-    const ids = scope
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (ids.length > 1) return { in: [["bni_week_id", ids]] };
-    // Single id; an empty scope still matches nothing (as before).
-    return { eq: [["bni_week_id", ids[0] ?? ""]] };
+    // Every section query is tenant-scoped first; the week scope narrows it.
+    const eq: [string, string][] = [["tenant_id", tenantId]];
+    if (scope !== "all") {
+      const ids = scope
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (ids.length > 1) return { eq, in: [["bni_week_id", ids]] };
+      // Single id; an empty scope still matches nothing (as before).
+      eq.push(["bni_week_id", ids[0] ?? ""]);
+    }
+    return { eq };
   };
 
   type R = Record<string, string | boolean | number | null | { label?: string } | { label?: string }[]>;
@@ -258,23 +263,36 @@ export async function fetchReportSections(
   ];
 }
 
-/** Latest week that actually has imported slips (drives the default view). */
-async function fetchLatestImportedWeekId(): Promise<string | null> {
+/** Latest week this tenant actually imported (drives the default view). */
+async function fetchLatestImportedWeekId(tenantId: string): Promise<string | null> {
   const sb = getSupabaseServer();
   const { data } = await sb
     .from("import_batches")
     .select("bni_week_id")
+    .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   return (data as { bni_week_id: string | null } | null)?.bni_week_id ?? null;
 }
 
-// Changes only on import: cache per process for 5 minutes.
-const latestCache = sharedState("reportView.latestWeek", () => createTtlCache<string | null>(5 * 60 * 1000));
+// Changes only on import: cache per process for 5 minutes, keyed by tenant.
+const latestCache = sharedState(
+  "reportView.latestWeekByTenant",
+  () => new Map<string, ReturnType<typeof createTtlCache<string | null>>>(),
+);
 
-export const latestImportedWeekId = (): Promise<string | null> =>
-  latestCache.get(fetchLatestImportedWeekId);
+function latestCacheFor(tenantId: string): ReturnType<typeof createTtlCache<string | null>> {
+  let c = latestCache.get(tenantId);
+  if (!c) {
+    c = createTtlCache<string | null>(5 * 60 * 1000);
+    latestCache.set(tenantId, c);
+  }
+  return c;
+}
+
+export const latestImportedWeekId = (tenantId: string): Promise<string | null> =>
+  latestCacheFor(tenantId).get(() => fetchLatestImportedWeekId(tenantId));
 
 /** Drop the cached latest-week pointer (call on import). */
 export const clearLatestImportedWeekCache = (): void => latestCache.clear();

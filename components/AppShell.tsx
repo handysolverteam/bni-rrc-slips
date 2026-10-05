@@ -4,6 +4,8 @@ import { Suspense, useEffect, useState, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { signInWithCustomToken } from "firebase/auth";
 import Nav from "@/components/Nav";
+import NoAccess from "@/components/NoAccess";
+import TenantSwitcher from "@/components/TenantSwitcher";
 import UserMenu from "@/components/UserMenu";
 import { useAuth } from "@/context/AuthContext";
 import { firebaseAuth, signOutFirebase } from "@/lib/firebase/client";
@@ -34,6 +36,57 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
   const { user, loading } = useAuth();
   const isPublicPath = PUBLIC_PATHS.includes(pathname);
+
+  // Session + tenant bootstrap: after Firebase auth resolves, exchange the ID
+  // token for the HttpOnly session cookie and load this user's chapters.
+  // Children are NOT rendered until this finishes, so no page fetch races a
+  // missing cookie (which would redirect to /login while already signed in).
+  const [tenantState, setTenantState] = useState<"loading" | "ready" | "noaccess">("loading");
+  const [tenants, setTenants] = useState<{ id: string; name: string }[]>([]);
+  const [activeTenant, setActiveTenant] = useState<{ id: string; name: string } | null>(null);
+  const [role, setRole] = useState<"admin" | "member">("admin");
+  const [noAccessUid, setNoAccessUid] = useState<string | null>(null);
+  const tenantBootstrapped = useRef(false);
+
+  useEffect(() => {
+    if (loading || !user || isPublicPath) return;
+    if (tenantBootstrapped.current) return;
+    tenantBootstrapped.current = true;
+
+    (async () => {
+      try {
+        const idToken = await firebaseAuth.currentUser?.getIdToken();
+        if (!idToken) return;
+        const sessionRes = await fetch("/api/auth/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idToken }),
+        });
+        if (!sessionRes.ok) return;
+        const info = (await (await fetch("/api/tenant")).json()) as {
+          uid?: string | null;
+          tenant?: { id: string; name: string } | null;
+          tenants?: { id: string; name: string }[];
+          noAccess?: boolean;
+          role?: "admin" | "member";
+        };
+        if (info.noAccess) {
+          setNoAccessUid(info.uid ?? user.uid);
+          setTenantState("noaccess");
+        } else {
+          setTenants(info.tenants ?? []);
+          setActiveTenant(info.tenant ?? null);
+          setRole(info.role ?? "admin");
+          setTenantState("ready");
+        }
+      } catch {
+        // Cookie may already exist from an earlier load; render children and
+        // let the server redirect to /login if it truly is missing (that full
+        // navigation remounts this shell and retries the bootstrap).
+        setTenantState("ready");
+      }
+    })();
+  }, [loading, user, isPublicPath, user?.uid]);
 
   /**
    * Cross-app SSO with any trusted sibling app (see lib/sso-partners.ts). The contract is
@@ -178,6 +231,14 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
     return <Spinner />;
   }
 
+  if (tenantState === "loading") {
+    return <Spinner />;
+  }
+
+  if (tenantState === "noaccess") {
+    return <NoAccess uid={noAccessUid ?? user.uid} />;
+  }
+
   return (
     <>
       <header className="topbar">
@@ -185,7 +246,8 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
           <span className="brand-badge">BNI</span>
           <span className="brand-name">Week Slips</span>
         </a>
-        <Nav />
+        <Nav role={role} />
+        <TenantSwitcher tenants={tenants} activeId={activeTenant?.id ?? null} />
         <UserMenu />
       </header>
       <main className="wrap">{children}</main>

@@ -1,9 +1,11 @@
 import ListShell from "@/components/ListShell";
+import NoAccess from "@/components/NoAccess";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getCachedWeekOptions, listWeekScope } from "@/lib/server-weeks";
 import { distinctValues } from "@/lib/distinct";
 import { weekFilterOptions } from "@/lib/weeks";
 import { applyColumnFilter, applyWeekFilter, multiParts } from "@/lib/list-filters";
+import { requirePageTenant } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,15 +14,19 @@ export default async function TyfcbPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
+  const guard = await requirePageTenant();
+  if ("noAccess" in guard) return <NoAccess uid={guard.uid} />;
+  const tenantId = guard.tenantId;
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page || 1));
   const pageSize = 100;
   const q = sp.q || "";
-  const { weekId, weekFilter } = await listWeekScope(sp);
+  const { weekId, weekFilter } = await listWeekScope(tenantId, sp);
   const sb = getSupabaseServer();
   let query = sb
     .from("slip_tyfcb")
     .select("*, bni_weeks(label)", { count: "exact" })
+    .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false });
   if (q) query = query.ilike("member_name", `%${q}%`);
   if (weekId) query = applyWeekFilter(query, weekId);
@@ -42,11 +48,11 @@ export default async function TyfcbPage({
   }
   const [{ data, count }, weeks, baseOptions] = await Promise.all([
     query.range((page - 1) * pageSize, page * pageSize - 1),
-    getCachedWeekOptions(),
+    getCachedWeekOptions(tenantId),
     Promise.all([
-      distinctValues("slip_tyfcb", "member_name"),
-      distinctValues("slip_tyfcb", "other_chapter_member"),
-      distinctValues("slip_tyfcb", "amount"),
+      distinctValues(tenantId, "slip_tyfcb", "member_name"),
+      distinctValues(tenantId, "slip_tyfcb", "other_chapter_member"),
+      distinctValues(tenantId, "slip_tyfcb", "amount"),
     ]).then(([member_name, other_chapter_member, amount]) => ({
       member_name,
       other_chapter_member,

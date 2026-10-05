@@ -1,4 +1,5 @@
 import ColumnFilter from "@/components/ColumnFilter";
+import MemberActiveToggle from "@/components/MemberActiveToggle";
 import type { ComboOption } from "@/components/SearchSelect";
 
 type Col = { key: string; label: string };
@@ -12,6 +13,16 @@ const OTHER_CHAPTER_FLAG: Record<string, string> = {
 };
 
 function Cell({ columnKey, value, row }: { columnKey: string; value: unknown; row: Record<string, unknown> }) {
+  // Admin-only Active column (members list): the row itself carries the flag.
+  if (columnKey === "active") {
+    return (
+      <MemberActiveToggle
+        memberId={String(row.id ?? "")}
+        name={String(row.name ?? "")}
+        active={row.active !== false}
+      />
+    );
+  }
   if (columnKey === "inside_outside" && (value === "Inside" || value === "Outside")) {
     return <span className={`pill ${String(value).toLowerCase()}`}>{String(value)}</span>;
   }
