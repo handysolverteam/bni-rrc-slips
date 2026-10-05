@@ -6,8 +6,8 @@
  * exact insert an operator runs in the Supabase SQL editor.
  */
 export default function NoAccess({ uid }: { uid: string }) {
-  const sql = `insert into public.tenant_members (tenant_id, uid, role)
-values ('d1000000-0000-4000-8000-000000000001', '${uid}', 'admin') -- or 'member' for read-only
+  const sql = `insert into public.tenant_members (tenant_id, uid)
+values ('d1000000-0000-4000-8000-000000000001', '${uid}')
 on conflict do nothing;`;
 
   return (

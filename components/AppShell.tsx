@@ -44,7 +44,6 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   const [tenantState, setTenantState] = useState<"loading" | "ready" | "noaccess">("loading");
   const [tenants, setTenants] = useState<{ id: string; name: string }[]>([]);
   const [activeTenant, setActiveTenant] = useState<{ id: string; name: string } | null>(null);
-  const [role, setRole] = useState<"admin" | "member">("admin");
   const [noAccessUid, setNoAccessUid] = useState<string | null>(null);
   const tenantBootstrapped = useRef(false);
 
@@ -68,7 +67,6 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
           tenant?: { id: string; name: string } | null;
           tenants?: { id: string; name: string }[];
           noAccess?: boolean;
-          role?: "admin" | "member";
         };
         if (info.noAccess) {
           setNoAccessUid(info.uid ?? user.uid);
@@ -76,7 +74,6 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         } else {
           setTenants(info.tenants ?? []);
           setActiveTenant(info.tenant ?? null);
-          setRole(info.role ?? "admin");
           setTenantState("ready");
         }
       } catch {
@@ -246,7 +243,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
           <span className="brand-badge">BNI</span>
           <span className="brand-name">Week Slips</span>
         </a>
-        <Nav role={role} />
+        <Nav />
         <TenantSwitcher tenants={tenants} activeId={activeTenant?.id ?? null} />
         <UserMenu />
       </header>

@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { TENANT_COOKIE, getTenantContext, unauthorized } from "@/lib/server-auth";
 
-/** Current tenant + every tenant this user may switch to (+ active role). */
+/** Current tenant + every tenant this user may switch to. */
 export async function GET(request: Request) {
   const ctx = await getTenantContext(request);
   if (!ctx) return unauthorized();
@@ -17,7 +17,6 @@ export async function GET(request: Request) {
       tenant: data ?? null,
       tenants: data ? [data] : [],
       noAccess: false,
-      role: ctx.role,
     });
   }
 
@@ -30,7 +29,7 @@ export async function GET(request: Request) {
     .map((r) => r.tenants as { id: string; name: string } | { id: string; name: string }[] | null)
     .flatMap((t) => (Array.isArray(t) ? t : t ? [t] : []));
   const active = tenants.find((t) => t.id === ctx.tenantId) ?? tenants[0] ?? null;
-  return Response.json({ uid: ctx.uid, tenant: active, tenants, noAccess: false, role: ctx.role });
+  return Response.json({ uid: ctx.uid, tenant: active, tenants, noAccess: false });
 }
 
 /** Switch the active tenant — 403 unless the caller is a member. */

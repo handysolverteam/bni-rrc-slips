@@ -8,19 +8,17 @@ import { clearDistinctCache } from "@/lib/distinct";
 import { clearLatestImportedWeekCache } from "@/lib/report-view";
 import { clearSlipsSnapshotCache } from "@/lib/chat/snapshot-cache";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { adminOnly, forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
+import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 /** Bulk import can exceed the default serverless timeout on file uploads. */
 export const maxDuration = 60;
 
-/** Admin-only write surface: a member gets 403 before the file is read. */
+/** Write surface: any signed-in member of the active chapter (roles were removed). */
 export async function POST(request: Request) {
   try {
     const ctx = await getTenantContext(request);
     if (!ctx) return unauthorized();
     if ("noAccess" in ctx) return forbidden();
-    const denied = adminOnly(ctx);
-    if (denied) return denied;
     const tenantId = ctx.tenantId;
 
     const form = await request.formData();

@@ -233,7 +233,7 @@ export default async function ReportPage({
           {allWeeks ? <p className="sub muted">All weeks</p> : weeksLabel ? <p className="sub muted">{weeksLabel}</p> : null}
         </div>
         <div className="report-head-actions">
-          {guard.role === "admin" && <ImportPanel variant="toolbar" defaultCollapsed />}
+          <ImportPanel variant="toolbar" defaultCollapsed />
           <ReportExportButtons
             weekId={weekId}
             tab={tab}
