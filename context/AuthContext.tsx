@@ -95,6 +95,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     cancelPhoneOtp();
+    // Drop the HttpOnly session/tenant cookies first so server components
+    // stop resolving a tenant for a signed-out user.
+    await fetch("/api/auth/session", { method: "DELETE" }).catch(() => {});
     await signOutFirebase();
     // Otherwise logging back in within this same tab would silently skip the hub and show
     // this app's own dormant local login page instead (the flag says "already tried").

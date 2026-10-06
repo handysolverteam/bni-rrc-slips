@@ -32,6 +32,7 @@
 [data-stat="referral"] { --sec: var(--green); --sec-soft: var(--green-soft); }
 [data-stat="tyfcb"] { --sec: var(--gold); --sec-soft: var(--gold-soft); }
 [data-stat="visitor"] { --sec: var(--blue); --sec-soft: var(--blue-soft); }
+[data-stat="ceu"] { --sec: var(--purple); --sec-soft: var(--purple-soft); }
 
 * { box-sizing: border-box; }
 
@@ -81,7 +82,7 @@ a { color: var(--accent); }
 }
 .brand-name { font-weight: 700; font-size: 16px; white-space: nowrap; }
 
-.topbar nav { display: flex; gap: 2px; overflow-x: auto; }
+.topbar nav { display: flex; gap: 2px; overflow-x: auto; flex: 1; min-width: 0; }
 .topbar nav a {
   text-decoration: none;
   color: var(--muted);
@@ -99,6 +100,31 @@ a { color: var(--accent); }
   font-weight: 700;
   box-shadow: inset 0 0 0 1px rgba(214, 84, 44, 0.25);
 }
+
+/* ---------- Chapter switcher (multi-tenant) ---------- */
+.tenant-switcher {
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  max-width: 230px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.tenant-switcher:hover { background: #f1ece0; }
+.tenant-switcher.single {
+  cursor: default;
+  background: var(--accent-soft);
+  border-color: rgba(214, 84, 44, 0.25);
+  color: var(--accent-hover);
+}
+.tenant-switcher.single:hover { background: var(--accent-soft); }
 
 /* ---------- Layout ---------- */
 .wrap { max-width: 1400px; margin: 0 auto; padding: 28px 20px 72px; }
@@ -166,6 +192,25 @@ table.grid tbody tr:last-child td { border-bottom: none; }
 table.grid tbody tr { transition: background 0.12s; }
 table.grid tbody tr:nth-child(even) { background: #fbf8f2; }
 table.grid tbody tr:hover { background: #f7f0e1; }
+/* Import history: Skipped count expands to the list of dropped rows. */
+.skip-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+/* Neutralise the global button hover capsule/press on the Skipped count. */
+.skip-toggle:hover:not(:disabled) { background: none; border: none; box-shadow: none; }
+.skip-toggle:active:not(:disabled) { transform: none; }
+.skip-toggle .skip-caret { font-size: 10px; margin-left: 5px; color: var(--muted); }
+tr.skip-detail:hover { background: #f3ecdd; }
+tr.skip-detail td { background: #f6efe1; vertical-align: top; }
+tr.skip-detail strong { display: block; margin-bottom: 4px; font-size: 12.5px; }
+tr.skip-detail ul { margin: 0; padding-left: 18px; }
+tr.skip-detail li { font-size: 12.5px; line-height: 1.75; }
+tr.skip-detail p { margin: 4px 0 2px; }
 table.grid tfoot tr.sum-row td {
   background: var(--sec-soft);
   border-top: 2px solid var(--sec);
@@ -240,6 +285,19 @@ table.grid tfoot tr.sum-row td {
 .combo-clear { color: var(--muted); font-style: italic; }
 .combo-empty { font-size: 12.5px; color: var(--muted); padding: 8px 10px; }
 .col-filter-busy { position: absolute; right: 2px; top: 2px; }
+/* Header date filter (import history "Imported On"): same combo-field look,
+   but the field only ever holds a single day. */
+.col-filter-date { width: 118px; flex: none; color-scheme: light; }
+.col-filter-date::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.9;
+  cursor: pointer;
+}
+/* Active filter shows as the white pill — keep the picker icon dark there. */
+.combo.has-value .col-filter-date::-webkit-calendar-picker-indicator {
+  filter: none;
+  opacity: 0.6;
+}
 .col-filter-busy.spinner.small { border-color: rgba(255,255,255,0.5); border-top-color: #fff; }
 
 .empty-state {
@@ -254,6 +312,13 @@ table.grid tfoot tr.sum-row td {
 }
 .pill.inside { background: var(--green-soft); color: var(--green); border-color: rgba(31, 138, 76, 0.25); }
 .pill.outside { background: var(--purple-soft); color: var(--purple); border-color: rgba(106, 79, 199, 0.25); }
+
+/* Members table: admin-only Active toggle in the first column. */
+.active-toggle {
+  width: 16px; height: 16px; margin: 0; cursor: pointer;
+  accent-color: var(--green); vertical-align: middle;
+}
+.active-toggle:disabled { cursor: progress; opacity: 0.6; }
 
 /* ---------- Toolbar / forms ---------- */
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
@@ -439,10 +504,18 @@ button.danger:hover:not(:disabled) { background: var(--red-soft); }
 /* ---------- Chat ---------- */
 .chat-card { padding: 0; overflow: hidden; }
 .chat-wrap { display: flex; flex-direction: column; height: 68vh; min-height: 480px; }
+/* Form controls (textarea/buttons) default to the browser's own font —
+   everything typed or shown in the chat box uses the app font instead. */
+.chat-wrap button,
+.chat-wrap textarea { font-family: inherit; }
 .chat-log { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 10px; background: #faf7f1; }
 .chat-msg { display: flex; }
 .chat-msg.user { justify-content: flex-end; }
 .chat-msg.ai { justify-content: flex-start; }
+.chat-stack { display: flex; flex-direction: column; max-width: 80%; position: relative; }
+.chat-msg.user .chat-stack { align-items: flex-end; }
+.chat-time { font-size: 11px; color: #8f8774; margin: 3px 5px 0; }
+.chat-stack .chat-bubble { max-width: 100%; }
 .chat-bubble {
   max-width: 80%;
   padding: 10px 14px;
@@ -480,7 +553,11 @@ button.danger:hover:not(:disabled) { background: var(--red-soft); }
   background: var(--accent-soft); color: var(--accent-hover);
   border-color: rgba(214, 84, 44, 0.3); box-shadow: none;
 }
-.chat-input { display: flex; gap: 8px; padding: 12px 14px 14px; }
+/* align-items: flex-end — the buttons must NOT stretch to the textarea's
+   height when the composer is expanded; they stay collapsed-size AND stay
+   anchored at the bottom (one fixed position) while the textarea grows. */
+.chat-input { display: flex; gap: 8px; padding: 12px 14px 14px; align-items: flex-end; }
+.chat-input > button { flex: 0 0 auto; }
 .chat-input textarea {
   flex: 1; resize: none; line-height: 1.45; vertical-align: middle;
   font-size: 14px; padding: 10px 12px; border-radius: 10px;
@@ -497,6 +574,124 @@ button.danger:hover:not(:disabled) { background: var(--red-soft); }
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px; border-bottom: 1px solid var(--line); background: #fff;
 }
+.chat-toolbar-right { display: flex; gap: 8px; align-items: center; }
+/* Shown in the toolbar whenever a share would be cut short, so the member
+   knows the count BEFORE sending instead of finding a note in the message. */
+.chat-share-note { color: #8a6d3b; font-size: 12px; }
+/* Full-screen chat: fixed overlay above the page (sidebar included). Escape or
+   the Minimize button restores it. */
+.chat-maximized {
+  position: fixed; inset: 10px; z-index: 999;
+  height: auto; min-height: 0;
+  background: #fff; border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35); overflow: hidden;
+}
+/* Expand/collapse for the composer: a large writing area vs the one-line bar. */
+.chat-input.input-big textarea { min-height: 34vh; max-height: 52vh; }
+
+/* ··· actions button: hover-revealed at the stack's top corners —
+   user message = top-left, AI message = top-right. Timestamp stays below
+   the bubble (plain .chat-time). Content is the VERTICAL kebab (⋮). */
+.chat-menu-btn {
+  position: absolute; top: 8px;
+  padding: 0 4px; font-size: 17px; line-height: 1.1; border-radius: 6px;
+  background: transparent; border-color: transparent; box-shadow: none;
+  color: #8f8774; font-weight: 700;
+  opacity: 0; transition: opacity 0.12s;
+}
+.chat-msg.user .chat-menu-btn { left: -18px; }
+.chat-msg.ai .chat-menu-btn { right: -18px; }
+.chat-msg:hover .chat-menu-btn,
+.chat-menu-btn:focus-visible,
+.chat-menu-btn.is-open { opacity: 1; }
+/* Specificity must beat the global `button:hover:not(:disabled)` white box —
+   the kebab never gets a background. */
+.chat-msg .chat-menu-btn:hover {
+  background: transparent; border-color: transparent; box-shadow: none; color: var(--ink);
+}
+/* Fixed so the scrollable .chat-log can never clip the dropdown. */
+.chat-menu {
+  position: fixed; z-index: 1300; min-width: 152px; padding: 4px;
+  background: #fff; border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  display: flex; flex-direction: column;
+}
+.chat-menu button {
+  padding: 7px 10px; font-size: 13px; text-align: left; font-weight: 500;
+  background: transparent; border: none; border-radius: 7px; color: var(--ink);
+}
+.chat-menu button:hover { background: #f3eee2; box-shadow: none; }
+
+/* Pending attachment chips above the composer. */
+.chat-files { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px 0; }
+.chat-file {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 240px;
+  font-size: 12.5px; padding: 5px 6px 5px 10px; border-radius: 999px;
+  background: #f3eee2; border: 1px solid #e3dcc9; color: var(--ink);
+  overflow: hidden; white-space: nowrap;
+}
+.chat-file button {
+  padding: 0 5px; font-size: 14px; line-height: 1.4; border: none;
+  background: transparent; border-radius: 50%; color: #8f8774;
+}
+.chat-file button:hover { background: #e6dfd0; color: var(--ink); box-shadow: none; }
+/* Attachment name chips inside message bubbles. */
+.chat-attach-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.chat-attach {
+  font-size: 11.5px; padding: 2px 8px; border-radius: 999px;
+  background: #f3eee2; border: 1px solid #e3dcc9; color: #6f6754;
+}
+.chat-msg.user .chat-attach {
+  background: rgba(255, 255, 255, 0.22); border-color: rgba(255, 255, 255, 0.35); color: #fff;
+}
+/* "Tagged" chip on a sent query — click scrolls to the tagged message. */
+.chat-tagged {
+  display: block; width: 100%; text-align: left; margin-bottom: 6px;
+  padding: 5px 8px; border-radius: 8px; border: 1px solid #e3dcc9;
+  background: #f3eee2; color: #6f6754; cursor: pointer;
+  font-family: inherit; font-weight: 500; box-shadow: none;
+}
+.chat-msg.user .chat-tagged {
+  background: rgba(255, 255, 255, 0.18); border-color: rgba(255, 255, 255, 0.35); color: #fff;
+}
+.chat-tagged:hover { border-color: #cfc4a9; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.chat-msg.user .chat-tagged:hover { border-color: rgba(255, 255, 255, 0.7); }
+.chat-tagged-label {
+  display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+  opacity: 0.8; margin-bottom: 1px;
+}
+.chat-tagged-text {
+  display: block; font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Brief highlight on the tagged message after a chip click. */
+.chat-msg.flash .chat-bubble { animation: chatMsgFlash 1.8s ease; }
+@keyframes chatMsgFlash {
+  0%, 55% { box-shadow: 0 0 0 3px rgba(214, 84, 44, 0.55); }
+  100% { box-shadow: 0 0 0 3px rgba(214, 84, 44, 0); }
+}
+/* Composer attach button (paperclip). */
+.attach-btn { padding: 9px 10px; display: inline-flex; align-items: center; }
+.attach-btn:hover:not(:disabled) { background: #f3eee2; }
+
+/* "Replying to …" bar above the composer (HandyChat-style). */
+.chat-reply {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin: 10px 14px 0; padding: 8px 10px;
+  border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: 10px; background: #f9f4ea;
+}
+.chat-reply-inner { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.chat-reply-label { font-size: 12px; font-weight: 700; color: var(--accent-hover); }
+.chat-reply-text {
+  font-size: 12.5px; color: #6f6754; white-space: pre-wrap; word-break: break-word;
+  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.chat-reply > button {
+  padding: 0 6px; font-size: 17px; line-height: 1.4; border: none;
+  background: transparent; color: #8f8774; border-radius: 6px;
+}
+.chat-reply > button:hover { background: #efe9dc; color: var(--ink); box-shadow: none; }
 .chat-layout { display: grid; grid-template-columns: 260px 1fr; gap: 14px; align-items: start; }
 .chat-sidebar {
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
@@ -756,3 +951,21 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .topbar { padding: 0 12px; }
   .toast { left: 12px; right: 12px; max-width: none; }
 }
+
+/* ---------- Data health alerts (missing files / PALMS mismatch) ---------- */
+.data-alerts { display: grid; gap: 10px; margin: 12px 0; }
+.data-alert {
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  border: 1px solid transparent;
+}
+.data-alert .alert-title { font-weight: 700; display: block; margin-bottom: 2px; }
+.data-alert ul { margin: 6px 0 0; padding-left: 18px; }
+.data-alert li { margin: 2px 0; }
+.data-alert .alert-sub { margin: 4px 0 0; color: inherit; opacity: 0.85; font-size: 13px; }
+.data-alert.warn { background: var(--orange-soft); border-color: #eabf9a; color: #7a3c00; }
+.data-alert.bad { background: var(--red-soft); border-color: #efb5ae; color: #8f2b1f; }
+.data-alert.ok { background: var(--green-soft); border-color: #a9d4ba; color: #1d6b41; }
+.data-alert.info { background: var(--blue-soft); border-color: #b5d0e8; color: #23507c; }

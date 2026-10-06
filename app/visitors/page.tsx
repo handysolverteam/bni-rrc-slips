@@ -1,8 +1,11 @@
 import ListShell from "@/components/ListShell";
+import NoAccess from "@/components/NoAccess";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { defaultWeekId, getCachedWeekOptions } from "@/lib/server-weeks";
+import { getCachedWeekOptions, listWeekScope } from "@/lib/server-weeks";
 import { distinctValues } from "@/lib/distinct";
-import { latestImportedWeekId } from "@/lib/report-view";
+import { weekFilterOptions } from "@/lib/weeks";
+import { applyColumnFilter, applyWeekFilter } from "@/lib/list-filters";
+import { requirePageTenant } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -11,42 +14,40 @@ export default async function VisitorsPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
+  const guard = await requirePageTenant();
+  if ("noAccess" in guard) return <NoAccess uid={guard.uid} />;
+  const tenantId = guard.tenantId;
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page || 1));
   const pageSize = 100;
   const q = sp.q || "";
-  const weekId =
-    sp.week === "all"
-      ? ""
-      : sp.week ||
-        (await Promise.all([defaultWeekId(), latestImportedWeekId()]).then(
-          ([d, l]) => d || l,
-        )) ||
-        "";
+  const { weekId, weekFilter } = await listWeekScope(tenantId, sp);
   const sb = getSupabaseServer();
   let query = sb
     .from("slip_visitors")
     .select("*, bni_weeks(label)", { count: "exact" })
+    .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false });
   if (q) query = query.or(`full_name.ilike.%${q}%,invited_by_name.ilike.%${q}%`);
-  if (weekId) query = query.eq("bni_week_id", weekId);
+  if (weekId) query = applyWeekFilter(query, weekId);
   const columnFilters: Record<string, string> = {};
+  if (weekFilter) columnFilters.bni_week = weekFilter;
   for (const k of ["full_name", "company", "invited_by_name", "email", "phone"]) {
     const v = (sp[`c_${k}`] || "").trim();
     if (v) {
-      query = query.ilike(k, `%${v}%`);
+      query = applyColumnFilter(query, k, v);
       columnFilters[k] = v;
     }
   }
-  const [{ data, count }, weeks, filterOptions] = await Promise.all([
+  const [{ data, count }, weeks, baseOptions] = await Promise.all([
     query.range((page - 1) * pageSize, page * pageSize - 1),
-    getCachedWeekOptions(),
+    getCachedWeekOptions(tenantId),
     Promise.all([
-      distinctValues("slip_visitors", "full_name"),
-      distinctValues("slip_visitors", "company"),
-      distinctValues("slip_visitors", "invited_by_name"),
-      distinctValues("slip_visitors", "email"),
-      distinctValues("slip_visitors", "phone"),
+      distinctValues(tenantId, "slip_visitors", "full_name"),
+      distinctValues(tenantId, "slip_visitors", "company"),
+      distinctValues(tenantId, "slip_visitors", "invited_by_name"),
+      distinctValues(tenantId, "slip_visitors", "email"),
+      distinctValues(tenantId, "slip_visitors", "phone"),
     ]).then(([full_name, company, invited_by_name, email, phone]) => ({
       full_name,
       company,
@@ -71,6 +72,7 @@ export default async function VisitorsPage({
       q={q}
       weekId={weekId}
       weeks={weeks}
+      hideWeekBar
       columns={[
         { key: "full_name", label: "Full Name" },
         { key: "company", label: "Company" },
@@ -80,9 +82,9 @@ export default async function VisitorsPage({
         { key: "phone", label: "Phone" },
       ]}
       rows={rows}
-      filterable={["full_name", "company", "invited_by_name", "email", "phone"]}
+      filterable={["bni_week", "full_name", "company", "invited_by_name", "email", "phone"]}
       columnFilters={columnFilters}
-      filterOptions={filterOptions}
+      filterOptions={{ ...baseOptions, bni_week: weekFilterOptions(weeks) }}
     />
   );
 }

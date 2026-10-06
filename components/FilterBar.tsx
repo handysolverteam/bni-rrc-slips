@@ -19,6 +19,7 @@ export default function FilterBar({
   hiddenParams,
   includeAllOption,
   hideSearch,
+  multiSelect,
   onNavigate,
 }: {
   basePath: string;
@@ -29,6 +30,8 @@ export default function FilterBar({
   hiddenParams?: Record<string, string>;
   includeAllOption?: boolean;
   hideSearch?: boolean;
+  /** Week box accepts a comma-separated multi-selection (report screen). */
+  multiSelect?: boolean;
   onNavigate?: (url: string) => void;
 }) {
   const router = useRouter();
@@ -90,6 +93,7 @@ export default function FilterBar({
           placeholder="All weeks"
           allLabel="All weeks"
           showClear={false}
+          multiple={multiSelect}
           onChange={(v) => go(v || "all")}
         />
       ) : null}

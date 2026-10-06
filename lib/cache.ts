@@ -1,4 +1,18 @@
 /**
+ * Process-wide registry for TTL caches. Next.js bundles pages and route
+ * handlers into separate module graphs, so a module-level `const cache = ...`
+ * gets a SEPARATE instance per graph — clearing from a route handler then
+ * silently misses the page's copy and the screen stays stale until TTL.
+ * Hanging state off globalThis makes every bundle in the process share one.
+ */
+export function sharedState<T>(key: string, init: () => T): T {
+  const store = globalThis as Record<string, unknown>;
+  const bag = (store.__bniSharedState ??= {}) as Record<string, unknown>;
+  if (!(key in bag)) bag[key] = init();
+  return bag[key] as T;
+}
+
+/**
  * Minimal in-memory TTL cache for server-side data that changes rarely
  * (week calendar, chat snapshot). Per-process memory: on multi-instance
  * hosting each instance simply holds its own copy. Callers clear on import.

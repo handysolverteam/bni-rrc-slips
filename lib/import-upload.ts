@@ -83,8 +83,8 @@ export async function parseUpload(file: File): Promise<{
   };
 }
 
-/** How much slip data a week already holds (for the re-import question). */
-export async function weekSlipCounts(weekId: string): Promise<{ total: number; counts: Record<string, number> }> {
+/** How much slip data a week already holds for this tenant (re-import question). */
+export async function weekSlipCounts(tenantId: string, weekId: string): Promise<{ total: number; counts: Record<string, number> }> {
   const sb = getSupabaseServer();
   const counts: Record<string, number> = {};
   let total = 0;
@@ -92,7 +92,12 @@ export async function weekSlipCounts(weekId: string): Promise<{ total: number; c
     SLIP_TABLES.map(async (table) => {
       // NOTE: head:true silently returns count=null in this client version —
       // always pair count:exact with limit(1) instead.
-      const { count } = await sb.from(table).select("id", { count: "exact" }).eq("bni_week_id", weekId).limit(1);
+      const { count } = await sb
+        .from(table)
+        .select("id", { count: "exact" })
+        .eq("tenant_id", tenantId)
+        .eq("bni_week_id", weekId)
+        .limit(1);
       counts[table] = count ?? 0;
       total += count ?? 0;
     }),

@@ -1,5 +1,7 @@
 import { defaultWeekId, getCachedWeekOptions } from "@/lib/server-weeks";
 import { distinctValues, mergeDistinct } from "@/lib/distinct";
+import { fetchMissingMeetingFiles } from "@/lib/data-health";
+import { fetchPalmsComparisons } from "@/lib/palms-compare";
 import {
   detailLabelFor,
   fetchReportSections,
@@ -8,6 +10,8 @@ import {
   type ReportRow,
   type ReportSectionKey,
 } from "@/lib/report-view";
+import { requirePageTenant } from "@/lib/server-auth";
+import NoAccess from "@/components/NoAccess";
 import ImportPanel from "@/components/ImportPanel";
 import SectionCollapse from "@/components/SectionCollapse";
 import ColumnFilter from "@/components/ColumnFilter";
@@ -15,6 +19,7 @@ import Link from "next/link";
 import ReportExportButtons from "@/components/ReportExportButtons";
 import ReportTabs from "@/components/ReportTabs";
 import FilterBar from "@/components/FilterBar";
+import DataWarnings from "@/components/DataWarnings";
 
 export const dynamic = "force-dynamic";
 
@@ -51,13 +56,20 @@ function SectionTable({
   const cols = OPTIONAL_COLS.filter((c) => rows.some((r) => r[c.key].trim() !== ""));
   const baseCount = 5; // No, BNI Week, From, To, Type
   const fromTo = fromToLabelsFor(sectionKey);
-  const amtIdx = cols.findIndex((c) => c.key === "tyfcb");
+  // Sum column: TYFCB Amount for money sections, CEU Credits for the CEU section.
+  const sumKey = cols.some((c) => c.key === "tyfcb")
+    ? ("tyfcb" as const)
+    : cols.some((c) => c.key === "ceu")
+      ? ("ceu" as const)
+      : null;
+  const amtIdx = sumKey ? cols.findIndex((c) => c.key === sumKey) : -1;
   const headFilter = (key: "from" | "to" | "detail", label: string) => (
     <ColumnFilter
       paramKey={`cf_${sectionKey}_${key}`}
       defaultValue={colFilters[key]}
       options={colOptions[key]}
       label={label}
+      multiSelect
     />
   );
   return (
@@ -74,6 +86,7 @@ function SectionTable({
                   options={[{ value: "all", label: "All weeks" }, ...weeks.map((w) => ({ value: w.id, label: w.label }))]}
                   label="BNI Week"
                   allLabel="Universal"
+                  multiSelect
                 />
               </th>
               <th>{headFilter("from", fromTo.from)}</th>
@@ -133,11 +146,14 @@ export default async function ReportPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
+  const guard = await requirePageTenant();
+  if ("noAccess" in guard) return <NoAccess uid={guard.uid} />;
+  const tenantId = guard.tenantId;
   const sp = await searchParams;
   const [weeks, latest, defaultId] = await Promise.all([
-    getCachedWeekOptions(),
-    latestImportedWeekId(),
-    sp.week ? Promise.resolve(null) : defaultWeekId(),
+    getCachedWeekOptions(tenantId),
+    latestImportedWeekId(tenantId),
+    sp.week ? Promise.resolve(null) : defaultWeekId(tenantId),
   ]);
   const weekId = sp.week || defaultId || latest || weeks[0]?.id || "";
   const tab = (sp.tab as ReportSectionKey | "all" | undefined) || "all";
@@ -148,48 +164,63 @@ export default async function ReportPage({
     detail: sp[`cf_${key}_detail`] || "",
   });
   const allWeeks = weekId === "all";
-  const activeWeek = weeks.find((w) => w.id === weekId);
+  // week holds one id, a comma-separated list, or "all" (multi-select box).
+  const weekIds = allWeeks
+    ? []
+    : weekId.split(",").map((s) => s.trim()).filter(Boolean);
+  const activeWeeks = weekIds
+    .map((id) => weeks.find((w) => w.id === id))
+    .filter((w): w is (typeof weeks)[number] => w !== undefined);
+  const weeksLabel =
+    activeWeeks.length > 3
+      ? `${activeWeeks.length} meetings`
+      : activeWeeks.map((w) => w.label).join(" + ");
 
   const sectionsPromise = weekId
-    ? fetchReportSections(weekId, q, {
+    ? fetchReportSections(tenantId, weekId, q, {
         "one-to-one": colFor("one-to-one"),
         referral: colFor("referral"),
         tyfcb: colFor("tyfcb"),
         visitor: colFor("visitor"),
+        ceu: colFor("ceu"),
       }, {
         "one-to-one": sp["w_one-to-one"] || "",
         referral: sp["w_referral"] || "",
         tyfcb: sp["w_tyfcb"] || "",
         visitor: sp["w_visitor"] || "",
+        ceu: sp["w_ceu"] || "",
       })
     : Promise.resolve([]);
-  const [sections, [fromOptions, toOptions, detailOptions]] = await Promise.all([
+  const [sections, [fromOptions, toOptions, detailOptions], missing, comparisons] = await Promise.all([
     sectionsPromise,
     Promise.all([
     Promise.all([
-      distinctValues("slip_referrals", "from_name"),
-      distinctValues("slip_one_to_ones", "initiated_by_name"),
-      distinctValues("slip_visitors", "invited_by_name"),
+      distinctValues(tenantId, "slip_referrals", "from_name"),
+      distinctValues(tenantId, "slip_one_to_ones", "initiated_by_name"),
+      distinctValues(tenantId, "slip_visitors", "invited_by_name"),
+      distinctValues(tenantId, "slip_ceus", "member_name"),
     ]).then((lists) => mergeDistinct(...lists)),
     Promise.all([
-      distinctValues("slip_referrals", "to_name"),
-      distinctValues("slip_one_to_ones", "met_with_name"),
-      distinctValues("slip_tyfcb", "member_name"),
-      distinctValues("slip_visitors", "full_name"),
+      distinctValues(tenantId, "slip_referrals", "to_name"),
+      distinctValues(tenantId, "slip_one_to_ones", "met_with_name"),
+      distinctValues(tenantId, "slip_tyfcb", "member_name"),
+      distinctValues(tenantId, "slip_visitors", "full_name"),
     ]).then((lists) => mergeDistinct(...lists)),
     Promise.all([
-      distinctValues("slip_referrals", "other_chapter_member"),
-      distinctValues("slip_one_to_ones", "other_chapter_member"),
-      distinctValues("slip_tyfcb", "other_chapter_member"),
+      distinctValues(tenantId, "slip_referrals", "other_chapter_member"),
+      distinctValues(tenantId, "slip_one_to_ones", "other_chapter_member"),
+      distinctValues(tenantId, "slip_tyfcb", "other_chapter_member"),
     ]).then((lists) => mergeDistinct(...lists)),
     ]),
+    fetchMissingMeetingFiles(tenantId),
+    fetchPalmsComparisons(tenantId, weekIds),
   ]);
   const colOptions = { from: fromOptions, to: toOptions, detail: detailOptions };
   const visible = tab === "all" ? sections : sections.filter((s) => s.key === tab);
-  const total = sections.reduce((n, s) => n + s.rows.length, 0);
+  const total = sections.reduce((n, s) => n + s.metricCount, 0);
   const hasFilters =
     q.trim() !== "" ||
-    ["one-to-one", "referral", "tyfcb", "visitor"].some(
+    ["one-to-one", "referral", "tyfcb", "visitor", "ceu"].some(
       (k) =>
         (sp[`w_${k}`] || "").trim() !== "" ||
         ["from", "to", "detail"].some((f) => (sp[`cf_${k}_${f}`] || "").trim() !== ""),
@@ -204,24 +235,26 @@ export default async function ReportPage({
             Week Report
             <span className="count-badge">{total} slip(s)</span>
           </h1>
-          {allWeeks ? <p className="sub muted">All weeks</p> : activeWeek ? <p className="sub muted">{activeWeek.label}</p> : null}
+          {allWeeks ? <p className="sub muted">All weeks</p> : weeksLabel ? <p className="sub muted">{weeksLabel}</p> : null}
         </div>
         <div className="report-head-actions">
           <ImportPanel variant="toolbar" defaultCollapsed />
           <ReportExportButtons
             weekId={weekId}
             tab={tab}
-            scopeLabel={allWeeks ? "all-weeks" : (activeWeek?.label ?? "week")}
+            scopeLabel={allWeeks ? "all-weeks" : (weeksLabel || "week")}
           />
         </div>
       </div>
 
+      <DataWarnings missing={missing} comparisons={comparisons} />
+
       <div className="cards stat-cards">
         {sections.map((s) => (
           <div key={s.key} className="section-card" data-stat={s.key}>
-            <div className="num">{s.rows.length}</div>
+            <div className="num">{s.cardCount ?? s.metricCount}</div>
             <div className="label">{s.title}</div>
-            <div className="go">{s.stat ?? s.totalLabel}</div>
+            <div className="go">{s.cardStat ?? s.stat ?? s.totalLabel}</div>
           </div>
         ))}
       </div>
@@ -237,6 +270,7 @@ export default async function ReportPage({
             hiddenParams={{ tab }}
             includeAllOption
             hideSearch
+            multiSelect
           />
           {hasFilters || !allWeeks ? (
             <span className="clear-right">
@@ -258,7 +292,7 @@ export default async function ReportPage({
           rowCount={s.rows.length}
           badge={
             <span className="count-badge">
-              {s.rows.length} {s.totalLabel}
+              {s.metricCount} {s.totalLabel}
             </span>
           }
         >

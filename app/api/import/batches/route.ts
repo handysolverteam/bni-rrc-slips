@@ -1,12 +1,17 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
-/** Import history: every uploaded file with its week and row counts. */
-export async function GET() {
+/** Import history: every uploaded file with its week and row counts (tenant-scoped). */
+export async function GET(req: Request) {
   try {
+    const ctx = await getTenantContext(req);
+    if (!ctx) return unauthorized();
+    if ("noAccess" in ctx) return forbidden();
     const sb = getSupabaseServer();
     const { data, error } = await sb
       .from("import_batches")
-      .select("id,filename,imported_count,skipped_count,status,created_at,bni_weeks(label,meeting_date)")
+      .select("id,filename,imported_count,skipped_count,status,error_message,created_at,bni_weeks(label,meeting_date)")
+      .eq("tenant_id", ctx.tenantId)
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) return Response.json({ error: error.message }, { status: 500 });

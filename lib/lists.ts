@@ -1,4 +1,5 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { forbidden, getTenantContext, unauthorized, type TenantContext } from "@/lib/server-auth";
 
 function paging(req: Request) {
   const u = new URL(req.url);
@@ -10,10 +11,25 @@ function paging(req: Request) {
   };
 }
 
+/** Narrowed context: null / noAccess are already rejected by the caller. */
+type ActiveCtx = Extract<TenantContext, { tenantId: string }>;
+
+function buildBase(table: string, ctx: ActiveCtx) {
+  return getSupabaseServer()
+    .from(table)
+    .select("*", { count: "exact" })
+    .eq("tenant_id", ctx.tenantId)
+    .order("created_at", { ascending: false });
+}
+
 async function list(table: string, req: Request, orFilter?: (q: string) => string) {
+  const ctx = await getTenantContext(req);
+  if (!ctx) return unauthorized();
+  if ("noAccess" in ctx) return forbidden();
+
   const { pageNum, pageSize, q } = paging(req);
-  const sb = getSupabaseServer();
-  let query = sb.from(table).select("*", { count: "exact" }).order("created_at", { ascending: false });
+  const active = ctx as ActiveCtx;
+  let query = buildBase(table, active);
   if (q && orFilter) query = query.or(orFilter(q));
   const from = (pageNum - 1) * pageSize;
   const { data, count, error } = await query.range(from, from + pageSize - 1);
@@ -22,6 +38,7 @@ async function list(table: string, req: Request, orFilter?: (q: string) => strin
 }
 
 export async function membersGET(req: Request) {
+  // Active and inactive members are listed for everyone (roles were removed).
   return list("members", req, (q) => `name.ilike.%${q}%`);
 }
 export async function referralsGET(req: Request) {
@@ -35,4 +52,7 @@ export async function visitorsGET(req: Request) {
 }
 export async function tyfcbGET(req: Request) {
   return list("slip_tyfcb", req, (q) => `member_name.ilike.%${q}%`);
+}
+export async function ceusGET(req: Request) {
+  return list("slip_ceus", req, (q) => `member_name.ilike.%${q}%`);
 }

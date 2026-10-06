@@ -8,12 +8,19 @@ import { clearDistinctCache } from "@/lib/distinct";
 import { clearLatestImportedWeekCache } from "@/lib/report-view";
 import { clearSlipsSnapshotCache } from "@/lib/chat/snapshot-cache";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 /** Bulk import can exceed the default serverless timeout on file uploads. */
 export const maxDuration = 60;
 
+/** Write surface: any signed-in member of the active chapter (roles were removed). */
 export async function POST(request: Request) {
   try {
+    const ctx = await getTenantContext(request);
+    if (!ctx) return unauthorized();
+    if ("noAccess" in ctx) return forbidden();
+    const tenantId = ctx.tenantId;
+
     const form = await request.formData();
     const file = form.get("file");
 
@@ -109,7 +116,7 @@ export async function POST(request: Request) {
 
     const { data: batch } = await supabase
       .from("import_batches")
-      .insert({ filename: file.name, bni_week_id: week.id })
+      .insert({ filename: file.name, bni_week_id: week.id, tenant_id: tenantId })
       .select()
       .single();
 
@@ -117,9 +124,24 @@ export async function POST(request: Request) {
     let skipped = 0;
     let tyfcbBlankAmount = 0;
     const errors: string[] = [...parseErrors];
+    // One entry per skipped row (typing mistakes only — duplicate rows
+    // are imported, never skipped) so the Import history table can show
+    // exactly what was dropped and why.
+    const skipDetails: string[] = [];
+    const pushSkip = (msg: string) => {
+      if (skipDetails.length < 1000) skipDetails.push(msg);
+    };
+    const SLIP_LABELS: Record<string, string> = {
+      slip_referrals: "Referral",
+      slip_one_to_ones: "One-to-One",
+      slip_tyfcb: "TYFCB",
+      slip_visitors: "Visitor",
+      slip_ceus: "CEU",
+    };
     const batchId: string | null = batch?.id ?? null;
     const pushRowError = (msg: string) => {
       skipped++;
+      pushSkip(msg);
       if (errors.length < 50) errors.push(msg);
     };
 
@@ -128,9 +150,22 @@ export async function POST(request: Request) {
     // Chapter rule (lib/member-chapters.ts, shared with preview): a BOLD
     // name belongs to its Detail chapter; every other name belongs to HOME.
     // Exception: TYFCB names never file members (chapter undecided for
-    // now). One member per name: a bold Detail signal upgrades, never
-    // downgrades or duplicates. Visitor full names are never collected.
-    const HOME_CHAPTER = resolveHomeChapter();
+    // now). The same name may belong to several chapters: each
+    // (name, chapter) pair is its own member row — never moved or merged.
+    // Visitor full names are never collected.
+    // Home chapter (blank-Detail names): tenant's home_chapter_name first;
+    // else env ONLY for the default tenant (BNI Influencers), else the
+    // tenant's own name. Identical rule lives in lib/member-chapters.ts.
+    // `id` must be selected too: resolveHomeChapter compares it with
+    // DEFAULT_TENANT_ID to decide whether the env chapter may be used.
+    const { data: tenantRow } = await supabase
+      .from("tenants")
+      .select("id, name, home_chapter_name")
+      .eq("id", tenantId)
+      .maybeSingle();
+    const HOME_CHAPTER = resolveHomeChapter(
+      (tenantRow as { id?: string; name?: string | null; home_chapter_name?: string | null } | null) ?? null,
+    );
     // Pure pass: desired chapter per name, identical logic to preview.
     const desired = computeDesiredChapters(rows, HOME_CHAPTER);
     const keyOf = (raw: string): string | null => {
@@ -166,7 +201,7 @@ export async function POST(request: Request) {
         if (!fromName || !toName) { pushRowError(`Row ${r.rowNumber}: Referral needs From + To`); continue; }
         if (isCountLikeName(fromName) || isCountLikeName(toName)) { pushRowError(`Row ${r.rowNumber}: Referral has a number instead of a name — skipped`); continue; }
         // Bold = other-chapter person: filed as a member of the Detail
-        // chapter (never skipped, never duplicated).
+        // chapter (never skipped).
         const fromOther = r.fromBold === true;
         const toOther = r.toBold === true;
         referralRows.push({ fromName, toName, fromKey: keyOf(r.from), toKey: keyOf(r.to), fromOther, toOther, other: detail, inside: insideOutside });
@@ -205,20 +240,25 @@ export async function POST(request: Request) {
     }
 
     // ---- 2) Resolve chapter + member ids: preloads + bulk inserts.
-    // One member per name: an existing row is reused; a bold Detail signal
-    // upgrades a home row to its correct chapter, never the reverse.
+    // One member row per (name, chapter): reuse it when it exists,
+    // create it otherwise. Same name in another chapter = separate row.
     const chapterIds = new Map<string, string>(); // lower chapter -> id
     const wantChapters = [...new Set([...desired.values()].map((v) => v.chapter))];
     if (wantChapters.length > 0) {
-      const { data: existingChapters } = await supabase.from("chapters").select("id,name").limit(2000);
-      for (const c of ((existingChapters ?? []) as { id: string; name: string }[])) {
+      // fetchAllRows, not .limit(2000): one response is capped at 1000 rows,
+      // and a chapter past that cap would look "missing" and be re-created.
+      const existingChapters = await fetchAllRows<{ id: string; name: string }>("chapters", "id,name", {
+        eq: [["tenant_id", tenantId]],
+        pageSize: 1000,
+      });
+      for (const c of existingChapters) {
         chapterIds.set(String(c.name).toLowerCase(), c.id);
       }
       const missingChapters = wantChapters.filter((n) => !chapterIds.has(n.toLowerCase()));
       if (missingChapters.length > 0) {
         const { data: created, error: createError } = await supabase
           .from("chapters")
-          .insert(missingChapters.map((name) => ({ name })))
+          .insert(missingChapters.map((name) => ({ name, tenant_id: tenantId })))
           .select("id,name");
         if (!createError && created) {
           for (const c of (created as { id: string; name: string }[])) {
@@ -228,17 +268,25 @@ export async function POST(request: Request) {
       }
       for (const name of missingChapters) {
         if (chapterIds.has(name.toLowerCase())) continue;
-        const found = await supabase.from("chapters").select("id").ilike("name", name).limit(1).maybeSingle();
+        const found = await supabase
+          .from("chapters")
+          .select("id")
+          .ilike("name", name)
+          .eq("tenant_id", tenantId)
+          .limit(1)
+          .maybeSingle();
         const id = (found.data as { id: string } | null)?.id ?? null;
         if (id) chapterIds.set(name.toLowerCase(), id);
       }
     }
-    const homeChapterId = chapterIds.get(HOME_CHAPTER.toLowerCase()) ?? null;
 
     type ExistingMember = { id: string; name: string; chapter_id: string };
     const memberIds = new Map<string, string>(); // lower name -> member id
     if (desired.size > 0) {
-      const existingMembers = await fetchAllRows<ExistingMember>( "members", "id,name,chapter_id", { pageSize: 2000 });
+      const existingMembers = await fetchAllRows<ExistingMember>( "members", "id,name,chapter_id", {
+        eq: [["tenant_id", tenantId]],
+        pageSize: 2000,
+      });
       const byName = new Map<string, ExistingMember[]>();
       for (const m of existingMembers) {
         const k = String(m.name).toLowerCase();
@@ -250,29 +298,22 @@ export async function POST(request: Request) {
         const cid = chapterIds.get(w.chapter.toLowerCase());
         if (!cid) continue;
         const rows = byName.get(k) ?? [];
+        // Same name may belong to multiple chapters (owner rule): reuse
+        // the row for the wanted chapter when there is one, otherwise add
+        // a new (name, chapter) row. Existing rows are never moved or
+        // merged — a person can be a member/visitor/referral party under
+        // the same name in several chapters.
         const same = rows.find((r) => r.chapter_id === cid);
         if (same) {
           memberIds.set(k, same.id);
           continue;
         }
-        if (rows.length === 0) {
-          toCreate.push({ key: k, name: w.name, chapter_id: cid });
-          continue;
-        }
-        // Upgrade path: move a home row to its correct (bold-signalled)
-        // chapter; otherwise keep the first existing row. Never downgrade.
-        const homeRow = homeChapterId ? rows.find((r) => r.chapter_id === homeChapterId) : undefined;
-        if (cid !== homeChapterId && homeRow) {
-          await supabase.from("members").update({ chapter_id: cid }).eq("id", homeRow.id);
-          memberIds.set(k, homeRow.id);
-        } else {
-          memberIds.set(k, rows[0].id);
-        }
+        toCreate.push({ key: k, name: w.name, chapter_id: cid });
       }
       if (toCreate.length > 0) {
         const { data: created, error: createError } = await supabase
           .from("members")
-          .insert(toCreate.map(({ name, chapter_id }) => ({ name, chapter_id })))
+          .insert(toCreate.map(({ name, chapter_id }) => ({ name, chapter_id, tenant_id: tenantId })))
           .select("id,name");
         if (!createError && created) {
           for (const m of (created as { id: string; name: string }[])) {
@@ -287,25 +328,17 @@ export async function POST(request: Request) {
               .select("id")
               .ilike("name", t.name)
               .eq("chapter_id", t.chapter_id)
+              .eq("tenant_id", tenantId)
               .limit(1)
               .maybeSingle();
             let id: string | null = (found.data as { id: string } | null)?.id ?? null;
             if (!id) {
               const ins = await supabase
                 .from("members")
-                .insert({ name: t.name, chapter_id: t.chapter_id })
+                .insert({ name: t.name, chapter_id: t.chapter_id, tenant_id: tenantId })
                 .select("id")
                 .maybeSingle();
               id = (ins.data as { id: string } | null)?.id ?? null;
-            }
-            if (!id) {
-              const anyFound = await supabase
-                .from("members")
-                .select("id")
-                .ilike("name", t.name)
-                .limit(1)
-                .maybeSingle();
-              id = (anyFound.data as { id: string } | null)?.id ?? null;
             }
             if (id) memberIds.set(t.key, id);
           }
@@ -314,27 +347,9 @@ export async function POST(request: Request) {
     }
     const midOf = (k: string | null): string | null => (k ? (memberIds.get(k) ?? null) : null);
 
-    // ---- 3) Build payloads, skipping duplicates already stored for this week.
-    // Keys mirror the dedupe unique indexes (lower() + nulls-as-empty).
-    const dkey = (parts: (string | number | null | undefined)[]) =>
-      JSON.stringify(parts.map((p) => (p ?? "").toString().toLowerCase()));
-
-    async function existingKeys(
-      table: string,
-      cols: string,
-      toKey: (e: Record<string, string | number | null>) => (string | number | null | undefined)[],
-    ): Promise<Set<string>> {
-      try {
-        const rows = await fetchAllRows<Record<string, string | number | null>>(table, cols, {
-          eq: [["bni_week_id", weekId]],
-          pageSize: 2000,
-        });
-        return new Set(rows.map((e) => dkey([weekId, ...toKey(e)])));
-      } catch {
-        return new Set();
-      }
-    }
-
+    // ---- 3) Build payloads and insert EVERY row.
+    // Owner rule: all file entries are correct — identical rows and
+    // re-imports are kept as-is; only typing mistakes are skipped above.
     async function bulkInsert(table: string, payloads: Record<string, unknown>[]) {
       for (let i = 0; i < payloads.length; i += 1000) {
         const chunk = payloads.slice(i, i + 1000);
@@ -346,36 +361,20 @@ export async function POST(request: Request) {
         // One bad row must not sink the batch: retry row-by-row.
         for (const row of chunk) {
           const { error: rowError } = await supabase.from(table).insert(row);
-          if (rowError && (rowError as { code?: string }).code === "23505") skipped++;
-          else if (rowError) pushRowError(`${table}: ${rowError.message}`);
+          if (rowError && (rowError as { code?: string }).code === "23505") {
+            // Only possible while migration 003 (dedupe index drop) is pending.
+            skipped++;
+            pushSkip(`${SLIP_LABELS[table] ?? table}: duplicate rejected by a database rule — run supabase/migrations/003_allow_duplicate_slips.sql`);
+          } else if (rowError) pushRowError(`${table}: ${rowError.message}`);
           else imported++;
         }
       }
     }
 
-    async function insertFresh(
-      table: string,
-      payloads: Record<string, unknown>[],
-      selectCols: string,
-      toKey: (e: Record<string, string | number | null>) => (string | number | null | undefined)[],
-    ) {
-      if (payloads.length === 0) return;
-      const seen = await existingKeys(table, selectCols, toKey);
-      const fresh = payloads.filter((p) => {
-        const k = dkey([weekId, ...toKey(p as Record<string, string | number | null>)]);
-        if (seen.has(k)) {
-          skipped++;
-          return false;
-        }
-        seen.add(k);
-        return true;
-      });
-      await bulkInsert(table, fresh);
-    }
-
-    await insertFresh(
+    await bulkInsert(
       "slip_referrals",
       referralRows.map((r) => ({
+        tenant_id: tenantId,
         bni_week_id: weekId,
         from_member_id: midOf(r.fromKey),
         to_member_id: midOf(r.toKey),
@@ -387,13 +386,12 @@ export async function POST(request: Request) {
         to_is_other_chapter: r.toOther,
         import_batch_id: batchId,
       })),
-      "from_name,to_name,other_chapter_member,inside_outside",
-      (e) => [e.from_name, e.to_name, e.other_chapter_member, e.inside_outside],
     );
 
-    await insertFresh(
+    await bulkInsert(
       "slip_one_to_ones",
       otoRows.map((r) => ({
+        tenant_id: tenantId,
         bni_week_id: weekId,
         initiated_by_member_id: midOf(r.initKey),
         met_with_member_id: midOf(r.metKey),
@@ -404,13 +402,12 @@ export async function POST(request: Request) {
         met_with_is_other_chapter: r.metOther,
         import_batch_id: batchId,
       })),
-      "initiated_by_name,met_with_name,other_chapter_member",
-      (e) => [e.initiated_by_name, e.met_with_name, e.other_chapter_member],
     );
 
-    await insertFresh(
+    await bulkInsert(
       "slip_tyfcb",
       tyfcbRows.map((r) => ({
+        tenant_id: tenantId,
         bni_week_id: weekId,
         member_id: midOf(r.nameKey),
         member_name: r.name,
@@ -420,27 +417,24 @@ export async function POST(request: Request) {
         thanker_is_other_chapter: r.thankerOther,
         import_batch_id: batchId,
       })),
-      "member_name,amount,other_chapter_member",
-      (e) => [e.member_name, Number(e.amount ?? 0), e.other_chapter_member],
     );
 
-    await insertFresh(
+    await bulkInsert(
       "slip_visitors",
       visitorRows.map((r) => ({
+        tenant_id: tenantId,
         bni_week_id: weekId,
         full_name: r.fullName,
         invited_by_member_id: midOf(r.inviterKey),
         invited_by_name: r.inviterRaw,
         import_batch_id: batchId,
       })),
-      "full_name,invited_by_name",
-      (e) => [e.full_name, e.invited_by_name],
     );
 
-    // slip_ceus has no dedupe index: always insert.
     await bulkInsert(
       "slip_ceus",
       ceuRows.map((r) => ({
+        tenant_id: tenantId,
         bni_week_id: weekId,
         member_id: midOf(r.nameKey),
         member_name: r.name,
@@ -449,9 +443,14 @@ export async function POST(request: Request) {
       })),
     );
 
+    const batchLog = JSON.stringify({ errors: errors.slice(0, 50), skips: skipDetails.slice(0, 1000) });
     const { error: batchError } = await supabase
       .from("import_batches")
-      .update({ imported_count: imported, skipped_count: skipped, error_message: errors.slice(0, 10).join(" | ") || null })
+      .update({
+        imported_count: imported,
+        skipped_count: skipped,
+        error_message: errors.length || skipDetails.length ? batchLog : null,
+      })
       .eq("id", batch?.id);
     if (batchError) {
       console.error("Import batch counts not saved", { batchId, error: batchError.message });

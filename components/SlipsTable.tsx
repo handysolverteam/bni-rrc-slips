@@ -1,4 +1,6 @@
 import ColumnFilter from "@/components/ColumnFilter";
+import MemberActiveToggle from "@/components/MemberActiveToggle";
+import type { ComboOption } from "@/components/SearchSelect";
 
 type Col = { key: string; label: string };
 // Name column -> its "belongs to another chapter" flag (set from .xlsx bold).
@@ -11,6 +13,16 @@ const OTHER_CHAPTER_FLAG: Record<string, string> = {
 };
 
 function Cell({ columnKey, value, row }: { columnKey: string; value: unknown; row: Record<string, unknown> }) {
+  // Admin-only Active column (members list): the row itself carries the flag.
+  if (columnKey === "active") {
+    return (
+      <MemberActiveToggle
+        memberId={String(row.id ?? "")}
+        name={String(row.name ?? "")}
+        active={row.active !== false}
+      />
+    );
+  }
   if (columnKey === "inside_outside" && (value === "Inside" || value === "Outside")) {
     return <span className={`pill ${String(value).toLowerCase()}`}>{String(value)}</span>;
   }
@@ -43,7 +55,7 @@ export default function SlipsTable({
   rows: Record<string, unknown>[];
   filterable?: string[];
   initialFilters?: Record<string, string>;
-  filterOptions?: Record<string, string[]>;
+  filterOptions?: Record<string, ComboOption[]>;
   emptyHint?: string;
   loading?: boolean;
 }) {
@@ -65,6 +77,9 @@ export default function SlipsTable({
                       defaultValue={initialFilters[c.key] ?? ""}
                       options={filterOptions[c.key] ?? []}
                       label={c.label}
+                      allLabel={c.key === "bni_week" ? "All weeks" : undefined}
+                      clearValue={c.key === "bni_week" ? "all" : undefined}
+                      multiSelect
                     />
                   ) : (
                     <span className="th-label">{c.label}</span>

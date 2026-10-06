@@ -1,12 +1,32 @@
+import { DEFAULT_TENANT_ID } from "./server-auth";
 import { classifySlipType, isCountLikeName, normalizeName } from "./report-import";
 import type { ReportRow } from "./types";
 
-/** Home chapter for blank-Detail / non-bold names. */
-export function resolveHomeChapter(): string {
-  return (
-    normalizeName(process.env.NEXT_PUBLIC_CHAPTER_NAME || "BNI Influencer") ||
-    "BNI Influencer"
-  );
+/** Identity row of the importing tenant (only these fields matter). */
+export type HomeTenant = {
+  id?: string;
+  name?: string | null;
+  home_chapter_name?: string | null;
+};
+
+/**
+ * Home chapter for blank-Detail / non-bold names — where a member files when
+ * the file itself names no chapter:
+ *   1. the tenant's configured `home_chapter_name`, if set;
+ *   2. `NEXT_PUBLIC_CHAPTER_NAME`, ONLY for the default tenant (BNI
+ *      Influencers) — any other chapter never inherits the env chapter;
+ *   3. any other tenant falls back to its own name (created as a chapter on
+ *      first import).
+ * Every chapter named in a file (Detail) is created if missing and assigned
+ * to that other-chapter member — unchanged, see computeDesiredChapters.
+ */
+export function resolveHomeChapter(tenant?: HomeTenant | null): string {
+  const configured = normalizeName(tenant?.home_chapter_name || "");
+  if (configured) return configured;
+  if (!tenant || tenant.id === DEFAULT_TENANT_ID) {
+    return normalizeName(process.env.NEXT_PUBLIC_CHAPTER_NAME || "") || "BNI Influencer";
+  }
+  return normalizeName(tenant.name || "") || "BNI Influencer";
 }
 
 const detailChapter = (detail: string | null, home: string): string =>
@@ -70,13 +90,10 @@ export function computeDesiredChapters(
       if (r.from && r.to && !isCountLikeName(fromName))
         wantName(r.from, r.fromBold === true, detail);
     } else {
+      // CEU attendees always file HOME (owner rule), even when bold.
       const name = fromName || toName;
       if (!name || isCountLikeName(name)) continue;
-      wantName(
-        r.from || r.to,
-        fromName ? r.fromBold === true : r.toBold === true,
-        detail,
-      );
+      want(r.from || r.to, home, false);
     }
   }
   return desired;

@@ -1,5 +1,6 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paged";
+import type { QueryIndex, QueryRow } from "./query-index";
 
 export type MemberStat = {
   name: string;
@@ -15,6 +16,22 @@ export type MemberStat = {
   invitedVisitors: string[];
 };
 
+/** All slips numbers for ONE BNI meeting week (newest-first in the snapshot). */
+export type WeekStat = {
+  label: string;
+  meetingDate: string;
+  referrals: number;
+  referralsInside: number;
+  referralsOutside: number;
+  oneToOnes: number;
+  visitors: number;
+  tyfcbEntries: number;
+  tyfcbAmount: number;
+  uniqueReferralGivers: number;
+  uniqueReferralReceivers: number;
+  uniqueTyfcbReceivers: number;
+};
+
 export type SlipsSnapshot = {
   chapterName: string;
   generatedAt: string;
@@ -28,23 +45,101 @@ export type SlipsSnapshot = {
     tyfcbAmount: number;
   };
   recentWeeks: string[];
+  /** One entry per meeting week, newest first. weekly[0] = latest week. */
+  weekly: WeekStat[];
+  /** Label of the newest week that actually has slips (weekly[0] can be an
+   *  upcoming week with no data yet). */
+  latestWithDataLabel: string | null;
   members: MemberStat[];
 };
 
 const key = (v: string) => v.replace(/\s+/g, " ").trim().toLowerCase();
+const amount = (v: number | string | null): number => {
+  const n = Number(String(v ?? 0).replace(/,/g, ""));
+  return Number.isFinite(n) ? n : 0;
+};
 
-/** Compact, privacy-safe dataset of the whole slips database for the AI. */
-export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
+/**
+ * Snapshot (what goes into the prompt) plus the member × week query index
+ * (server-only: answers chapter_query tool calls, never serialized).
+ */
+export type SlipsData = { snapshot: SlipsSnapshot; index: QueryIndex };
+
+/**
+ * Compact, privacy-safe dataset of ONE tenant's slips database for the AI.
+ * Weeks come from this tenant's import history (the calendar itself is
+ * global); members + every slip table are tenant-scoped.
+ */
+export async function getSlipsData(tenantId: string): Promise<SlipsData> {
   const sb = getSupabaseServer();
-  const chapterName = process.env.NEXT_PUBLIC_CHAPTER_NAME || "BNI Chapter";
+  const { data: tenantRow } = await sb
+    .from("tenants")
+    .select("name,home_chapter_name")
+    .eq("id", tenantId)
+    .maybeSingle();
+  const chapterName =
+    (tenantRow as { name?: string | null } | null)?.name ||
+    process.env.NEXT_PUBLIC_CHAPTER_NAME ||
+    "BNI Chapter";
 
-  const [membersRes, weeksRes, refRes, otoRes, tyfcbRes, visRes] = await Promise.all([
-    sb.from("members").select("name,category,chapters(name)").order("name").limit(500),
-    sb.from("bni_weeks").select("label,meeting_date").order("meeting_date", { ascending: false }).limit(60),
-    fetchAllRows<{ from_name: string; to_name: string; inside_outside: string | null }>("slip_referrals", "from_name,to_name,inside_outside", { pageSize: 2000 }),
-    fetchAllRows<{ initiated_by_name: string; met_with_name: string }>("slip_one_to_ones", "initiated_by_name,met_with_name", { pageSize: 2000 }),
-    fetchAllRows<{ member_name: string; amount: number | string | null }>("slip_tyfcb", "member_name,amount", { pageSize: 2000 }),
-    fetchAllRows<{ full_name: string; invited_by_name: string | null }>("slip_visitors", "full_name,invited_by_name", { pageSize: 2000 }),
+  // This tenant's imported weeks: buckets + the week list in the index.
+  const { data: batchWeeks } = await sb
+    .from("import_batches")
+    .select("bni_week_id")
+    .eq("tenant_id", tenantId)
+    .not("bni_week_id", "is", null);
+  const weekIds = [...new Set((batchWeeks ?? []).map((b) => b.bni_week_id as string))];
+
+  // NOTE: fetchAllRows, never .limit() — Supabase returns at most 1000 rows
+  // per request, and the DB is already past the old hand-picked caps
+  // (500 members / 60 weeks), which silently hid data from the AI.
+  const [membersRows, weeksRows, refRes, otoRes, tyfcbRes, visRes] = await Promise.all([
+    fetchAllRows<{ name: string; category: string | null; chapters: { name: string } | { name: string }[] | null }>(
+      "members",
+      "name,category,chapters(name)",
+      {
+        eq: [["tenant_id", tenantId]],
+        // Order by a unique column: a non-unique sort key can repeat/skip rows
+        // when range-paging crosses a page boundary.
+        order: { column: "id" },
+        pageSize: 1000,
+      },
+    ),
+    fetchAllRows<{ id: string; label: string; meeting_date: string }>(
+      "bni_weeks",
+      "id,label,meeting_date",
+      {
+        in: [["id", weekIds]],
+        order: { column: "meeting_date", ascending: false },
+        pageSize: 500,
+      },
+    ),
+    fetchAllRows<{ bni_week_id: string | null; from_name: string; to_name: string; inside_outside: string | null }>(
+      "slip_referrals",
+      "bni_week_id,from_name,to_name,inside_outside",
+      { eq: [["tenant_id", tenantId]], order: { column: "id" }, pageSize: 1000 },
+    ),
+    fetchAllRows<{
+      bni_week_id: string | null;
+      initiated_by_name: string;
+      met_with_name: string;
+      initiated_by_is_other_chapter: boolean | null;
+      met_with_is_other_chapter: boolean | null;
+    }>(
+      "slip_one_to_ones",
+      "bni_week_id,initiated_by_name,met_with_name,initiated_by_is_other_chapter,met_with_is_other_chapter",
+      { eq: [["tenant_id", tenantId]], order: { column: "id" }, pageSize: 1000 },
+    ),
+    fetchAllRows<{ bni_week_id: string | null; member_name: string; amount: number | string | null }>(
+      "slip_tyfcb",
+      "bni_week_id,member_name,amount",
+      { eq: [["tenant_id", tenantId]], order: { column: "id" }, pageSize: 1000 },
+    ),
+    fetchAllRows<{ bni_week_id: string | null; full_name: string; invited_by_name: string | null }>(
+      "slip_visitors",
+      "bni_week_id,full_name,invited_by_name",
+      { eq: [["tenant_id", tenantId]], order: { column: "id" }, pageSize: 1000 },
+    ),
   ]);
 
   const stats = new Map<string, MemberStat>();
@@ -72,7 +167,7 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
     return s;
   };
 
-  for (const m of (membersRes.data ?? []) as { name: string; category: string | null; chapters: { name: string } | { name: string }[] | null }[]) {
+  for (const m of membersRows) {
     const rel = Array.isArray(m.chapters) ? m.chapters[0] : m.chapters;
     const s = ensure(m.name, rel?.name ?? null);
     if (s) {
@@ -81,7 +176,41 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
     }
   }
 
-  for (const r of refRes as { from_name: string; to_name: string; inside_outside: string | null }[]) {
+  // Per-week buckets keyed by week id (built from the weeks table so every
+  // meeting week appears, even a week whose slips are all zero).
+  type Bucket = {
+    stat: Omit<WeekStat, "label" | "meetingDate" | "uniqueReferralGivers" | "uniqueReferralReceivers" | "uniqueTyfcbReceivers">;
+    givers: Set<string>;
+    receivers: Set<string>;
+    tyfcbReceivers: Set<string>;
+  };
+  const buckets = new Map<string, Bucket>();
+  const bucketOf = (weekId: string | null | undefined): Bucket | undefined =>
+    (weekId ? buckets.get(weekId) : undefined);
+  for (const w of weeksRows) {
+    buckets.set(w.id, {
+      stat: { referrals: 0, referralsInside: 0, referralsOutside: 0, oneToOnes: 0, visitors: 0, tyfcbEntries: 0, tyfcbAmount: 0 },
+      givers: new Set(),
+      receivers: new Set(),
+      tyfcbReceivers: new Set(),
+    });
+  }
+
+  // Sparse member × week matrix for chapter_query tool calls — built in the
+  // same pass as the snapshot, kept server-side, never added to the prompt.
+  const qrows = new Map<string, QueryRow>();
+  const qrowOf = (weekId: string | null | undefined, memberKey: string, name: string): QueryRow | null => {
+    if (!weekId || !memberKey) return null;
+    const id = `${weekId}|${memberKey}`;
+    let row = qrows.get(id);
+    if (!row) {
+      row = { w: weekId, m: memberKey, n: name, rg: 0, ri: 0, ro: 0, rr: 0, oto: 0, vis: 0, te: 0, ta: 0 };
+      qrows.set(id, row);
+    }
+    return row;
+  };
+
+  for (const r of refRes) {
     const from = ensure(r.from_name);
     const to = ensure(r.to_name);
     if (from) {
@@ -90,25 +219,64 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
       else if (r.inside_outside === "Outside") from.referralsOutside += 1;
     }
     if (to) to.referralsReceived += 1;
+    const qrFrom = qrowOf(r.bni_week_id, key(r.from_name), from?.name ?? r.from_name);
+    if (qrFrom) {
+      qrFrom.rg += 1;
+      if (r.inside_outside === "Inside") qrFrom.ri += 1;
+      else if (r.inside_outside === "Outside") qrFrom.ro += 1;
+    }
+    const qrTo = qrowOf(r.bni_week_id, key(r.to_name), to?.name ?? r.to_name);
+    if (qrTo) qrTo.rr += 1;
+    const b = bucketOf(r.bni_week_id);
+    if (b) {
+      b.stat.referrals += 1;
+      if (r.inside_outside === "Inside") b.stat.referralsInside += 1;
+      else if (r.inside_outside === "Outside") b.stat.referralsOutside += 1;
+      const g = key(r.from_name);
+      const rc = key(r.to_name);
+      if (g) b.givers.add(g);
+      if (rc) b.receivers.add(rc);
+    }
   }
 
-  for (const r of otoRes as { initiated_by_name: string; met_with_name: string }[]) {
+  for (const r of otoRes) {
     // A 121 counts as participation for both sides (once if same person).
     const init = ensure(r.initiated_by_name);
     if (init) init.oneToOnes += 1;
     const met = ensure(r.met_with_name);
     if (met && (!init || key(met.name) !== key(init.name))) met.oneToOnes += 1;
+    const qInit = qrowOf(r.bni_week_id, key(r.initiated_by_name), init?.name ?? r.initiated_by_name);
+    if (qInit) qInit.oto += 1;
+    const qMet = qrowOf(r.bni_week_id, key(r.met_with_name), met?.name ?? r.met_with_name);
+    if (qMet && qMet !== qInit) qMet.oto += 1;
+    const b = bucketOf(r.bni_week_id);
+    if (b) {
+      // Weighted like the report: both home members = 2, other-chapter side = 1.
+      b.stat.oneToOnes += r.initiated_by_is_other_chapter === true || r.met_with_is_other_chapter === true ? 1 : 2;
+    }
   }
 
   let tyfcbAmount = 0;
-  for (const r of tyfcbRes as { member_name: string; amount: number | string | null }[]) {
-    const amt = Number(r.amount ?? 0);
-    if (Number.isFinite(amt)) tyfcbAmount += amt;
+  for (const r of tyfcbRes) {
+    const amt = amount(r.amount);
+    tyfcbAmount += amt;
     const s = ensure(r.member_name);
-    if (s && Number.isFinite(amt)) s.tyfcbTotal += amt;
+    if (s) s.tyfcbTotal += amt;
+    const qT = qrowOf(r.bni_week_id, key(r.member_name), s?.name ?? r.member_name);
+    if (qT) {
+      qT.te += 1;
+      qT.ta += amt;
+    }
+    const b = bucketOf(r.bni_week_id);
+    if (b) {
+      b.stat.tyfcbEntries += 1;
+      b.stat.tyfcbAmount += amt;
+      const recv = key(r.member_name);
+      if (recv) b.tyfcbReceivers.add(recv);
+    }
   }
 
-  for (const r of visRes as { full_name: string; invited_by_name: string | null }[]) {
+  for (const r of visRes) {
     if (r.invited_by_name) {
       const s = ensure(r.invited_by_name);
       if (s) {
@@ -118,30 +286,62 @@ export async function getSlipsSnapshot(): Promise<SlipsSnapshot> {
           s.invitedVisitors.push(guest);
         }
       }
+      const qV = qrowOf(r.bni_week_id, key(r.invited_by_name), s?.name ?? r.invited_by_name);
+      if (qV) qV.vis += 1;
     }
+    const b = bucketOf(r.bni_week_id);
+    if (b) b.stat.visitors += 1;
   }
 
   const members = [...stats.values()].sort((a, b) =>
     b.referralsGiven + b.referralsReceived + b.tyfcbTotal / 100000 - (a.referralsGiven + a.referralsReceived + a.tyfcbTotal / 100000),
   );
 
+  const weekly: WeekStat[] = weeksRows.map((w) => {
+    const b = buckets.get(w.id)!;
+    return {
+      label: w.label,
+      meetingDate: w.meeting_date,
+      ...b.stat,
+      uniqueReferralGivers: b.givers.size,
+      uniqueReferralReceivers: b.receivers.size,
+      uniqueTyfcbReceivers: b.tyfcbReceivers.size,
+    };
+  });
+
   const referrals = refRes.length;
-  const oneToOnes = otoRes.length;
+  // Owner count: a 121 with a bold (other-chapter) side counts 1,
+  // a meeting between two home members counts 2. Per-member participation
+  // above stays 1-per-member.
+  const oneToOnes = otoRes.reduce(
+    (n, r) => n + (r.initiated_by_is_other_chapter === true || r.met_with_is_other_chapter === true ? 1 : 2),
+    0,
+  );
   const visitors = visRes.length;
 
-  return {
+  const snapshot: SlipsSnapshot = {
     chapterName,
     generatedAt: new Date().toISOString(),
     totals: {
-      members: (membersRes.data ?? []).length,
-      weeks: (weeksRes.data ?? []).length,
+      members: membersRows.length,
+      weeks: weeksRows.length,
       referrals,
       oneToOnes,
       visitors,
       tyfcbEntries: tyfcbRes.length,
       tyfcbAmount: Math.round(tyfcbAmount),
     },
-    recentWeeks: ((weeksRes.data ?? []) as { label: string }[]).slice(0, 12).map((w) => w.label),
+    recentWeeks: weeksRows.map((w) => w.label).slice(0, 12),
+    weekly,
+    latestWithDataLabel:
+      weekly.find((w) => w.referrals > 0 || w.oneToOnes > 0 || w.visitors > 0 || w.tyfcbEntries > 0)?.label ?? null,
     members,
+  };
+  return {
+    snapshot,
+    index: {
+      weeks: weeksRows.map((w) => ({ id: w.id, label: w.label, date: w.meeting_date })),
+      rows: [...qrows.values()],
+    },
   };
 }

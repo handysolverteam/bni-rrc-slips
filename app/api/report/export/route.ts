@@ -3,10 +3,11 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { detailLabelFor, fetchReportSections, fromToLabelsFor, rowCells, totalRowCells, visibleColumns, type ReportSectionKey } from "@/lib/report-view";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
 
-const TABS: ReportSectionKey[] = ["one-to-one", "referral", "tyfcb", "visitor"];
+const TABS: ReportSectionKey[] = ["one-to-one", "referral", "tyfcb", "visitor", "ceu"];
 
 // Section header fills — same palette as the screen (see globals.css).
 const SECTION_FILL: Record<string, [number, number, number]> = {
@@ -14,6 +15,7 @@ const SECTION_FILL: Record<string, [number, number, number]> = {
   Referral: [46, 139, 87],
   TYFCB: [184, 134, 11],
   Visitor: [47, 111, 176],
+  CEU: [106, 79, 199],
 };
 
 function safeFilePart(label: string): string {
@@ -23,6 +25,10 @@ function safeFilePart(label: string): string {
 /** Download the week report as xlsx / csv / pdf, current tab or all tabs. */
 export async function GET(request: Request) {
   try {
+    const ctx = await getTenantContext(request);
+    if (!ctx) return unauthorized();
+    if ("noAccess" in ctx) return forbidden();
+
     const url = new URL(request.url);
     const weekId = url.searchParams.get("week") ?? "";
     const tab = url.searchParams.get("tab") ?? "all";
@@ -37,6 +43,7 @@ export async function GET(request: Request) {
       referral: colFor("referral"),
       tyfcb: colFor("tyfcb"),
       visitor: colFor("visitor"),
+      ceu: colFor("ceu"),
     };
     // Per-table week overrides (w_<section>): a table uses its own scope
     // when set, otherwise the universal week above.
@@ -45,9 +52,15 @@ export async function GET(request: Request) {
       referral: url.searchParams.get("w_referral") ?? "",
       tyfcb: url.searchParams.get("w_tyfcb") ?? "",
       visitor: url.searchParams.get("w_visitor") ?? "",
+      ceu: url.searchParams.get("w_ceu") ?? "",
     };
     const effOf = (key: string): string => weekOverrides[key]?.trim() || weekId;
-    const wideOf = (key: string): boolean => effOf(key) === "all";
+    // The export carries the BNI Week column whenever rows can span
+    // meetings: all-weeks scope or a multi-week (comma) selection.
+    const wideOf = (key: string): boolean => {
+      const eff = effOf(key);
+      return eff === "all" || eff.includes(",");
+    };
     const format = (url.searchParams.get("format") ?? "xlsx").toLowerCase();
     if (!weekId) return Response.json({ error: "week is required" }, { status: 400 });
     if (!["xlsx", "csv", "pdf", "json"].includes(format)) {
@@ -56,12 +69,28 @@ export async function GET(request: Request) {
 
     const sb = getSupabaseServer();
     const allWeeks = weekId === "all";
+    const labelCache = new Map<string, string>();
+    /** Label for "all", one week id, or a comma-separated list (joined in selection order). */
     async function weekLabelOf(id: string): Promise<string> {
       if (id === "all") return "All weeks";
-      const { data: week } = await sb.from("bni_weeks").select("label").eq("id", id).maybeSingle();
-      return (week as { label?: string } | null)?.label ?? "week";
+      const cached = labelCache.get(id);
+      if (cached) return cached;
+      const ids = id.split(",").map((s) => s.trim()).filter(Boolean);
+      let label: string;
+      if (ids.length > 1) {
+        const { data } = await sb.from("bni_weeks").select("id,label").in("id", ids);
+        const byId = new Map(
+          ((data ?? []) as { id: string; label: string }[]).map((w) => [w.id, w.label]),
+        );
+        label = ids.map((i) => byId.get(i) ?? "week").join(", ");
+      } else {
+        const { data: week } = await sb.from("bni_weeks").select("label").eq("id", ids[0] ?? "").maybeSingle();
+        label = (week as { label?: string } | null)?.label ?? "week";
+      }
+      labelCache.set(id, label);
+      return label;
     }
-    const sections = await fetchReportSections(weekId, q, col, weekOverrides);
+    const sections = await fetchReportSections(ctx.tenantId, weekId, q, col, weekOverrides);
     const picked = tab === "all" ? sections : sections.filter((s) => s.key === tab);
     if (picked.length === 0) return Response.json({ error: "unknown tab" }, { status: 400 });
     const mixed = picked.some((s) => (weekOverrides[s.key] || "").trim() !== "");
@@ -93,6 +122,19 @@ export async function GET(request: Request) {
       }
     }
     const filterLine = filterBits.join(" | ");
+    // Screen summary — the stat cards rendered ahead of the data in every
+    // format: Referral shows the given count + RGI/RGO/RRI/RRO chips, CEU the
+    // distinct-member line (cardCount/cardStat, exactly what the page head
+    // shows). summary.total is carried in the JSON payload for machine
+    // consumers only: the exported files carry no slips grand total.
+    const summary = {
+      rows: picked.map((s) => ({
+        section: s.title,
+        count: s.cardCount ?? s.metricCount,
+        info: s.cardStat ?? s.stat ?? s.totalLabel,
+      })),
+      total: picked.reduce((n, s) => n + s.metricCount, 0),
+    };
     async function scopePartOf(id: string): Promise<string> {
       return id === "all" ? "all-weeks" : safeFilePart(await weekLabelOf(id));
     }
@@ -116,6 +158,7 @@ export async function GET(request: Request) {
         filename: `${base}.pdf`,
         weekLabel: titleWeek,
         filterLine,
+        summary,
         sections: picked.map((s) => {
           const cols = visibleColumns(s.rows, wideOf(s.key), s.key);
           const withTotal = s.totalAmount != null && s.rows.length > 0;
@@ -132,7 +175,10 @@ export async function GET(request: Request) {
     }
 
     if (format === "csv") {
+      const cell = (v: string | number) => JSON.stringify(String(v));
       const lines = [`Week,${JSON.stringify(titleWeek)}`, `Filters,${JSON.stringify(filterLine)}`];
+      lines.push("", "Summary", ["Section", "Count", "Details"].join(","));
+      for (const r of summary.rows) lines.push([r.section, r.count, r.info].map(cell).join(","));
       for (const s of picked) {
         const cols = visibleColumns(s.rows, wideOf(s.key), s.key);
         const headers = cols.map((c) => c.label);
@@ -154,6 +200,16 @@ export async function GET(request: Request) {
 
     if (format === "xlsx") {
       const wb = XLSX.utils.book_new();
+      // Summary opens first: week/filters + stat-card rows (no slips grand total).
+      const sumWs = XLSX.utils.aoa_to_sheet([
+        [`Week Report — ${titleWeek}`],
+        [`Filters: ${filterLine}`],
+        [],
+        ["Section", "Count", "Details"],
+        ...summary.rows.map((r) => [r.section, r.count, r.info]),
+      ]);
+      sumWs["!cols"] = [{ wch: 18 }, { wch: 8 }, { wch: 26 }];
+      XLSX.utils.book_append_sheet(wb, sumWs, "Summary");
       for (const s of picked) {
         const cols = visibleColumns(s.rows, wideOf(s.key), s.key);
         const headers = cols.map((c) => c.label);
@@ -188,15 +244,29 @@ export async function GET(request: Request) {
     doc.setTextColor(0, 0, 0);
     const firstTableY = 58 + filterLines.length * 10;
     let first = true;
+    autoTable(doc, {
+      startY: firstTableY,
+      head: [["Summary", "", ""]],
+      theme: "plain",
+      styles: { fontStyle: "bold" },
+    });
+    autoTable(doc, {
+      head: [["Section", "Count", "Details"]],
+      body: summary.rows.map((r) => [r.section, String(r.count), r.info]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [38, 50, 56], textColor: 255 },
+    });
+    first = false;
     for (const s of picked) {
       const cols = visibleColumns(s.rows, wideOf(s.key), s.key);
       const headers = cols.map((c) => c.label);
       const fromCol = cols.findIndex((c) => c.key === "from");
       const toCol = cols.findIndex((c) => c.key === "to");
+      // Section title only — the styled table below repeats its own header
+      // on every page, so no plain-text column-header row above it.
       autoTable(doc, {
         startY: first ? firstTableY : undefined,
-        head: [[`${s.title} (${s.rows.length})`, "", "", "", "", "", "", ""].slice(0, headers.length)],
-        body: [headers.map(String)],
+        head: [[`${s.title} (${s.rows.length})`]],
         theme: "plain",
         styles: { fontStyle: "bold" },
       });

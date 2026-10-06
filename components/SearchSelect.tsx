@@ -20,6 +20,7 @@ export default function SearchSelect({
   placeholder,
   allLabel,
   showClear = true,
+  multiple = false,
   onChange,
 }: {
   value: string;
@@ -28,6 +29,8 @@ export default function SearchSelect({
   allLabel?: string;
   /** Render the ✕ button inside the field (week box relies on the "All" item). */
   showClear?: boolean;
+  /** Comma-separated values: clicking toggles without closing the list. */
+  multiple?: boolean;
   onChange: (value: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -38,7 +41,31 @@ export default function SearchSelect({
   const popRef = useRef<HTMLSpanElement>(null);
 
   const current = options.map(norm).find((o) => o.value === value);
-  const display = term ?? current?.label ?? "";
+  // multiple: value is a comma-separated id list; the literal "all" is a
+  // selectable member (exclusive). Labels follow selection order
+  // (matches the URL/header), not option order.
+  const selectedSet = multiple
+    ? new Set(
+        value
+          ? value === "all"
+            ? ["all"]
+            : value.split(",").map((s) => s.trim()).filter(Boolean)
+          : [],
+      )
+    : null;
+  const optionOf = new Map(options.map(norm).map((o) => [o.value, o.label]));
+  const selectedLabels = selectedSet
+    ? [...selectedSet].map((v) => optionOf.get(v) ?? v)
+    : [];
+  const display =
+    term ??
+    (multiple
+      ? selectedLabels.length === 0
+        ? ""
+        : selectedLabels.length <= 2
+          ? selectedLabels.join(", ")
+          : `${selectedLabels.length} selected`
+      : current?.label ?? "");
 
   function measure(): { top: number; left: number; width: number } | null {
     const el = ref.current;
@@ -112,9 +139,32 @@ export default function SearchSelect({
     .filter((o) => !needle || o.label.toLowerCase().includes(needle));
 
   function pick(v: string) {
+    if (multiple && selectedSet) {
+      // Toggle in place; the list stays open so several weeks can be picked
+      // in one sitting (each change still applies via onChange).
+      // "all" is exclusive: picking it clears specifics, picking a specific
+      // week from an "all" selection starts a fresh specific set.
+      const next = new Set(selectedSet);
+      if (v === "all") {
+        next.clear();
+        next.add("all");
+      } else if (next.has(v)) {
+        next.delete(v);
+      } else {
+        next.delete("all");
+        next.add(v);
+      }
+      onChange([...next].join(","));
+      return;
+    }
     const changed = v !== value;
     doClose();
     if (changed) onChange(v);
+  }
+
+  function clearAll() {
+    doClose();
+    onChange("");
   }
 
   return (
@@ -160,7 +210,7 @@ export default function SearchSelect({
             type="button"
             className="combo-adorn"
             aria-label="Clear selection"
-            onClick={() => pick("")}
+            onClick={() => (multiple ? clearAll() : pick(""))}
           >
             ✕
           </button>
@@ -183,24 +233,27 @@ export default function SearchSelect({
               style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width }}
             >
               <span className="combo-list">
-                <button type="button" className="combo-item combo-clear" onClick={() => pick("")}>
+                <button type="button" className="combo-item combo-clear" onClick={() => (multiple ? clearAll() : pick(""))}>
                   {allLabel ?? `All ${placeholder}`}
                 </button>
-                {list.map((o, i) => (
+                {list.map((o, i) => {
+                  const sel = selectedSet ? selectedSet.has(o.value) : o.value === value;
+                  return (
                   <button
                     key={o.value}
                     type="button"
                     role="option"
-                    aria-selected={o.value === value}
-                    className={`combo-item${o.value === value ? " selected" : ""}${i === highlight ? " highlighted" : ""}`}
+                    aria-selected={sel}
+                    className={`combo-item${sel ? " selected" : ""}${i === highlight ? " highlighted" : ""}`}
                     title={o.label}
                     onMouseEnter={() => setHighlight(i)}
                     onClick={() => pick(o.value)}
                   >
-                    {o.value === value ? "✓ " : ""}
+                    {sel ? "✓ " : ""}
                     {o.label}
                   </button>
-                ))}
+                  );
+                })}
                 {list.length === 0 ? <span className="combo-empty">No options</span> : null}
               </span>
             </span>,

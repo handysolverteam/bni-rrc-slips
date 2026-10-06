@@ -1,15 +1,20 @@
 import { findWeekByDate, parseUpload, weekSlipCounts } from "@/lib/import-upload";
-import { classifySlipType, validateReportRows } from "@/lib/report-import";
-import { computeDesiredChapters, resolveHomeChapter } from "@/lib/member-chapters";
-import { getSupabaseServer } from "@/lib/supabase/server";
+import { validateReportRows } from "@/lib/report-import";
+import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 /**
  * Inspect an uploaded Report file WITHOUT importing it: resolves the week
- * from the file title and reports whether that week already holds data,
- * so the UI can ask for confirmation before a duplicate import.
+ * from the file title and reports row problems so the UI can pause and ask
+ * for permission when typing mistakes are found. Duplicates are NOT
+ * flagged — every entry is kept on import (owner rule).
+ * Requires a signed-in member of the active chapter (roles were removed).
  */
 export async function POST(request: Request) {
   try {
+    const ctx = await getTenantContext(request);
+    if (!ctx) return unauthorized();
+    if ("noAccess" in ctx) return forbidden();
+
     const form = await request.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
@@ -33,7 +38,7 @@ export async function POST(request: Request) {
     let slipCount = 0;
     let counts: Record<string, number> = {};
     if (week) {
-      const result = await weekSlipCounts(week.id);
+      const result = await weekSlipCounts(ctx.tenantId, week.id);
       slipCount = result.total;
       counts = result.counts;
     }
@@ -41,44 +46,12 @@ export async function POST(request: Request) {
     // Every structural row problem (mirrors the import route's rules):
     // skipped rows never import, warnings import with a defaulted value.
     const { skipped, warnings } = validateReportRows(upload.rows);
-    // CEU rows have no duplicate check: re-importing a week that already
-    // holds CEUs doubles them. Flag it so the UI can ask first.
-    const ceuRows = upload.rows.filter((r) => classifySlipType(r.slipType) === "ceu").length;
     const rowIssues = {
       skippedCount: skipped.length,
       skippedSamples: skipped.slice(0, 5),
       warningCount: warnings.length,
       warningSamples: warnings.slice(0, 5),
     };
-
-    // Member chapter moves this file would cause: same shared logic as
-    // import, compared against existing rows. Importing confirms these.
-    const desired = computeDesiredChapters(upload.rows, resolveHomeChapter());
-    let chapterMoves: { count: number; samples: string[] } = { count: 0, samples: [] };
-    if (desired.size > 0) {
-      const sb = getSupabaseServer();
-      const { data: existingMembers } = await sb
-        .from("members")
-        .select("id,name,chapter_id,chapters(name)")
-        .limit(20000);
-      const moves: string[] = [];
-      for (const m of ((existingMembers ?? []) as {
-        name: string;
-        chapter_id: string;
-        chapters: { name: string } | { name: string }[] | null;
-      }[])) {
-        const w = desired.get(String(m.name).toLowerCase());
-        if (!w) continue;
-        const rel = Array.isArray(m.chapters) ? m.chapters[0] : m.chapters;
-        const current = rel?.name ?? "";
-        if (current && current.toLowerCase() !== w.chapter.toLowerCase()) {
-          moves.push(`${m.name}: ${current} → ${w.chapter}`);
-        }
-      }
-      // One entry per member even if matched twice (case variants collapse).
-      const unique = [...new Set(moves)];
-      chapterMoves = { count: unique.length, samples: unique.slice(0, 5) };
-    }
 
     return Response.json({
       filename: file.name,
@@ -94,8 +67,6 @@ export async function POST(request: Request) {
       boldUsed: upload.boldUsed,
       errors: upload.errors,
       rowIssues,
-      chapterMoves,
-      ceuRows,
     });
   } catch (e) {
     return Response.json(

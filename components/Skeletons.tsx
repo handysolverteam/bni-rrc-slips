@@ -2,6 +2,7 @@ import Link from "next/link";
 import ColumnFilter from "@/components/ColumnFilter";
 import ImportPanel from "@/components/ImportPanel";
 import ReportExportButtons from "@/components/ReportExportButtons";
+import SummaryExportButtons from "@/components/SummaryExportButtons";
 import ReportTabs from "@/components/ReportTabs";
 import SectionCollapse from "@/components/SectionCollapse";
 import { detailLabelFor, fromToLabelsFor, type ReportSectionKey } from "@/lib/report-view";
@@ -170,6 +171,7 @@ const HOME_SECTIONS = [
   { href: "/one-to-ones", label: "Slip 121", kind: "one-to-one", numW: 58 },
   { href: "/visitors", label: "Slip Visitors", kind: "visitor", numW: 40 },
   { href: "/tyfcb", label: "Slip TYFCB", kind: "tyfcb", numW: 58 },
+  { href: "/ceus", label: "Slip CEU", kind: "ceu", numW: 48 },
 ];
 
 export function HomeSkeleton() {
@@ -224,7 +226,7 @@ const REPORT_SECTIONS = [
     key: "one-to-one",
     title: "One-to-One",
     suffix: "121s",
-    rows: 62,
+    rows: 43,
     badgeW: 15,
     statW: 42,
     tyfcb: false,
@@ -234,9 +236,9 @@ const REPORT_SECTIONS = [
     key: "referral",
     title: "Referral",
     suffix: "Referrals",
-    rows: 135,
-    badgeW: 23,
-    statW: 63,
+    rows: 72,
+    badgeW: 15,
+    statW: 42,
     tyfcb: false,
     sum: false,
   },
@@ -244,7 +246,7 @@ const REPORT_SECTIONS = [
     key: "tyfcb",
     title: "TYFCB",
     suffix: "Slips",
-    rows: 94,
+    rows: 45,
     badgeW: 15,
     statW: 42,
     tyfcb: true,
@@ -254,11 +256,21 @@ const REPORT_SECTIONS = [
     key: "visitor",
     title: "Visitor",
     suffix: "Visitors",
-    rows: 6,
-    badgeW: 8,
-    statW: 21,
+    rows: 11,
+    badgeW: 15,
+    statW: 42,
     tyfcb: false,
     sum: false,
+  },
+  {
+    key: "ceu",
+    title: "CEU",
+    suffix: "CEUs",
+    rows: 12,
+    badgeW: 15,
+    statW: 42,
+    tyfcb: false,
+    sum: true,
   },
 ] as const;
 
@@ -266,14 +278,22 @@ function ReportSectionTable({
   sectionKey,
   rows,
   withTyfcb,
+  withCeu,
   withSum,
 }: {
   sectionKey: ReportSectionKey;
   rows: number;
   withTyfcb: boolean;
+  withCeu: boolean;
   withSum: boolean;
 }) {
-  const colCount = 5 + (withTyfcb ? 1 : 0) + 1; // base 5 + optional tyfcb + detail
+  // CEU rows never carry a Detail value, so the real table drops that column.
+  const withDetail = !withCeu;
+  // Real "One-to-One" slips wrap onto two lines in the Slip Type column,
+  // so those rows render taller (57px vs 39px) — mirror that height.
+  const barH = sectionKey === "one-to-one" ? 36 : 18;
+  const colCount =
+    5 + (withTyfcb ? 1 : 0) + (withCeu ? 1 : 0) + (withDetail ? 1 : 0);
   const fromTo = fromToLabelsFor(sectionKey);
   return (
     <div className="table-card">
@@ -313,14 +333,21 @@ function ReportSectionTable({
                   <span className="th-label">TYFCB Amount</span>
                 </th>
               ) : null}
-              <th>
-                <ColumnFilter
-                  paramKey={`sk_d_${sectionKey}`}
-                  defaultValue=""
-                  options={[]}
-                  label={detailLabelFor(sectionKey)}
-                />
-              </th>
+              {withCeu ? (
+                <th>
+                  <span className="th-label">CEU Credits</span>
+                </th>
+              ) : null}
+              {withDetail ? (
+                <th>
+                  <ColumnFilter
+                    paramKey={`sk_d_${sectionKey}`}
+                    defaultValue=""
+                    options={[]}
+                    label={detailLabelFor(sectionKey)}
+                  />
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -329,7 +356,7 @@ function ReportSectionTable({
                 {Array.from({ length: colCount }, (_, j) => (
                   <td key={j}>
                     <Bar
-                      h={18}
+                      h={barH}
                       w={`${CELL_W[(i + j) % CELL_W.length]}%`}
                       r={4}
                     />
@@ -349,7 +376,7 @@ function ReportSectionTable({
                     <Bar w={74} h={16} r={4} />
                   </strong>
                 </td>
-                <td />
+                {withDetail ? <td /> : null}
               </tr>
             </tfoot>
           ) : null}
@@ -390,6 +417,8 @@ export function ReportSkeleton() {
             <div className="go">
               {s.key === "tyfcb" ? (
                 <Bar w={104} h={13} r={4} />
+              ) : s.key === "ceu" ? (
+                <Bar w={74} h={13} r={4} />
               ) : (
                 s.suffix
               )}
@@ -450,11 +479,183 @@ export function ReportSkeleton() {
               sectionKey={s.key}
               rows={s.rows}
               withTyfcb={s.tyfcb}
+              withCeu={s.key === "ceu"}
               withSum={s.sum}
             />
           )}
         </SectionCollapse>
       ))}
+    </div>
+  );
+}
+
+/** Shared card head: title + (optional) toggle button, mirrored from the real panels. */
+function PanelSkeleton({ title, toggle }: { title: string; toggle?: string }) {
+  return (
+    <>
+      <div className="import-head">
+        <h2>{title}</h2>
+        {toggle ? (
+          <button type="button" className="import-toggle" disabled>
+            {toggle}
+          </button>
+        ) : null}
+      </div>
+      <label className="field">
+        <Bar w={430} h={15} r={4} />
+        <span className="skel" style={{ display: "block", width: "100%", height: 38, borderRadius: 5, marginTop: 6 }} />
+      </label>
+    </>
+  );
+}
+
+const IMPORT_HEAD = ["File", "Imported", "Skipped"];
+
+/** /import — both upload panels + the "Imported weeks" history table. */
+export function ImportSkeleton() {
+  return (
+    <div>
+      <div className="card">
+        <PanelSkeleton title="Import Report XLS" toggle="+ Import files" />
+      </div>
+
+      <div className="card">
+        <PanelSkeleton title="Chapter Summary PALMS (attendance)" />
+      </div>
+
+      <div className="card history-card">
+        <h2>Imported weeks</h2>
+        <div className="table-card">
+          <div className="table-scroll">
+            <table className="grid">
+              <thead>
+                <tr>
+                  <th>
+                    <span className="combo">
+                      <span className="combo-field" style={{ height: 39 }}>
+                        <Bar w={130} h={16} r={4} />
+                      </span>
+                    </span>
+                  </th>
+                  <th>
+                    <span className="th-label">{IMPORT_HEAD[0]}</span>
+                  </th>
+                  <th>
+                    <ColumnFilter paramKey="sk_iw_week" defaultValue="" options={[]} label="Week" allLabel="All weeks" />
+                  </th>
+                  <th>
+                    <span className="th-label">{IMPORT_HEAD[1]}</span>
+                  </th>
+                  <th>
+                    <span className="th-label">{IMPORT_HEAD[2]}</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 6 }, (_, i) => (
+                  <tr key={i}>
+                    <td><Bar h={18} w={`${CELL_W[i % CELL_W.length]}%`} r={4} /></td>
+                    <td><Bar h={18} w={`${CELL_W[(i + 1) % CELL_W.length]}%`} r={4} /></td>
+                    <td><Bar h={18} w={`${CELL_W[(i + 2) % CELL_W.length]}%`} r={4} /></td>
+                    <td><Bar h={18} w={`${CELL_W[(i + 3) % CELL_W.length]}%`} r={4} /></td>
+                    <td><Bar h={18} w={`${CELL_W[(i + 4) % CELL_W.length]}%`} r={4} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const SUMMARY_LABELS = ["Member", "P", "A", "L", "M", "S", "RGI", "RGO", "RRI", "RRO", "V", "1-2-1", "TYFCB", "CEU", "T"];
+
+/** /summary — page head, PALMS upload panel, week filter, member-wise table. */
+export function SummarySkeleton() {
+  return (
+    <div>
+      <div className="report-top">
+        <div className="page-head">
+          <h1>
+            Chapter Summary
+            <span className="count-badge" style={{ height: 24 }}>
+              <Bar w={96} h={16} r={4} />
+            </span>
+          </h1>
+          <p className="sub muted">
+            <Bar w={240} h={18} r={4} />
+          </p>
+        </div>
+        <div className="report-head-actions">
+          <SummaryExportButtons weekId="" scopeLabel="chapter-summary" />
+        </div>
+      </div>
+
+      <div className="card">
+        <PanelSkeleton title="Chapter Summary PALMS (attendance)" />
+      </div>
+
+      <div className="card report-controls">
+        <div className="report-controls-row">
+          <form className="filter-form">
+            <span className="combo">
+              <span className="combo-field" style={{ height: 39 }}>
+                <Bar w={210} h={16} r={4} />
+              </span>
+            </span>
+          </form>
+          <span className="clear-right">
+            <button type="button" disabled>
+              Clear all
+            </button>
+          </span>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="table-card">
+          <div className="table-scroll">
+            <table className="grid">
+              <thead>
+                <tr>
+                  {SUMMARY_LABELS.map((c) => (
+                    <th key={c}>
+                      <span className="th-label">{c}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 12 }, (_, i) => (
+                  <tr key={i}>
+                    {SUMMARY_LABELS.map((c, j) => (
+                      <td key={c}>
+                        <Bar h={18} w={`${CELL_W[(i + j) % CELL_W.length]}%`} r={4} />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td>
+                    <strong>Total</strong>
+                  </td>
+                  {SUMMARY_LABELS.slice(1).map((c, j) => (
+                    <td key={c}>
+                      <strong>
+                        <Bar h={16} w={`${CELL_W[(j + 2) % CELL_W.length]}%`} r={4} />
+                      </strong>
+                    </td>
+                  ))}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -69,6 +69,7 @@ export default function ReportExportButtons({
       filename: string;
       weekLabel: string;
       filterLine: string;
+      summary: { rows: { section: string; count: number; info: string }[]; total: number };
       sections: { title: string; totalLabel: string; headers: string[]; rows: string[][]; bold: [boolean, boolean][]; totalRow: string[] | null }[];
     };
     const { jsPDF } = await import("jspdf");
@@ -82,14 +83,30 @@ export default function ReportExportButtons({
     doc.text(filterLines, 40, 54);
     doc.setTextColor(0, 0, 0);
     let first = true;
+    // Summary first: stat-card section counts, same as xlsx/csv (no slips
+    // grand total — that row is not part of the exported file).
+    autoTable(doc, {
+      startY: first ? 58 + filterLines.length * 10 : undefined,
+      head: [["Summary", "", ""]],
+      theme: "plain",
+      styles: { fontStyle: "bold" },
+    });
+    autoTable(doc, {
+      head: [["Section", "Count", "Details"]],
+      body: data.summary.rows.map((r) => [r.section, String(r.count), r.info]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [38, 50, 56], textColor: 255 },
+    });
+    first = false;
     for (const s of data.sections) {
       const headers = s.headers;
       const fromCol = headers.indexOf("From");
       const toCol = headers.indexOf("To");
+      // Section title only — the styled table below repeats its own header
+      // on every page, so no plain-text column-header row above it.
       autoTable(doc, {
         startY: first ? 58 + filterLines.length * 10 : undefined,
-        head: [[`${s.title} (${s.rows.length})`, ...headers.slice(1).map(() => "")]],
-        body: [headers.map(String)],
+        head: [[`${s.title} (${s.rows.length})`]],
         theme: "plain",
         styles: { fontStyle: "bold" },
       });
