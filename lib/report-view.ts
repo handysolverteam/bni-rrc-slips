@@ -33,6 +33,10 @@ export type SectionData = {
    * both-home meeting counts 2 (owner rule).
    */
   metricCount: number;
+  /** Override for the stat-card big number (referral: given count only). */
+  cardCount: number | null;
+  /** Extra line shown only on the stat card (badges/exports keep `stat`). */
+  cardStat: string | null;
 };
 
 export const REPORT_HEADERS = [
@@ -238,9 +242,23 @@ export async function fetchReportSections(
   // a meeting between two home members is 2.
   const otoMetric = fOto.reduce((n, r) => n + (r.fromBold || r.toBold ? 1 : 2), 0);
 
+  const ceuStat = fCeu.length > 0 ? `${Math.round(fCeuSum).toLocaleString("en-IN")} credits` : null;
+  const ceuMembers = new Set(fCeu.map((r) => r.from.trim().toLowerCase()).filter(Boolean)).size;
+  // PALMS referral split (confirmed against the PALMS totals row): "given" is
+  // a row whose From side is home (not bold); RGI/RRI are Tier 1, RGO/RRO Tier 2.
+  const tier1 = (r: ReportRow) => r.insideOutside === "Tier 1 (inside)";
+  const refGiven = fRef.filter((r) => !r.fromBold);
+  const rgi = refGiven.filter(tier1).length;
+  const rgo = refGiven.length - rgi;
+  const refReceived = fRef.filter((r) => !r.toBold);
+  const rri = refReceived.filter(tier1).length;
+  const rro = refReceived.length - rri;
+  const refChips =
+    fRef.length > 0 ? `RGI ${rgi} · RGO ${rgo} · RRI ${rri} · RRO ${rro}` : null;
+
   return [
-    { key: "one-to-one", title: "One-to-One", totalLabel: "121s", stat: null, totalAmount: null, rows: fOto, metricCount: otoMetric },
-    { key: "referral", title: "Referral", totalLabel: "Referrals", stat: null, totalAmount: null, rows: fRef, metricCount: fRef.length },
+    { key: "one-to-one", title: "One-to-One", totalLabel: "121s", stat: null, totalAmount: null, rows: fOto, metricCount: otoMetric, cardCount: null, cardStat: null },
+    { key: "referral", title: "Referral", totalLabel: "Referrals", stat: null, totalAmount: null, rows: fRef, metricCount: fRef.length, cardCount: refGiven.length, cardStat: refChips },
     {
       key: "tyfcb",
       title: "TYFCB",
@@ -249,16 +267,20 @@ export async function fetchReportSections(
       totalAmount: fTyfcb.length > 0 ? Math.round(fTyfcbSum) : null,
       rows: fTyfcb,
       metricCount: fTyfcb.length,
+      cardCount: null,
+      cardStat: null,
     },
-    { key: "visitor", title: "Visitor", totalLabel: "Visitors", stat: null, totalAmount: null, rows: fVis, metricCount: fVis.length },
+    { key: "visitor", title: "Visitor", totalLabel: "Visitors", stat: null, totalAmount: null, rows: fVis, metricCount: fVis.length, cardCount: null, cardStat: null },
     {
       key: "ceu",
       title: "CEU",
       totalLabel: "CEUs",
-      stat: fCeu.length > 0 ? `${Math.round(fCeuSum).toLocaleString("en-IN")} credits` : null,
+      stat: ceuStat,
       totalAmount: fCeu.length > 0 ? Math.round(fCeuSum) : null,
       rows: fCeu,
       metricCount: fCeu.length,
+      cardCount: null,
+      cardStat: ceuStat ? `${ceuMembers} ${ceuMembers === 1 ? "Member" : "Members"} · ${ceuStat}` : null,
     },
   ];
 }

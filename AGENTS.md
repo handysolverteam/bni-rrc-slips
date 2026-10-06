@@ -27,7 +27,9 @@
 - **Open sign-in**: the first sign-in auto-grants the **Home Chapter**
   (`lib/tenant-grant.ts`, idempotent upsert) — no SQL per user. Membership in
   any *other* chapter stays a manual SQL insert.
-- Migrations `001`–`005` are applied. No `DATABASE_URL` in `.env.local`, so the
+- Migrations `001`–`007` are applied (006 = `member_attendance` for the PALMS
+  Chapter Summary import, 007 = `palms_stats` for the PALMS-vs-slips
+  comparison). No `DATABASE_URL` in `.env.local`, so the
   user runs any new DDL in the Supabase SQL editor.
 - Build = `npm run build`; e2e suites in `tests/` need the prod server on
   :3000 (`npm run start`).

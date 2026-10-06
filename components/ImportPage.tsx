@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import ImportPanel from "@/components/ImportPanel";
+import PalmsImportPanel from "@/components/PalmsImportPanel";
 import ColumnFilter from "@/components/ColumnFilter";
 
 type Batch = {
@@ -82,6 +83,8 @@ export default function ImportPage() {
   return (
     <div>
       <ImportPanel onImported={refreshHistory} />
+
+      <PalmsImportPanel onImported={refreshHistory} />
 
       <div className="card history-card">
         <h2>Imported weeks</h2>

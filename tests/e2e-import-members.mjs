@@ -251,6 +251,24 @@ check(
 );
 check("summary grew by the imported slips", dbNow.total > base.total, `${base.total} -> ${dbNow.total}`);
 
+// ---- 4b) PDF export: section title once + styled table header only --------
+// The section's plain-text column-header row was removed (the styled header
+// repeats on every page) — "Invited By" must appear exactly once.
+const pdfRes = await fetch(
+  `${APP}/api/report/export?week=${weekId}&tab=visitor&format=pdf`,
+  { headers: { ...AUTH } },
+);
+const pdfBuf = Buffer.from(await pdfRes.arrayBuffer());
+const pdfText = pdfBuf.toString("latin1");
+const invitedBy = pdfText.split("Invited By").length - 1;
+// jsPDF escapes the parens of the title row: "Visitor \(12\)".
+const titleKept = pdfText.includes("Visitor \\(");
+check(
+  "pdf: section title kept, no duplicated text header row",
+  pdfRes.ok && titleKept && invitedBy === 1,
+  `status=${pdfRes.status} title=${titleKept} invitedBy=${invitedBy} bytes=${pdfBuf.length}`,
+);
+
 // ---- 5) cleanup + baseline restored ---------------------------------------
 await cleanup();
 const after = await dbSummary(weekId);

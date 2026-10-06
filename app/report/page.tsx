@@ -1,5 +1,7 @@
 import { defaultWeekId, getCachedWeekOptions } from "@/lib/server-weeks";
 import { distinctValues, mergeDistinct } from "@/lib/distinct";
+import { fetchMissingMeetingFiles } from "@/lib/data-health";
+import { fetchPalmsComparisons } from "@/lib/palms-compare";
 import {
   detailLabelFor,
   fetchReportSections,
@@ -17,6 +19,7 @@ import Link from "next/link";
 import ReportExportButtons from "@/components/ReportExportButtons";
 import ReportTabs from "@/components/ReportTabs";
 import FilterBar from "@/components/FilterBar";
+import DataWarnings from "@/components/DataWarnings";
 
 export const dynamic = "force-dynamic";
 
@@ -188,7 +191,7 @@ export default async function ReportPage({
         ceu: sp["w_ceu"] || "",
       })
     : Promise.resolve([]);
-  const [sections, [fromOptions, toOptions, detailOptions]] = await Promise.all([
+  const [sections, [fromOptions, toOptions, detailOptions], missing, comparisons] = await Promise.all([
     sectionsPromise,
     Promise.all([
     Promise.all([
@@ -209,6 +212,8 @@ export default async function ReportPage({
       distinctValues(tenantId, "slip_tyfcb", "other_chapter_member"),
     ]).then((lists) => mergeDistinct(...lists)),
     ]),
+    fetchMissingMeetingFiles(tenantId),
+    fetchPalmsComparisons(tenantId, weekIds),
   ]);
   const colOptions = { from: fromOptions, to: toOptions, detail: detailOptions };
   const visible = tab === "all" ? sections : sections.filter((s) => s.key === tab);
@@ -242,12 +247,14 @@ export default async function ReportPage({
         </div>
       </div>
 
+      <DataWarnings missing={missing} comparisons={comparisons} />
+
       <div className="cards stat-cards">
         {sections.map((s) => (
           <div key={s.key} className="section-card" data-stat={s.key}>
-            <div className="num">{s.metricCount}</div>
+            <div className="num">{s.cardCount ?? s.metricCount}</div>
             <div className="label">{s.title}</div>
-            <div className="go">{s.stat ?? s.totalLabel}</div>
+            <div className="go">{s.cardStat ?? s.stat ?? s.totalLabel}</div>
           </div>
         ))}
       </div>
