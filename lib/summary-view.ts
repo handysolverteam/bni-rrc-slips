@@ -45,6 +45,37 @@ export type ChapterSummary = {
   hasAttendance: boolean;
 };
 
+export type SummaryCol = {
+  label: string;
+  get: (r: SummaryRow) => number | null;
+  total: (t: SummaryTotals) => number | null;
+  money?: boolean;
+};
+
+/** Column order mirrors the PALMS Chapter Summary export (raw P/A/L/M/S letters). Shared by the screen and the export. */
+export const SUMMARY_COLS: SummaryCol[] = [
+  { label: "P", get: (r) => r.present, total: (t) => t.present },
+  { label: "A", get: (r) => r.absent, total: (t) => t.absent },
+  { label: "L", get: (r) => r.l, total: (t) => t.l },
+  { label: "M", get: (r) => r.m, total: (t) => t.m },
+  { label: "S", get: (r) => r.s, total: (t) => t.s },
+  { label: "RGI", get: (r) => r.rgi, total: (t) => t.rgi },
+  { label: "RGO", get: (r) => r.rgo, total: (t) => t.rgo },
+  { label: "RRI", get: (r) => r.rri, total: (t) => t.rri },
+  { label: "RRO", get: (r) => r.rro, total: (t) => t.rro },
+  { label: "V", get: (r) => r.visitors, total: (t) => t.visitors },
+  { label: "1-2-1", get: (r) => r.oneToOnes, total: (t) => t.oneToOnes },
+  { label: "TYFCB", get: (r) => r.tyfcb, total: (t) => t.tyfcb, money: true },
+  { label: "CEU", get: (r) => r.ceu, total: (t) => t.ceu },
+  { label: "T", get: (r) => r.t, total: (t) => t.t },
+];
+
+/** Display value for a cell — screen and every export format use this. */
+export function summaryCell(v: number | null, money?: boolean): string {
+  if (v === null || v === undefined) return "\u2013";
+  return money ? Math.round(v).toLocaleString("en-IN") : String(v);
+}
+
 type AttendanceRow = {
   member_name: string;
   present: number | null;

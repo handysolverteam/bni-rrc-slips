@@ -4,13 +4,16 @@
 // slip stats, totals row). Plus the data-health features: palms_stats Total-row
 // storage, the immediate PALMS-vs-slips comparison verdict, the green match /
 // red mismatch banners on /summary and /report, and the missing-Wednesday
-// warning staying quiet while the import history is gap-free.
+// warning staying quiet while the import history is gap-free. Plus the
+// Chapter Summary export (`/api/summary/export`): xlsx sheets/cells, json
+// payload for the in-browser PDF, the server pdf, and parameter/auth guards.
 //
 // Run:  node tests/e2e-palms-import.mjs   (from the repo root)
 // Self-cleaning: snapshots the week's attendance + palms_stats first, then
 // restores both.
 import { createClient } from "@supabase/supabase-js";
 import ExcelJS from "exceljs";
+import * as XLSX from "xlsx";
 import { readFileSync } from "node:fs";
 
 const APP = "http://localhost:3000";
@@ -305,9 +308,17 @@ try {
   check("/summary comparison table shows TYFCB (en-IN grouping)", dec4.includes("8,14,41,353"), "");
   check("/summary comparison status cells say Match", dec4.includes('"children":"Match"') && !dec4.includes("MISMATCH"), "");
   check(
-    "/summary comparison table sits at the bottom (after the member table)",
-    dec4.indexOf("PALMS vs slips") > dec4.lastIndexOf('"children":"Total"'),
-    `vs=${dec4.indexOf("PALMS vs slips")} total=${dec4.lastIndexOf('"children":"Total"')}`,
+    "/summary comparison table renders after the member table (JSX order)",
+    (() => {
+      // The flight payload does not guarantee segment push order matches DOM
+      // order (client components + lazy rows split it), so assert the render
+      // order in the page source: member table (tfoot) first, comparison after.
+      const summarySrc = readFileSync(new URL("../app/summary/page.tsx", import.meta.url), "utf8");
+      const tfootAt = summarySrc.indexOf("<tfoot");
+      const cmpAt = summarySrc.indexOf("<PalmsComparisonTable");
+      return tfootAt > 0 && cmpAt > tfootAt;
+    })(),
+    "",
   );
   check("/summary no missing-file banner (history gap-free)", !dec4.includes("Missing slip file"), "");
   check("/summary ships its loading skeleton", dec4.includes('"skel"'), "");
@@ -354,6 +365,74 @@ try {
   r = await postPalms(real, "e2e-palms-real-restore.xls");
   j = await r.json();
   check("re-import of the real file matches again", r.ok && !!j.comparison && j.comparison.allMatch === true, JSON.stringify(j.comparison));
+
+  // 17) Chapter Summary export mirrors the screen: xlsx sheets/cells, json
+  // payload for the in-browser PDF, server pdf, and the parameter guards.
+  check("/summary ships the export switch (scopeLabel prop)", dec4.includes('"scopeLabel"'), "");
+  const expUrl = `${APP}/api/summary/export?week=${weekId}`;
+  const rx = await fetch(`${expUrl}&format=xlsx`, { headers: { ...AUTH } });
+  check(
+    "summary export xlsx 200 + attachment name",
+    rx.ok && (rx.headers.get("Content-Disposition") ?? "").includes("chapter-summary-"),
+    `${rx.status} ${rx.headers.get("Content-Disposition")}`,
+  );
+  const wbk = XLSX.read(Buffer.from(await rx.arrayBuffer()), { type: "buffer" });
+  check(
+    "xlsx sheets = Chapter Summary + PALMS vs slips",
+    wbk.SheetNames.includes("Chapter Summary") && wbk.SheetNames.includes("PALMS vs slips"),
+    wbk.SheetNames.join(","),
+  );
+  const aoa = XLSX.utils.sheet_to_json(wbk.Sheets["Chapter Summary"], { header: 1 });
+  check(
+    "xlsx header row = screen columns",
+    JSON.stringify(aoa[2]) ===
+      JSON.stringify(["Member", "P", "A", "L", "M", "S", "RGI", "RGO", "RRI", "RRO", "V", "1-2-1", "TYFCB", "CEU", "T"]),
+    JSON.stringify(aoa[2]),
+  );
+  const totalX = aoa[aoa.length - 1];
+  check(
+    "xlsx keeps all member rows + Total row with en-IN TYFCB",
+    aoa.length === 4 + 78 && totalX?.[0] === "Total" && totalX?.[1] === "60" && totalX?.[12] === "8,14,41,353",
+    `rows=${aoa.length} total=${JSON.stringify(totalX)}`,
+  );
+  const cmpAoa = XLSX.utils.sheet_to_json(wbk.Sheets["PALMS vs slips"], { header: 1 });
+  check(
+    "xlsx comparison header (single week, no Week column)",
+    JSON.stringify(cmpAoa[1]) === JSON.stringify(["Metric", "PALMS", "Slips", "Status"]),
+    JSON.stringify(cmpAoa[1]),
+  );
+  check(
+    "xlsx comparison TYFCB row: PALMS 8,14,41,353 = slips, Match",
+    cmpAoa.some((row) => row?.[0] === "TYFCB" && row?.[1] === "8,14,41,353" && row?.[2] === "8,14,41,353" && row?.[3] === "Match"),
+    JSON.stringify(cmpAoa.slice(0, 4)),
+  );
+  const rj = await fetch(`${expUrl}&format=json`, { headers: { ...AUTH } });
+  const jexp = rj.ok ? await rj.json() : {};
+  check(
+    "json payload matches the screen (headers/total/78 rows/8 metrics)",
+    rj.ok &&
+      jexp.headers?.[0] === "Member" &&
+      jexp.totalRow?.[0] === "Total" &&
+      jexp.memberCount === 78 &&
+      jexp.rows?.length === 78 &&
+      jexp.comparison?.rows?.length === 8,
+    JSON.stringify({ s: rj.status, m: jexp.memberCount, rows: jexp.rows?.length, cmp: jexp.comparison?.rows?.length }),
+  );
+  const rpdf = await fetch(`${expUrl}&format=pdf`, { headers: { ...AUTH } });
+  const pbuf = Buffer.from(await rpdf.arrayBuffer());
+  const ptxt = pbuf.toString("latin1");
+  check(
+    "pdf starts with %PDF + titles Chapter Summary",
+    rpdf.ok && pbuf.slice(0, 5).toString() === "%PDF-" && ptxt.includes("Chapter Summary"),
+    `${rpdf.status} ${pbuf.slice(0, 8).toString()}`,
+  );
+  check("pdf carries the Total row + Match status", ptxt.includes("Total") && ptxt.includes("Match"), "");
+  const rNoWeek = await fetch(`${APP}/api/summary/export?format=xlsx`, { headers: { ...AUTH } });
+  check("export without week is a 400", rNoWeek.status === 400, String(rNoWeek.status));
+  const rBadFmt = await fetch(`${expUrl}&format=docx`, { headers: { ...AUTH } });
+  check("export rejects unknown format", rBadFmt.status === 400, String(rBadFmt.status));
+  const rNoAuth = await fetch(`${expUrl}&format=xlsx`);
+  check("export requires auth (401)", rNoAuth.status === 401, String(rNoAuth.status));
 } finally {
   await cleanup();
   const after = weekId ? await attendanceRows({ bni_week_id: weekId }) : [];

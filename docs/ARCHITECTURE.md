@@ -20,7 +20,8 @@ bni-rrc-slips/
     palms-compare.ts     # fetchPalmsComparisons(tenantId, weekIds) — PALMS Total-row stats vs live slip counts, per week
     data-health.ts       # missingWednesdays(importedDates, todayIso) (pure) + fetchMissingMeetingFiles(tenantId)
     report-view.ts       # fetchReportSections(tenantId, ...) — all report/export queries
-    summary-view.ts      # fetchChapterSummary(tenantId, weekIds) — member-wise attendance + slip metrics
+    summary-view.ts      # fetchChapterSummary(tenantId, weekIds) — member-wise attendance + slip metrics;
+                         # SUMMARY_COLS + summaryCell shared by the screen and the summary export
     list-filters.ts lists.ts distinct.ts server-weeks.ts  # every query takes/uses tenantId
     member-chapters.ts   # resolveHomeChapter(tenant) — home_chapter_name ?? env (default tenant only) ?? tenant.name
     chat/snapshot.ts     # getSlipsData(tenantId) — per-tenant snapshot, cache key includes tenant_id
@@ -32,6 +33,7 @@ bni-rrc-slips/
     api/tenant/route.ts         # GET current+list | POST {tenantId} switch (membership-checked)
     api/import/report/route.ts         # POST file — slips import (week from the file title)
     api/import/palms/route.ts          # POST file — PALMS attendance import (single meeting date)
+    api/summary/export/route.ts        # GET week,format=xlsx|csv|pdf|json — Chapter Summary export (screen parity)
     api/<resource>/route.ts     # every data API: getTenantContext() first (401 without session)
     api/members/[id]/route.ts   # PATCH {isInactive} — active/inactive toggle (tenant-scoped, any member)
     members|referrals|one-to-ones|visitors|tyfcb|ceus|report|summary|import|chat pages (server components
@@ -40,6 +42,7 @@ bni-rrc-slips/
   components/PalmsImportPanel.tsx # upload Chapter Summary PALMS .xls -> POST /api/import/palms (import + summary screens)
   components/DataWarnings.tsx   # server component: missing-Wednesday banner + PALMS-mismatch banner (warnings only, nothing on success)
   components/PalmsComparisonTable.tsx # metric | PALMS | Slips | status table (summary screen, at the bottom)
+  components/SummaryExportButtons.tsx # xlsx/csv/pdf switch on the summary page head (PDF built in-browser from JSON)
   components/TenantSwitcher.tsx # chapter switcher in the top nav (GET/POST /api/tenant)
   components/SlipsTable.tsx     # shared read-only table + pagination
   components/MemberActiveToggle.tsx # checkbox in the Active column (members list only)
@@ -58,7 +61,7 @@ bni-rrc-slips/
 
 **Import** — upload → tenant-scoped batch/members/chapters/slips inserts → snapshot cache invalidated → report/chat immediately reflect the new rows for that tenant only.
 
-**Chapter Summary (attendance)** — upload `Chapter Summary PALMS Report` (.xls, from `/import` **or** `/summary`) → `lib/palms-import.ts` parses `From/To` (single date only) + member rows + the `Total` row's slip counts → week must exist **and have tenant slips** → `member_attendance` rows replaced and `palms_stats` upserted for that week → `/summary` (`lib/summary-view.ts`) joins attendance with slip-derived per-member metrics (computed live with the report's home/bold rules) so its Total row always equals the report cards.
+**Chapter Summary (attendance)** — upload `Chapter Summary PALMS Report` (.xls, from `/import` **or** `/summary`) → `lib/palms-import.ts` parses `From/To` (single date only) + member rows + the `Total` row's slip counts → week must exist **and have tenant slips** → `member_attendance` rows replaced and `palms_stats` upserted for that week → `/summary` (`lib/summary-view.ts`) joins attendance with slip-derived per-member metrics (computed live with the report's home/bold rules) so its Total row always equals the report cards. **Export** — `components/SummaryExportButtons.tsx` → `GET /api/summary/export` → the same `fetchChapterSummary` + `fetchPalmsComparisons` → xlsx/csv on the server, PDF built in-browser from `format=json` (same byte-swallowing workaround as the report), cells identical to the screen.
 
 **Data health** — on every `/report` and `/summary` render: (1) `lib/data-health.ts` lists Wednesdays from the tenant's first imported meeting to today without an imported slips file → amber banner; (2) `lib/palms-compare.ts` compares each selected week's stored `palms_stats` (PALMS `Total` row) with its live slip counts → warning banner listing week/metric/both values (`components/DataWarnings.tsx`, warnings only — nothing renders when everything agrees). `/summary` renders the side-by-side `PalmsComparisonTable` at the bottom of the page (below the member table); `app/import/loading.tsx` and `app/summary/loading.tsx` show the matching `ImportSkeleton` / `SummarySkeleton` during route navigation.
 

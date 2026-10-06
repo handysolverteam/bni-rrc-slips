@@ -15,7 +15,7 @@ Import a weekly BNI `Report` XLS (columns: From, To, Slip Type, Inside/Outside, 
    - `/tyfcb` — Slip TYFCB (BNI Week, BNI Member, Amount, Thanking Member's Chapter)
    - `/ceus` — Slip CEU (BNI Week, BNI Member, CEU Credits)
    - `/report` — Week Report: one section/tab per slip type (One-to-One, Referrals, TYFCB, Visitors, CEU) with filters and xlsx/csv/pdf export. Stat cards: Referral shows the given count (RGI+RGO) with RGI/RGO/RRI/RRO chips; CEU shows distinct members + credits.
-   - `/summary` — Chapter Summary: one row per member with P A L M S (attendance, from the PALMS import) + RGI RGO RRI RRO, V, 1-2-1, TYFCB, CEU, T (computed from slips) + Total row. Shows the PALMS upload panel, data-health warnings (only when something is wrong), and the PALMS-vs-slips comparison table for the selected week(s) at the bottom.
+   - `/summary` — Chapter Summary: one row per member with P A L M S (attendance, from the PALMS import) + RGI RGO RRI RRO, V, 1-2-1, TYFCB, CEU, T (computed from slips) + Total row. Shows the PALMS upload panel, data-health warnings (only when something is wrong), the PALMS-vs-slips comparison table for the selected week(s) at the bottom, and the same Export switch as `/report` (xlsx/csv/pdf) in the page head.
 
 No CRUD in MVP. CRUD later.
 
@@ -25,6 +25,7 @@ No CRUD in MVP. CRUD later.
 - `/summary` joins that attendance with slip-derived per-member counts (same home/bold and owner-count rules as the report), so the Total row always agrees with the report cards.
 - **Import from the summary screen too**: `/summary` carries the same PALMS upload panel as `/import`, so a re-import updates the table and the comparison immediately.
 - **PALMS vs slips comparison**: the PALMS file's own `Total` row (RGI, RGO, RRI, RRO, V, 1-2-1, TYFCB, CEU) is stored per week in `palms_stats` and compared with the counts computed from the imported slips for that same week. All match → nothing is shown (warnings only); any mismatch → a warning banner naming the week, metric, PALMS value and slips value. `/summary` also shows the side-by-side comparison table (metric | PALMS | Slips | status) at the bottom of the screen, below the member table.
+- **Export**: the page head carries the same Export switch as `/report` — `xlsx`, `csv` or `pdf` of exactly what the screen shows: the member table with its Total row, plus the PALMS-vs-slips comparison block when the scope has stored PALMS totals. Cells match the screen (– for missing attendance, en-IN TYFCB, Match/MISMATCH status).
 
 ## Data health warnings (`/report` and `/summary`)
 - **Missing meeting files**: chapter meets every Wednesday. For every Wednesday between the first imported meeting and today, the app checks that the tenant has an imported slips file; any gap (a skipped week, or a Wednesday that has passed with no file imported yet) is shown as a warning banner listing the dates.

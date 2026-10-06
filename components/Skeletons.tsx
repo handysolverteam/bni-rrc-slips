@@ -2,6 +2,7 @@ import Link from "next/link";
 import ColumnFilter from "@/components/ColumnFilter";
 import ImportPanel from "@/components/ImportPanel";
 import ReportExportButtons from "@/components/ReportExportButtons";
+import SummaryExportButtons from "@/components/SummaryExportButtons";
 import ReportTabs from "@/components/ReportTabs";
 import SectionCollapse from "@/components/SectionCollapse";
 import { detailLabelFor, fromToLabelsFor, type ReportSectionKey } from "@/lib/report-view";
@@ -575,16 +576,21 @@ const SUMMARY_LABELS = ["Member", "P", "A", "L", "M", "S", "RGI", "RGO", "RRI", 
 export function SummarySkeleton() {
   return (
     <div>
-      <div className="page-head">
-        <h1>
-          Chapter Summary
-          <span className="count-badge" style={{ height: 24 }}>
-            <Bar w={96} h={16} r={4} />
-          </span>
-        </h1>
-        <p className="sub muted">
-          <Bar w={240} h={18} r={4} />
-        </p>
+      <div className="report-top">
+        <div className="page-head">
+          <h1>
+            Chapter Summary
+            <span className="count-badge" style={{ height: 24 }}>
+              <Bar w={96} h={16} r={4} />
+            </span>
+          </h1>
+          <p className="sub muted">
+            <Bar w={240} h={18} r={4} />
+          </p>
+        </div>
+        <div className="report-head-actions">
+          <SummaryExportButtons weekId="" scopeLabel="chapter-summary" />
+        </div>
       </div>
 
       <div className="card">

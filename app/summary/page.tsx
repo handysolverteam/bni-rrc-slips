@@ -3,6 +3,7 @@ import NoAccess from "@/components/NoAccess";
 import DataWarnings from "@/components/DataWarnings";
 import PalmsComparisonTable from "@/components/PalmsComparisonTable";
 import PalmsImportPanel from "@/components/PalmsImportPanel";
+import SummaryExportButtons from "@/components/SummaryExportButtons";
 import { requirePageTenant } from "@/lib/server-auth";
 import { defaultWeekId, getCachedWeekOptions } from "@/lib/server-weeks";
 import { latestImportedWeekId } from "@/lib/report-view";
@@ -10,41 +11,11 @@ import { fetchMissingMeetingFiles } from "@/lib/data-health";
 import { fetchPalmsComparisons } from "@/lib/palms-compare";
 import {
   fetchChapterSummary,
-  type SummaryRow,
-  type SummaryTotals,
+  SUMMARY_COLS as COLS,
+  summaryCell as cell,
 } from "@/lib/summary-view";
 
 export const dynamic = "force-dynamic";
-
-type Col = {
-  label: string;
-  get: (r: SummaryRow) => number | null;
-  total: (t: SummaryTotals) => number | null;
-  money?: boolean;
-};
-
-/** Column order mirrors the PALMS Chapter Summary export (raw P/A/L/M/S letters). */
-const COLS: Col[] = [
-  { label: "P", get: (r) => r.present, total: (t) => t.present },
-  { label: "A", get: (r) => r.absent, total: (t) => t.absent },
-  { label: "L", get: (r) => r.l, total: (t) => t.l },
-  { label: "M", get: (r) => r.m, total: (t) => t.m },
-  { label: "S", get: (r) => r.s, total: (t) => t.s },
-  { label: "RGI", get: (r) => r.rgi, total: (t) => t.rgi },
-  { label: "RGO", get: (r) => r.rgo, total: (t) => t.rgo },
-  { label: "RRI", get: (r) => r.rri, total: (t) => t.rri },
-  { label: "RRO", get: (r) => r.rro, total: (t) => t.rro },
-  { label: "V", get: (r) => r.visitors, total: (t) => t.visitors },
-  { label: "1-2-1", get: (r) => r.oneToOnes, total: (t) => t.oneToOnes },
-  { label: "TYFCB", get: (r) => r.tyfcb, total: (t) => t.tyfcb, money: true },
-  { label: "CEU", get: (r) => r.ceu, total: (t) => t.ceu },
-  { label: "T", get: (r) => r.t, total: (t) => t.t },
-];
-
-function cell(v: number | null, money?: boolean): string {
-  if (v === null || v === undefined) return "\u2013";
-  return money ? Math.round(v).toLocaleString("en-IN") : String(v);
-}
 
 export default async function SummaryPage({
   searchParams,
@@ -83,14 +54,22 @@ export default async function SummaryPage({
 
   return (
     <div>
-      <div className="page-head">
-        <h1>
-          Chapter Summary
-          <span className="count-badge">{summary.rows.length} member(s)</span>
-        </h1>
-        <p className="sub muted">
-          {allWeeks ? "All weeks" : weeksLabel || "No week selected"}
-        </p>
+      <div className="report-top">
+        <div className="page-head">
+          <h1>
+            Chapter Summary
+            <span className="count-badge">{summary.rows.length} member(s)</span>
+          </h1>
+          <p className="sub muted">
+            {allWeeks ? "All weeks" : weeksLabel || "No week selected"}
+          </p>
+        </div>
+        <div className="report-head-actions">
+          <SummaryExportButtons
+            weekId={weekId}
+            scopeLabel={allWeeks ? "All weeks" : weeksLabel || "chapter-summary"}
+          />
+        </div>
       </div>
 
       <DataWarnings missing={missing} comparisons={comparisons} />
