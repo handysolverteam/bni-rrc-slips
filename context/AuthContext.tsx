@@ -10,7 +10,7 @@ import {
   confirmPhoneOtp,
   clearRecaptcha,
 } from "@/lib/firebase/client";
-import { getSsoPartnerUrls } from "@/lib/sso-partners";
+import { getSsoPartnerUrls, clearSsoAttempted } from "@/lib/sso-partners";
 
 export interface AuthUser {
   uid: string;
@@ -96,6 +96,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     cancelPhoneOtp();
     await signOutFirebase();
+    // Otherwise logging back in within this same tab would silently skip the hub and show
+    // this app's own dormant local login page instead (the flag says "already tried").
+    clearSsoAttempted();
 
     // Best-effort: ask every trusted sibling app to sign out too, so logging out here
     // doesn't leave a stale session on any of them. Loaded in hidden iframes rather than
