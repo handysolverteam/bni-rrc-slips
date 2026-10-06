@@ -1,4 +1,5 @@
 import { fetchAllRows } from "@/lib/supabase/paged";
+import { getSupabaseServer } from "@/lib/supabase/server";
 
 export type SummaryRow = {
   /** Display name — PALMS "First Last" when attendance exists, else the slip name. */
@@ -239,4 +240,28 @@ export async function fetchChapterSummary(
     },
     hasAttendance,
   };
+}
+
+/**
+ * The import behind a week's PALMS attendance: batch filename + date, shown
+ * in the summary screen's panel ("Imported …"). Null when the week has no
+ * attendance or its batch row was already deleted.
+ */
+export async function fetchPalmsImportRecord(
+  tenantId: string,
+  weekId: string,
+): Promise<{ filename: string; importedAt: string } | null> {
+  const sb = getSupabaseServer();
+  const { data } = await sb
+    .from("member_attendance")
+    .select("import_batch_id, import_batches(filename, created_at)")
+    .eq("tenant_id", tenantId)
+    .eq("bni_week_id", weekId)
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  const embedded = (data as { import_batches?: { filename?: string; created_at?: string } | null })
+    .import_batches;
+  if (!embedded?.filename) return null;
+  return { filename: embedded.filename, importedAt: embedded.created_at ?? "" };
 }

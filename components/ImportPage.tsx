@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import ImportPanel from "@/components/ImportPanel";
 import PalmsImportPanel from "@/components/PalmsImportPanel";
 import ColumnFilter from "@/components/ColumnFilter";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 type Batch = {
   id: string;
@@ -42,6 +43,11 @@ function localDateKey(iso: string): string {
 export default function ImportPage() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [openSkip, setOpenSkip] = useState<string | null>(null);
+  // Delete flow: which row is being confirmed, request-in-flight flag and the
+  // last failure (shown above the table).
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   // Header filters (client-side, like the other tables' column filters):
   // "Imported On" picks a single day, "Week" multi-selects week labels.
   const [dateFilter, setDateFilter] = useState("");
@@ -80,6 +86,31 @@ export default function ImportPage() {
     refreshHistory();
   }, []);
 
+  const confirmBatch = useMemo(() => batches.find((b) => b.id === confirmId) ?? null, [batches, confirmId]);
+
+  /** Delete the confirmed import: batch row + every row it created. */
+  async function deleteImport() {
+    if (!confirmBatch || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/import/batches/${confirmBatch.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDeleteError(data.error ?? `Delete failed (${res.status}).`);
+        setConfirmId(null);
+        return;
+      }
+      setConfirmId(null);
+      await refreshHistory();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Network error");
+      setConfirmId(null);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div>
       <ImportPanel onImported={refreshHistory} />
@@ -88,6 +119,7 @@ export default function ImportPage() {
 
       <div className="card history-card">
         <h2>Imported weeks</h2>
+        {deleteError ? <p className="preview-warn">Delete failed: {deleteError}</p> : null}
         {batches.length === 0 ? (
           <p className="muted">No imports yet.</p>
         ) : (
@@ -138,12 +170,13 @@ export default function ImportPage() {
                     </th>
                     <th>Imported</th>
                     <th>Skipped</th>
+                    <th aria-label="Actions"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="muted">
+                      <td colSpan={6} className="muted">
                         No imports match the selected filters.
                       </td>
                     </tr>
@@ -173,10 +206,23 @@ export default function ImportPage() {
                               b.skipped_count
                             )}
                           </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="danger"
+                              aria-label={`Delete ${b.filename}`}
+                              onClick={() => {
+                                setDeleteError(null);
+                                setConfirmId(b.id);
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </td>
                         </tr>
                         {open && (
                           <tr className="skip-detail">
-                            <td colSpan={5}>
+                            <td colSpan={6}>
                               <strong>
                                 Skipped entries (
                                 {entries && entries.length !== b.skipped_count
@@ -208,6 +254,19 @@ export default function ImportPage() {
           </div>
         )}
       </div>
+      {confirmBatch ? (
+        <ConfirmDialog
+          title="Delete this import?"
+          message={`Delete ${confirmBatch.filename}${
+            confirmBatch.bni_weeks?.label ? ` (${confirmBatch.bni_weeks.label})` : ""
+          } and every row it imported — its slips, or its PALMS attendance and comparison totals? Other imports of that week stay. This cannot be undone.`}
+          confirmLabel="Delete"
+          danger
+          busy={deleting}
+          onConfirm={deleteImport}
+          onCancel={() => setConfirmId(null)}
+        />
+      ) : null}
     </div>
   );
 }
