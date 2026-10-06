@@ -1,5 +1,7 @@
 import { parsePalmsFile } from "@/lib/palms-import";
 import { fetchPalmsComparisons } from "@/lib/palms-compare";
+import { clearLatestImportedWeekCache } from "@/lib/report-view";
+import { clearWeekOptionsCache } from "@/lib/server-weeks";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
@@ -181,6 +183,73 @@ export async function POST(request: Request) {
       comparison,
       errors: [],
     });
+  } catch (e) {
+    return Response.json({ error: (e as Error).message }, { status: 500 });
+  }
+}
+
+/**
+ * Remove a week's PALMS import: all `member_attendance` for (tenant, week),
+ * its `palms_stats` row, and the `import_batches` rows those rows reference
+ * (superseded PALMS history entries are not referenced and stay, deletable
+ * individually via `DELETE /api/import/batches/{id}`). The slips import is
+ * never touched. Requires tenant only; 404 when the week has no PALMS data.
+ */
+export async function DELETE(request: Request) {
+  try {
+    const ctx = await getTenantContext(request);
+    if (!ctx) return unauthorized();
+    if ("noAccess" in ctx) return forbidden();
+    const tenantId = ctx.tenantId;
+    const weekId = new URL(request.url).searchParams.get("week") ?? "";
+    if (!weekId) return Response.json({ error: "week is required" }, { status: 400 });
+
+    const sb = getSupabaseServer();
+    const [attendance, stats] = await Promise.all([
+      sb
+        .from("member_attendance")
+        .select("import_batch_id")
+        .eq("tenant_id", tenantId)
+        .eq("bni_week_id", weekId)
+        .limit(500),
+      sb
+        .from("palms_stats")
+        .select("import_batch_id")
+        .eq("tenant_id", tenantId)
+        .eq("bni_week_id", weekId)
+        .maybeSingle(),
+    ]);
+    if (attendance.error) return Response.json({ error: attendance.error.message }, { status: 500 });
+    const rows = attendance.data ?? [];
+    const stat = stats.data;
+    if (rows.length === 0 && !stat) {
+      return Response.json({ error: "No PALMS summary imported for that week." }, { status: 404 });
+    }
+    const batchIds = new Set<string>();
+    for (const r of rows) if (r.import_batch_id) batchIds.add(r.import_batch_id);
+    if (stat?.import_batch_id) batchIds.add(stat.import_batch_id);
+
+    const { count, error: delAttError } = await sb
+      .from("member_attendance")
+      .delete({ count: "exact" })
+      .eq("tenant_id", tenantId)
+      .eq("bni_week_id", weekId);
+    if (delAttError) return Response.json({ error: delAttError.message }, { status: 500 });
+    const { error: delStatsError } = await sb
+      .from("palms_stats")
+      .delete()
+      .eq("tenant_id", tenantId)
+      .eq("bni_week_id", weekId);
+    if (delStatsError) return Response.json({ error: delStatsError.message }, { status: 500 });
+    for (const batchId of batchIds) {
+      await sb.from("import_batches").delete().eq("id", batchId).eq("tenant_id", tenantId);
+    }
+
+    // Attendance is not in the chat snapshot/distinct options — only the
+    // week list and the latest-imported-week pointer can move (batch gone).
+    clearWeekOptionsCache();
+    clearLatestImportedWeekCache();
+    return Response.json({ ok: true, removed: { attendance: count ?? 0, batches: batchIds.size } });
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 500 });
   }

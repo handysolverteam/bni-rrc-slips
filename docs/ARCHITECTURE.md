@@ -32,14 +32,15 @@ bni-rrc-slips/
     api/auth/session/route.ts   # POST {idToken} set HttpOnly bni_session | DELETE clear
     api/tenant/route.ts         # GET current+list | POST {tenantId} switch (membership-checked)
     api/import/report/route.ts         # POST file — slips import (week from the file title)
-    api/import/palms/route.ts          # POST file — PALMS attendance import (single meeting date)
+    api/import/palms/route.ts          # POST file — PALMS attendance import (single meeting date); DELETE ?week — remove that week's attendance/stats
+    api/import/batches/[id]/route.ts   # DELETE — remove one import row + every row it created (slips or PALMS attendance/stats)
     api/summary/export/route.ts        # GET week,format=xlsx|csv|pdf|json — Chapter Summary export (screen parity)
     api/<resource>/route.ts     # every data API: getTenantContext() first (401 without session)
     api/members/[id]/route.ts   # PATCH {isInactive} — active/inactive toggle (tenant-scoped, any member)
     members|referrals|one-to-ones|visitors|tyfcb|ceus|report|summary|import|chat pages (server components
                                  call getTenantContext() -> redirect /login, noAccess -> no-access screen)
-  components/ImportPage.tsx     # import screen: ImportPanel (slips) + PalmsImportPanel (attendance) + history
-  components/PalmsImportPanel.tsx # upload Chapter Summary PALMS .xls -> POST /api/import/palms (import + summary screens)
+  components/ImportPage.tsx     # import screen: ImportPanel (slips) + PalmsImportPanel (attendance) + history with per-row Delete (ConfirmDialog)
+  components/PalmsImportPanel.tsx # upload Chapter Summary PALMS .xls -> POST /api/import/palms (import + summary screens); on /summary also shows the imported file + Remove action
   components/DataWarnings.tsx   # server component: missing-Wednesday banner + PALMS-mismatch banner (warnings only, nothing on success)
   components/PalmsComparisonTable.tsx # metric | PALMS | Slips | status table (summary screen, at the bottom)
   components/SummaryExportButtons.tsx # xlsx/csv/pdf switch on the summary page head (PDF built in-browser from JSON)
@@ -59,7 +60,7 @@ bni-rrc-slips/
 
 **Switch** — TenantSwitcher → `POST /api/tenant { tenantId }` (403 if not a member) → cookie set → full reload → every server render re-scopes (lists, weeks, report, import batches, chat snapshot/sessions).
 
-**Import** — upload → tenant-scoped batch/members/chapters/slips inserts → snapshot cache invalidated → report/chat immediately reflect the new rows for that tenant only.
+**Import** — upload → tenant-scoped batch/members/chapters/slips inserts → snapshot cache invalidated → report/chat immediately reflect the new rows for that tenant only. **Deletion** — `DELETE /api/import/batches/{id}` (history table) removes that batch's slip rows or PALMS attendance/stats + the batch itself; `DELETE /api/import/palms?week=` (the `/summary` panel's Remove action) clears a week's attendance/comparison without touching slips. Both are tenant-scoped (404 for foreign ids) and clear the caches the import sets.
 
 **Chapter Summary (attendance)** — upload `Chapter Summary PALMS Report` (.xls, from `/import` **or** `/summary`) → `lib/palms-import.ts` parses `From/To` (single date only) + member rows + the `Total` row's slip counts → week must exist **and have tenant slips** → `member_attendance` rows replaced and `palms_stats` upserted for that week → `/summary` (`lib/summary-view.ts`) joins attendance with slip-derived per-member metrics (computed live with the report's home/bold rules) so its Total row always equals the report cards. **Export** — `components/SummaryExportButtons.tsx` → `GET /api/summary/export` → the same `fetchChapterSummary` → xlsx/csv on the server, PDF built in-browser from `format=json` (same byte-swallowing workaround as the report), cells identical to the screen; the PALMS-vs-slips comparison table stays screen-only (not exported).
 

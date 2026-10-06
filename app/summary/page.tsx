@@ -11,6 +11,7 @@ import { fetchMissingMeetingFiles } from "@/lib/data-health";
 import { fetchPalmsComparisons } from "@/lib/palms-compare";
 import {
   fetchChapterSummary,
+  fetchPalmsImportRecord,
   SUMMARY_COLS as COLS,
   summaryCell as cell,
 } from "@/lib/summary-view";
@@ -51,6 +52,11 @@ export default async function SummaryPage({
     fetchPalmsComparisons(tenantId, weekIds),
   ]);
   const colSpan = 1 + COLS.length;
+  // Single-week scope with attendance → the panel can show the imported file
+  // and offer "Remove PALMS summary" for exactly that week.
+  const singleWeek = weekIds.length === 1 ? weekIds[0] : null;
+  const palmsRecord =
+    singleWeek && summary.hasAttendance ? await fetchPalmsImportRecord(tenantId, singleWeek) : null;
 
   return (
     <div>
@@ -74,7 +80,10 @@ export default async function SummaryPage({
 
       <DataWarnings missing={missing} comparisons={comparisons} />
 
-      <PalmsImportPanel />
+      <PalmsImportPanel
+        removeWeekId={singleWeek && summary.hasAttendance ? singleWeek : null}
+        record={palmsRecord}
+      />
 
       <div className="card report-controls">
         <div className="report-controls-row">

@@ -126,7 +126,7 @@ async function batchId(filename) {
 // ---- 0) pre-clean leftovers + capture baseline ----------------------------
 async function preClean() {
   const { data: oldBatches } = await sb
-    .from("import_batches").select("id,filename").eq("tenant_id", TENANT).or("filename.eq.e2e-seed.csv,filename.eq.e2e-bold.xlsx");
+    .from("import_batches").select("id,filename").eq("tenant_id", TENANT).or("filename.eq.e2e-seed.csv,filename.eq.e2e-bold.xlsx,filename.eq.e2e-delete.csv");
   for (const b of oldBatches ?? []) {
     for (const t of ["slip_referrals", "slip_one_to_ones", "slip_tyfcb", "slip_visitors", "slip_ceus"]) {
       await sb.from(t).delete().eq("import_batch_id", b.id);
@@ -139,7 +139,7 @@ async function preClean() {
 }
 async function cleanup() {
   const { data: batches } = await sb
-    .from("import_batches").select("id,filename").eq("tenant_id", TENANT).or("filename.eq.e2e-seed.csv,filename.eq.e2e-bold.xlsx");
+    .from("import_batches").select("id,filename").eq("tenant_id", TENANT).or("filename.eq.e2e-seed.csv,filename.eq.e2e-bold.xlsx,filename.eq.e2e-delete.csv");
   for (const b of batches ?? []) {
     for (const t of ["slip_referrals", "slip_one_to_ones", "slip_tyfcb", "slip_visitors", "slip_ceus"]) {
       await sb.from(t).delete().eq("import_batch_id", b.id);
@@ -284,6 +284,47 @@ check(
   pdfRes.ok && titleKept && invitedBy === 1,
   `status=${pdfRes.status} title=${titleKept} invitedBy=${invitedBy} bytes=${pdfBuf.length}`,
 );
+
+// ---- 4c) DELETE /api/import/batches/{id} removes the batch + its rows -----
+const delCsv =
+  TITLE + HEAD + "E2E Delete Person,E2E Delete Guest,Referral,Tier 1,,,\n" + "E2E Delete Person,,CEU,,,2,\n";
+const delImp = await post("/api/import/report", fd(delCsv, "e2e-delete.csv", "text/csv"));
+const delJson = await delImp.json().catch(() => ({}));
+check(
+  "delete-fixture import ok (2 rows)",
+  delImp.ok && delJson.importedCount === 2,
+  JSON.stringify({ s: delImp.status, i: delJson.importedCount, k: delJson.skippedCount }),
+);
+const delBatch = await batchId("e2e-delete.csv");
+check("delete-fixture batch in history", !!delBatch, String(delBatch));
+if (delBatch) {
+  const rowsBefore =
+    (await count("slip_referrals", { import_batch_id: delBatch })) +
+    (await count("slip_ceus", { import_batch_id: delBatch }));
+  const d1 = await fetch(`${APP}/api/import/batches/${delBatch}`, { method: "DELETE", headers: { ...AUTH } });
+  const d1j = await d1.json().catch(() => ({}));
+  check(
+    "DELETE import returns ok + per-table removed counts",
+    d1.ok && d1j.ok === true && d1j.removed?.slip_referrals === 1 && d1j.removed?.slip_ceus === 1,
+    JSON.stringify(d1j),
+  );
+  const rowsAfter =
+    (await count("slip_referrals", { import_batch_id: delBatch })) +
+    (await count("slip_ceus", { import_batch_id: delBatch }));
+  check("import rows are gone", rowsBefore === 2 && rowsAfter === 0, `${rowsBefore} -> ${rowsAfter}`);
+  check("batch removed from history", !(await batchId("e2e-delete.csv")), "");
+  const d2 = await fetch(`${APP}/api/import/batches/${delBatch}`, { method: "DELETE", headers: { ...AUTH } });
+  check("second delete of the same import is a 404", d2.status === 404, String(d2.status));
+}
+const dUnknown = await fetch(`${APP}/api/import/batches/11111111-2222-3333-4444-555555555555`, {
+  method: "DELETE",
+  headers: { ...AUTH },
+});
+check("delete of an unknown id is a 404", dUnknown.status === 404, String(dUnknown.status));
+const dNoAuth = await fetch(`${APP}/api/import/batches/${delBatch ?? "11111111-2222-3333-4444-555555555555"}`, {
+  method: "DELETE",
+});
+check("delete requires auth (401)", dNoAuth.status === 401, String(dNoAuth.status));
 
 // ---- 5) cleanup + baseline restored ---------------------------------------
 await cleanup();
