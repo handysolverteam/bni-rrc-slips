@@ -11,7 +11,6 @@ type SummaryExportJson = {
   headers: string[];
   rows: string[][];
   totalRow: string[] | null;
-  comparison: { title: string; headers: string[]; rows: string[][] } | null;
 };
 
 export default function SummaryExportButtons({
@@ -74,27 +73,6 @@ export default function SummaryExportButtons({
         }
       },
     });
-    if (data.comparison) {
-      // Title only — the styled table below repeats its own header on every
-      // page, so no plain-text column-header row above it.
-      autoTable(doc, {
-        head: [[data.comparison.title]],
-        theme: "plain",
-        styles: { fontStyle: "bold" },
-      });
-      autoTable(doc, {
-        head: [data.comparison.headers],
-        body: data.comparison.rows,
-        styles: { fontSize: 7 },
-        headStyles: { fillColor: [214, 84, 44], textColor: 255 },
-        didParseCell: (d) => {
-          if (d.section === "body" && String(d.cell.raw) === "MISMATCH") {
-            d.cell.styles.fontStyle = "bold";
-            d.cell.styles.textColor = [193, 60, 48];
-          }
-        },
-      });
-    }
     doc.save(data.filename);
   }
 

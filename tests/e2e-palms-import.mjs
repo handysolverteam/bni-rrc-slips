@@ -5,8 +5,10 @@
 // storage, the immediate PALMS-vs-slips comparison verdict, the green match /
 // red mismatch banners on /summary and /report, and the missing-Wednesday
 // warning staying quiet while the import history is gap-free. Plus the
-// Chapter Summary export (`/api/summary/export`): xlsx sheets/cells, json
-// payload for the in-browser PDF, the server pdf, and parameter/auth guards.
+// Chapter Summary export (`/api/summary/export`): xlsx cells (member table
+// only — the PALMS-vs-slips comparison is screen-only and never exported),
+// json payload for the in-browser PDF, the server pdf, and parameter/auth
+// guards.
 //
 // Run:  node tests/e2e-palms-import.mjs   (from the repo root)
 // Self-cleaning: snapshots the week's attendance + palms_stats first, then
@@ -378,8 +380,8 @@ try {
   );
   const wbk = XLSX.read(Buffer.from(await rx.arrayBuffer()), { type: "buffer" });
   check(
-    "xlsx sheets = Chapter Summary + PALMS vs slips",
-    wbk.SheetNames.includes("Chapter Summary") && wbk.SheetNames.includes("PALMS vs slips"),
+    "xlsx has the Chapter Summary sheet only (comparison not exported)",
+    wbk.SheetNames.length === 1 && wbk.SheetNames[0] === "Chapter Summary",
     wbk.SheetNames.join(","),
   );
   const aoa = XLSX.utils.sheet_to_json(wbk.Sheets["Chapter Summary"], { header: 1 });
@@ -395,28 +397,17 @@ try {
     aoa.length === 4 + 78 && totalX?.[0] === "Total" && totalX?.[1] === "60" && totalX?.[12] === "8,14,41,353",
     `rows=${aoa.length} total=${JSON.stringify(totalX)}`,
   );
-  const cmpAoa = XLSX.utils.sheet_to_json(wbk.Sheets["PALMS vs slips"], { header: 1 });
-  check(
-    "xlsx comparison header (single week, no Week column)",
-    JSON.stringify(cmpAoa[1]) === JSON.stringify(["Metric", "PALMS", "Slips", "Status"]),
-    JSON.stringify(cmpAoa[1]),
-  );
-  check(
-    "xlsx comparison TYFCB row: PALMS 8,14,41,353 = slips, Match",
-    cmpAoa.some((row) => row?.[0] === "TYFCB" && row?.[1] === "8,14,41,353" && row?.[2] === "8,14,41,353" && row?.[3] === "Match"),
-    JSON.stringify(cmpAoa.slice(0, 4)),
-  );
   const rj = await fetch(`${expUrl}&format=json`, { headers: { ...AUTH } });
   const jexp = rj.ok ? await rj.json() : {};
   check(
-    "json payload matches the screen (headers/total/78 rows/8 metrics)",
+    "json payload = member table only (78 rows, no comparison)",
     rj.ok &&
       jexp.headers?.[0] === "Member" &&
       jexp.totalRow?.[0] === "Total" &&
       jexp.memberCount === 78 &&
       jexp.rows?.length === 78 &&
-      jexp.comparison?.rows?.length === 8,
-    JSON.stringify({ s: rj.status, m: jexp.memberCount, rows: jexp.rows?.length, cmp: jexp.comparison?.rows?.length }),
+      (jexp.comparison ?? null) === null,
+    JSON.stringify({ s: rj.status, m: jexp.memberCount, rows: jexp.rows?.length, cmp: jexp.comparison ?? null }),
   );
   const rpdf = await fetch(`${expUrl}&format=pdf`, { headers: { ...AUTH } });
   const pbuf = Buffer.from(await rpdf.arrayBuffer());
@@ -426,13 +417,42 @@ try {
     rpdf.ok && pbuf.slice(0, 5).toString() === "%PDF-" && ptxt.includes("Chapter Summary"),
     `${rpdf.status} ${pbuf.slice(0, 8).toString()}`,
   );
-  check("pdf carries the Total row + Match status", ptxt.includes("Total") && ptxt.includes("Match"), "");
+  check(
+    "pdf carries the Total row and no comparison block",
+    ptxt.includes("Total") && !ptxt.includes("PALMS vs slips") && !ptxt.includes("MISMATCH"),
+    "",
+  );
   const rNoWeek = await fetch(`${APP}/api/summary/export?format=xlsx`, { headers: { ...AUTH } });
   check("export without week is a 400", rNoWeek.status === 400, String(rNoWeek.status));
   const rBadFmt = await fetch(`${expUrl}&format=docx`, { headers: { ...AUTH } });
   check("export rejects unknown format", rBadFmt.status === 400, String(rBadFmt.status));
   const rNoAuth = await fetch(`${expUrl}&format=xlsx`);
   check("export requires auth (401)", rNoAuth.status === 401, String(rNoAuth.status));
+
+  // 18) report export Summary mirrors the /report stat cards (Week 40 truth).
+  const rRep = await fetch(`${APP}/api/report/export?week=${weekId}&tab=all&format=json`, { headers: { ...AUTH } });
+  const rep = rRep.ok ? await rRep.json() : {};
+  const bySec = Object.fromEntries((rep.summary?.rows ?? []).map((x) => [x.section, x]));
+  check(
+    "report export Summary mirrors the referral card (54 + RGI/RGO/RRI/RRO chips)",
+    bySec.Referral?.count === 54 && bySec.Referral?.info === "RGI 18 · RGO 36 · RRI 26 · RRO 38",
+    JSON.stringify(bySec.Referral),
+  );
+  check(
+    "report export Summary mirrors the CEU card line",
+    bySec.CEU?.count === 12 && bySec.CEU?.info === "12 Members · 87 credits",
+    JSON.stringify(bySec.CEU),
+  );
+  check(
+    "report export Summary matches the other cards + screen badge total",
+    bySec["One-to-One"]?.count === 73 &&
+      bySec["One-to-One"]?.info === "121s" &&
+      bySec.TYFCB?.count === 47 &&
+      bySec.TYFCB?.info === "8,14,41,353 total" &&
+      bySec.Visitor?.count === 11 &&
+      rep.summary?.total === 220,
+    JSON.stringify(rep.summary),
+  );
 } finally {
   await cleanup();
   const after = weekId ? await attendanceRows({ bni_week_id: weekId }) : [];
