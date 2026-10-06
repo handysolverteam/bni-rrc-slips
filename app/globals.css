@@ -951,3 +951,21 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .topbar { padding: 0 12px; }
   .toast { left: 12px; right: 12px; max-width: none; }
 }
+
+/* ---------- Data health alerts (missing files / PALMS mismatch) ---------- */
+.data-alerts { display: grid; gap: 10px; margin: 12px 0; }
+.data-alert {
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  border: 1px solid transparent;
+}
+.data-alert .alert-title { font-weight: 700; display: block; margin-bottom: 2px; }
+.data-alert ul { margin: 6px 0 0; padding-left: 18px; }
+.data-alert li { margin: 2px 0; }
+.data-alert .alert-sub { margin: 4px 0 0; color: inherit; opacity: 0.85; font-size: 13px; }
+.data-alert.warn { background: var(--orange-soft); border-color: #eabf9a; color: #7a3c00; }
+.data-alert.bad { background: var(--red-soft); border-color: #efb5ae; color: #8f2b1f; }
+.data-alert.ok { background: var(--green-soft); border-color: #a9d4ba; color: #1d6b41; }
+.data-alert.info { background: var(--blue-soft); border-color: #b5d0e8; color: #23507c; }

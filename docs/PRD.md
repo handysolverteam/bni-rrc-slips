@@ -14,9 +14,22 @@ Import a weekly BNI `Report` XLS (columns: From, To, Slip Type, Inside/Outside, 
    - `/visitors` — Slip Visitors (Full Name, Company, Invited By, BNI Week, Email, Phone, Attending, etc.)
    - `/tyfcb` — Slip TYFCB (BNI Week, BNI Member, Amount, Thanking Member's Chapter)
    - `/ceus` — Slip CEU (BNI Week, BNI Member, CEU Credits)
-   - `/report` — Week Report: one section/tab per slip type (One-to-One, Referrals, TYFCB, Visitors, CEU) with filters and xlsx/csv/pdf export.
+   - `/report` — Week Report: one section/tab per slip type (One-to-One, Referrals, TYFCB, Visitors, CEU) with filters and xlsx/csv/pdf export. Stat cards: Referral shows the given count (RGI+RGO) with RGI/RGO/RRI/RRO chips; CEU shows distinct members + credits.
+   - `/summary` — Chapter Summary: one row per member with P A L M S (attendance, from the PALMS import) + RGI RGO RRI RRO, V, 1-2-1, TYFCB, CEU, T (computed from slips) + Total row. Shows the PALMS upload panel, data-health warnings (only when something is wrong), the PALMS-vs-slips comparison table for the selected week(s) at the bottom, and the same Export switch as `/report` (xlsx/csv/pdf) in the page head.
 
 No CRUD in MVP. CRUD later.
+
+## Chapter Summary (PALMS attendance)
+- **Attendance cannot be derived from slips** (a member may be Present with zero slips and file slips while absent) — `P/A/L/M/S/T` come from BNI's own `Chapter Summary PALMS Report` (.xls, columns First Name…T, `From:`/`To:` = the single meeting date).
+- Second upload panel on `/import` → `POST /api/import/palms`; one row per member stored in `member_attendance` for that week. **Single-meeting files only** (`From = To`); the meeting week must already exist (import the Slips Audit Report first). Re-importing a week replaces its attendance rows; file rows `Visitors`, `BNI`, `Total` are not members and are skipped.
+- `/summary` joins that attendance with slip-derived per-member counts (same home/bold and owner-count rules as the report), so the Total row always agrees with the report cards.
+- **Import from the summary screen too**: `/summary` carries the same PALMS upload panel as `/import`, so a re-import updates the table and the comparison immediately.
+- **PALMS vs slips comparison**: the PALMS file's own `Total` row (RGI, RGO, RRI, RRO, V, 1-2-1, TYFCB, CEU) is stored per week in `palms_stats` and compared with the counts computed from the imported slips for that same week. All match → nothing is shown (warnings only); any mismatch → a warning banner naming the week, metric, PALMS value and slips value. `/summary` also shows the side-by-side comparison table (metric | PALMS | Slips | status) at the bottom of the screen, below the member table.
+- **Export**: the page head carries the same Export switch as `/report` — `xlsx`, `csv` or `pdf` of exactly what the screen shows: the member table with its Total row, plus the PALMS-vs-slips comparison block when the scope has stored PALMS totals. Cells match the screen (– for missing attendance, en-IN TYFCB, Match/MISMATCH status).
+
+## Data health warnings (`/report` and `/summary`)
+- **Missing meeting files**: chapter meets every Wednesday. For every Wednesday between the first imported meeting and today, the app checks that the tenant has an imported slips file; any gap (a skipped week, or a Wednesday that has passed with no file imported yet) is shown as a warning banner listing the dates.
+- **PALMS mismatch**: the PALMS-vs-slips comparison above also runs on `/report` for the selected week scope — any week whose stored PALMS totals disagree with the slips raises the same warning banner there (and vice versa: both screens always show it).
 
 ## Active / inactive members
 - Every member is **active by default** (`members.is_inactive` defaults to false); import never marks anyone inactive, and historical rows stay exactly as imported.
@@ -40,6 +53,9 @@ Source columns: `From | To | Slip Type | Inside/Outside | TYFCB | CEU Credits | 
 
 ## Success criteria
 - Upload Report XLS + week → rows appear in correct 6 screens with pagination (150/page default like screenshots).
+- Upload the PALMS Chapter Summary for a meeting → `/summary` shows that week's P A L M S per member and the slip-derived columns/Total match the report cards.
+- PALMS imported for a week → its Total row (V, 1-2-1, TYFCB, CEU, RGI/RGO/RRI/RRO) equals the app's own slip counts for that week; a deliberate difference is surfaced as a mismatch warning on `/summary` **and** `/report`, never hidden.
+- A Wednesday between the first imported meeting and today without an imported slips file is listed in a warning banner on `/report` and `/summary`.
 - Every file entry is correct: duplicate entries (identical rows, or re-importing the same week) are imported as-is — nothing is skipped for being a duplicate (`supabase/migrations/003_allow_duplicate_slips.sql` drops the per-week dedupe indexes). Only typing mistakes (unknown Slip Type, missing From/To, a number instead of a name) pause the import with a confirmation dialog; those rows are skipped only after the user agrees.
 - `npm run build` passes.
 

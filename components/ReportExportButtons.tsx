@@ -102,10 +102,11 @@ export default function ReportExportButtons({
       const headers = s.headers;
       const fromCol = headers.indexOf("From");
       const toCol = headers.indexOf("To");
+      // Section title only — the styled table below repeats its own header
+      // on every page, so no plain-text column-header row above it.
       autoTable(doc, {
         startY: first ? 58 + filterLines.length * 10 : undefined,
-        head: [[`${s.title} (${s.rows.length})`, ...headers.slice(1).map(() => "")]],
-        body: [headers.map(String)],
+        head: [[`${s.title} (${s.rows.length})`]],
         theme: "plain",
         styles: { fontStyle: "bold" },
       });

@@ -261,10 +261,11 @@ export async function GET(request: Request) {
       const headers = cols.map((c) => c.label);
       const fromCol = cols.findIndex((c) => c.key === "from");
       const toCol = cols.findIndex((c) => c.key === "to");
+      // Section title only — the styled table below repeats its own header
+      // on every page, so no plain-text column-header row above it.
       autoTable(doc, {
         startY: first ? firstTableY : undefined,
-        head: [[`${s.title} (${s.rows.length})`, "", "", "", "", "", "", ""].slice(0, headers.length)],
-        body: [headers.map(String)],
+        head: [[`${s.title} (${s.rows.length})`]],
         theme: "plain",
         styles: { fontStyle: "bold" },
       });
