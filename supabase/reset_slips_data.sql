@@ -1,6 +1,7 @@
 -- WIPE SLIPS DATA (keeps bni_weeks, tenants, tenant_members).
--- Removes members, chapters, all slip tables, import batches and chat history
--- so you can re-import from scratch. Schema, RLS and policies are untouched --
+-- Removes members, chapters, all slip tables, import batches, PALMS
+-- attendance + comparison stats (006/007) and chat history so you can
+-- re-import from scratch. Schema, RLS and policies are untouched --
 -- do NOT re-run any migration after this.
 --
 -- KEPT ON PURPOSE:
@@ -19,6 +20,8 @@ TRUNCATE public.chat_messages,
          public.slip_tyfcb,
          public.slip_visitors,
          public.slip_ceus,
+         public.member_attendance,
+         public.palms_stats,
          public.import_batches,
          public.members,
          public.chapters
@@ -41,6 +44,8 @@ UNION ALL SELECT 'tyfcb', COUNT(*) FROM public.slip_tyfcb
 UNION ALL SELECT 'visitors', COUNT(*) FROM public.slip_visitors
 UNION ALL SELECT 'ceus', COUNT(*) FROM public.slip_ceus
 UNION ALL SELECT 'import_batches', COUNT(*) FROM public.import_batches
+UNION ALL SELECT 'member_attendance', COUNT(*) FROM public.member_attendance
+UNION ALL SELECT 'palms_stats', COUNT(*) FROM public.palms_stats
 UNION ALL SELECT 'members', COUNT(*) FROM public.members
 UNION ALL SELECT 'chapters (only home)', COUNT(*) FROM public.chapters
 UNION ALL SELECT 'chat_sessions', COUNT(*) FROM public.chat_sessions

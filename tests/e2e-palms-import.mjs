@@ -453,6 +453,71 @@ try {
       rep.summary?.total === 220,
     JSON.stringify(rep.summary),
   );
+  // 19) Remove PALMS from the Chapter Summary screen: the panel ships the
+  // remove action + imported-file record for single-week scope, and the
+  // endpoint drops attendance/stats + the referenced batch (slips stay).
+  const html8 = await (await fetch(`${APP}/summary?week=${weekId}`, { headers: { ...AUTH } })).text();
+  const dec8 = flight(html8);
+  check(
+    "/summary panel ships removeWeekId + record props",
+    dec8.includes('"removeWeekId"') && dec8.includes('"record"'),
+    "",
+  );
+  check("/summary panel names the imported PALMS file", dec8.includes("e2e-palms-real-restore.xls"), "");
+  const rd = await fetch(`${APP}/api/import/palms?week=${weekId}`, { method: "DELETE", headers: { ...AUTH } });
+  const rdj = rd.ok ? await rd.json() : {};
+  check(
+    "DELETE /api/import/palms removes the week's attendance",
+    rd.ok && rdj.removed?.attendance === 77,
+    JSON.stringify(rdj),
+  );
+  const attGone = await attendanceRows({ bni_week_id: weekId });
+  const { data: statsGone } = await sb.from("palms_stats").select("*").eq("tenant_id", TENANT).eq("bni_week_id", weekId);
+  check(
+    "attendance + palms_stats gone after remove",
+    attGone.length === 0 && (statsGone ?? []).length === 0,
+    `att=${attGone.length} stats=${(statsGone ?? []).length}`,
+  );
+  check("referenced PALMS batch removed from history", !(await latestBatch("e2e-palms-real-restore.xls")), "");
+  const rd404 = await fetch(`${APP}/api/import/palms?week=11111111-2222-3333-4444-555555555555`, {
+    method: "DELETE",
+    headers: { ...AUTH },
+  });
+  check("remove with no PALMS data is a 404", rd404.status === 404, String(rd404.status));
+  const rdNoWeek = await fetch(`${APP}/api/import/palms`, { method: "DELETE", headers: { ...AUTH } });
+  check("remove without week is a 400", rdNoWeek.status === 400, String(rdNoWeek.status));
+  const rdNoAuth = await fetch(`${APP}/api/import/palms?week=${weekId}`, { method: "DELETE" });
+  check("remove requires auth (401)", rdNoAuth.status === 401, String(rdNoAuth.status));
+
+  // restore, then the ImportPage path: a PALMS batch deleted by batch id
+  // must drop its attendance + stats + the batch row in one call.
+  r = await postPalms(real, "e2e-palms-real-restore.xls");
+  j = await r.json();
+  check(
+    "re-import restores the week after removal",
+    r.ok && !!j.comparison && j.comparison.allMatch === true && (await attendanceRows({ bni_week_id: weekId })).length === 77,
+    JSON.stringify(j.comparison),
+  );
+  const pb = await latestBatch("e2e-palms-real-restore.xls");
+  const dPalms = pb
+    ? await fetch(`${APP}/api/import/batches/${pb.id}`, { method: "DELETE", headers: { ...AUTH } })
+    : null;
+  const dPalmsJ = dPalms?.ok ? await dPalms.json() : {};
+  check(
+    "DELETE import removes a PALMS batch's attendance + stats",
+    dPalms?.ok && dPalmsJ.removed?.member_attendance === 77 && dPalmsJ.removed?.palms_stats === 1,
+    JSON.stringify(dPalmsJ),
+  );
+  check("attendance gone via batch delete too", (await attendanceRows({ bni_week_id: weekId })).length === 0, "");
+
+  // final restore so the finally-block baseline checks stay green
+  r = await postPalms(real, "e2e-palms-real-restore.xls");
+  j = await r.json();
+  check(
+    "final re-import leaves the baseline intact",
+    r.ok && !!j.comparison && j.comparison.allMatch === true && (await attendanceRows({ bni_week_id: weekId })).length === 77,
+    JSON.stringify(j.comparison),
+  );
 } finally {
   await cleanup();
   const after = weekId ? await attendanceRows({ bni_week_id: weekId }) : [];
