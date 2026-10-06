@@ -326,6 +326,58 @@ const dNoAuth = await fetch(`${APP}/api/import/batches/${delBatch ?? "11111111-2
 });
 check("delete requires auth (401)", dNoAuth.status === 401, String(dNoAuth.status));
 
+// ---- 4d) history kinds (slips vs PALMS) + xlsx prints bold names bold ------
+const hist = await fetch(`${APP}/api/import/batches`, { headers: { ...AUTH } });
+const histJson = hist.ok ? await hist.json() : {};
+const histList = Array.isArray(histJson.batches) ? histJson.batches : [];
+check(
+  "history GET tags every batch with kind slips|palms",
+  hist.ok && histList.length > 0 && histList.every((b) => b.kind === "slips" || b.kind === "palms"),
+  `n=${histList.length} s=${histJson.error ?? ""}`,
+);
+check(
+  "history mixes slips and PALMS batches",
+  histList.some((b) => b.kind === "slips") && histList.some((b) => b.kind === "palms"),
+  histList.slice(0, 12).map((b) => `${b.kind}:${b.filename}`).join(" | "),
+);
+
+const rxB = await fetch(`${APP}/api/report/export?week=${weekId}&tab=referral&format=xlsx`, { headers: { ...AUTH } });
+const xbBuf = Buffer.from(await rxB.arrayBuffer());
+check("referral xlsx export 200 + bytes", rxB.ok && xbBuf.length > 500, `${rxB.status} len=${xbBuf.length}`);
+const xbw = new ExcelJS.Workbook();
+await xbw.xlsx.load(xbBuf);
+const xsh = xbw.getWorksheet("Referral");
+const boldCells = [];
+if (xsh) {
+  const hdr = xsh.getRow(3);
+  const fromToCols = [];
+  hdr.eachCell((c, n) => {
+    if (c.value === "Referral From" || c.value === "Referral To") fromToCols.push(n);
+  });
+  xsh.eachRow((row, rn) => {
+    if (rn <= 3) return;
+    for (const n of fromToCols) {
+      const cell = row.getCell(n);
+      if (cell.font?.bold && cell.value) boldCells.push(String(cell.value));
+    }
+  });
+}
+check(
+  "xlsx export prints the bold (other-chapter) name bold",
+  !!xsh && boldCells.includes("E2E Bold Person"),
+  `sheet=${!!xsh} bold=${JSON.stringify(boldCells)}`,
+);
+
+const rjR = await fetch(`${APP}/api/report/export?week=${weekId}&tab=referral&format=json`, { headers: { ...AUTH } });
+const jR = rjR.ok ? await rjR.json() : {};
+check(
+  "report json carries column keys (client PDF bold)",
+  Array.isArray(jR.sections?.[0]?.keys) &&
+    jR.sections[0].keys.includes("from") &&
+    jR.sections[0].keys.includes("to"),
+  JSON.stringify(jR.sections?.[0]?.keys),
+);
+
 // ---- 5) cleanup + baseline restored ---------------------------------------
 await cleanup();
 const after = await dbSummary(weekId);

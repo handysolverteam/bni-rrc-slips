@@ -1,6 +1,6 @@
 import { defaultWeekId, getCachedWeekOptions } from "@/lib/server-weeks";
 import { distinctValues, mergeDistinct } from "@/lib/distinct";
-import { fetchMissingMeetingFiles } from "@/lib/data-health";
+import { fetchMissingMeetingFiles, fetchUnimportedData } from "@/lib/data-health";
 import { fetchPalmsComparisons } from "@/lib/palms-compare";
 import {
   detailLabelFor,
@@ -20,6 +20,7 @@ import ReportExportButtons from "@/components/ReportExportButtons";
 import ReportTabs from "@/components/ReportTabs";
 import FilterBar from "@/components/FilterBar";
 import DataWarnings from "@/components/DataWarnings";
+import PalmsImportPanel from "@/components/PalmsImportPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -191,7 +192,7 @@ export default async function ReportPage({
         ceu: sp["w_ceu"] || "",
       })
     : Promise.resolve([]);
-  const [sections, [fromOptions, toOptions, detailOptions], missing, comparisons] = await Promise.all([
+  const [sections, [fromOptions, toOptions, detailOptions], missing, comparisons, unimported] = await Promise.all([
     sectionsPromise,
     Promise.all([
     Promise.all([
@@ -214,6 +215,7 @@ export default async function ReportPage({
     ]),
     fetchMissingMeetingFiles(tenantId),
     fetchPalmsComparisons(tenantId, weekIds),
+    fetchUnimportedData(tenantId, weekIds),
   ]);
   const colOptions = { from: fromOptions, to: toOptions, detail: detailOptions };
   const visible = tab === "all" ? sections : sections.filter((s) => s.key === tab);
@@ -247,7 +249,10 @@ export default async function ReportPage({
         </div>
       </div>
 
-      <DataWarnings missing={missing} comparisons={comparisons} />
+        <DataWarnings missing={missing} comparisons={comparisons} unimported={unimported} />
+
+        <PalmsImportPanel />
+
 
       <div className="cards stat-cards">
         {sections.map((s) => (

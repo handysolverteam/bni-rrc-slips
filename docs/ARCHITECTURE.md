@@ -19,6 +19,7 @@ bni-rrc-slips/
     palms-import.ts      # parsePalmsFile(buffer) -> { meetingDate, members[], palmsTotals }; pure (Chapter Summary PALMS .xls)
     palms-compare.ts     # fetchPalmsComparisons(tenantId, weekIds) — PALMS Total-row stats vs live slip counts, per week
     data-health.ts       # missingWednesdays(importedDates, todayIso) (pure) + fetchMissingMeetingFiles(tenantId)
+                         # + fetchUnimportedData(tenantId, weekIds) - weeks missing their slips and/or PALMS file
     report-view.ts       # fetchReportSections(tenantId, ...) — all report/export queries
     summary-view.ts      # fetchChapterSummary(tenantId, weekIds) — member-wise attendance + slip metrics;
                          # SUMMARY_COLS + summaryCell shared by the screen and the summary export
@@ -35,17 +36,19 @@ bni-rrc-slips/
     api/import/palms/route.ts          # POST file — PALMS attendance import (single meeting date); DELETE ?week — remove that week's attendance/stats
     api/import/batches/[id]/route.ts   # DELETE — remove one import row + every row it created (slips or PALMS attendance/stats)
     api/summary/export/route.ts        # GET week,format=xlsx|csv|pdf|json — Chapter Summary export (screen parity)
+    api/report/export/route.ts         # GET week,tab,format=xlsx|csv|pdf|json — week report export (xlsx = ExcelJS with bold From/To cells; json feeds the in-browser PDF)
     api/<resource>/route.ts     # every data API: getTenantContext() first (401 without session)
     api/members/[id]/route.ts   # PATCH {isInactive} — active/inactive toggle (tenant-scoped, any member)
     members|referrals|one-to-ones|visitors|tyfcb|ceus|report|summary|import|chat pages (server components
                                  call getTenantContext() -> redirect /login, noAccess -> no-access screen)
-  components/ImportPage.tsx     # import screen: ImportPanel (slips) + PalmsImportPanel (attendance) + history with per-row Delete (ConfirmDialog)
-  components/PalmsImportPanel.tsx # upload Chapter Summary PALMS .xls -> POST /api/import/palms (import + summary screens); on /summary also shows the imported file + Remove action
+  components/ImportPage.tsx     # import screen: ImportPanel (slips) + PalmsImportPanel (attendance, two-step) + TWO history tables (slips / PALMS) with per-row Delete (ConfirmDialog)
+  components/PalmsImportPanel.tsx # two-step upload (choose file -> explicit Import button) -> POST /api/import/palms; mounted on /import, /summary AND /report; on /summary also shows the imported file + Remove action
   components/DataWarnings.tsx   # server component: missing-Wednesday banner + PALMS-mismatch banner (warnings only, nothing on success)
   components/PalmsComparisonTable.tsx # metric | PALMS | Slips | status table (summary screen, at the bottom)
   components/SummaryExportButtons.tsx # xlsx/csv/pdf switch on the summary page head (PDF built in-browser from JSON)
   components/TenantSwitcher.tsx # chapter switcher in the top nav (GET/POST /api/tenant)
   components/SlipsTable.tsx     # shared read-only table + pagination
+  components/ListShell.tsx      # shared list frame: title + count badge + optional sub line (active/inactive counts) + Active checkbox filter (members list)
   components/MemberActiveToggle.tsx # checkbox in the Active column (members list only)
 ```
 
@@ -62,11 +65,13 @@ bni-rrc-slips/
 
 **Import** — upload → tenant-scoped batch/members/chapters/slips inserts → snapshot cache invalidated → report/chat immediately reflect the new rows for that tenant only. **Deletion** — `DELETE /api/import/batches/{id}` (history table) removes that batch's slip rows or PALMS attendance/stats + the batch itself; `DELETE /api/import/palms?week=` (the `/summary` panel's Remove action) clears a week's attendance/comparison without touching slips. Both are tenant-scoped (404 for foreign ids) and clear the caches the import sets.
 
-**Chapter Summary (attendance)** — upload `Chapter Summary PALMS Report` (.xls, from `/import` **or** `/summary`) → `lib/palms-import.ts` parses `From/To` (single date only) + member rows + the `Total` row's slip counts → week must exist **and have tenant slips** → `member_attendance` rows replaced and `palms_stats` upserted for that week → `/summary` (`lib/summary-view.ts`) joins attendance with slip-derived per-member metrics (computed live with the report's home/bold rules) so its Total row always equals the report cards. **Export** — `components/SummaryExportButtons.tsx` → `GET /api/summary/export` → the same `fetchChapterSummary` → xlsx/csv on the server, PDF built in-browser from `format=json` (same byte-swallowing workaround as the report), cells identical to the screen; the PALMS-vs-slips comparison table stays screen-only (not exported).
+**Chapter Summary (attendance)** — upload `Chapter Summary PALMS Report` (.xls, two-step panel on `/import`, `/summary` **or** `/report` — choose file, then press Import) → `lib/palms-import.ts` parses `From/To` (single date only) + member rows + the `Total` row's slip counts → week must exist on the calendar (**slips not required** — either file may come first; a missing side yields a red `warning` notice, never a blocked import) → `member_attendance` rows replaced and `palms_stats` upserted for that week → `/summary` (`lib/summary-view.ts`) joins attendance with slip-derived per-member metrics (computed live with the report's home/bold rules) so its Total row always equals the report cards. **Export** — `components/SummaryExportButtons.tsx` → `GET /api/summary/export` → the same `fetchChapterSummary` → xlsx/csv on the server, PDF built in-browser from `format=json` (same byte-swallowing workaround as the report), cells identical to the screen; the PALMS-vs-slips comparison table stays screen-only (not exported).
 
-**Data health** — on every `/report` and `/summary` render: (1) `lib/data-health.ts` lists Wednesdays from the tenant's first imported meeting to today without an imported slips file → amber banner; (2) `lib/palms-compare.ts` compares each selected week's stored `palms_stats` (PALMS `Total` row) with its live slip counts → warning banner listing week/metric/both values (`components/DataWarnings.tsx`, warnings only — nothing renders when everything agrees). `/summary` renders the side-by-side `PalmsComparisonTable` at the bottom of the page (below the member table); `app/import/loading.tsx` and `app/summary/loading.tsx` show the matching `ImportSkeleton` / `SummarySkeleton` during route navigation.
+**Data health** — on every `/report` and `/summary` render: (1) `lib/data-health.ts` lists Wednesdays from the tenant's first imported meeting to today without an imported slips file → amber banner; (2) `lib/palms-compare.ts` compares each selected week's stored `palms_stats` (PALMS `Total` row) with its live slip counts → warning banner listing week/metric/both values (weeks without imported slips are skipped — nothing to compare); (3) `lib/data-health.ts: fetchUnimportedData` lists each week in scope missing its slips file and/or its PALMS summary → red **"… not imported yet"** banner (`components/DataWarnings.tsx`, warnings only — nothing renders when everything is imported). `/summary` renders the side-by-side `PalmsComparisonTable` at the bottom of the page (below the member table); `app/import/loading.tsx` and `app/summary/loading.tsx` show the matching `ImportSkeleton` / `SummarySkeleton` during route navigation.
 
-**Active/inactive member** — `members.is_inactive` (default false = active; import never sets it). Every user gets an `Active` checkbox column before Name → optimistic flip → `PATCH /api/members/{id}` (tenant-scoped) → `router.refresh()`. `/members` + `GET /api/members` return inactive rows to everyone (no role filter). Flag flips never touch slips/exports/chat.
+**Active/inactive member** — `members.is_inactive` (default false = active; import never sets it). Every user gets an `Active` checkbox column before Name → optimistic flip → `PATCH /api/members/{id}` (tenant-scoped) → `router.refresh()`. `/members` + `GET /api/members` return inactive rows to everyone (no role filter). The `/members` header also shows the **active/inactive counts** (unfiltered) and an **Active** checkbox filter (`?active=1`) via optional `sub` / `activeToggle` props on `ListShell`. Flag flips never touch slips/exports/chat.
+
+**Import history** — `GET /api/import/batches` returns each batch with a derived `kind` (`slips` | `palms`: linked to attendance/stats, else filename fallback); `components/ImportPage.tsx` renders **two tables**, one per kind, each with its own date/week filters and per-row Delete.
 
 **Chat** — `getSlipsData(tenantId)` builds the snapshot + query index from tenant-scoped rows; cached per tenant (90s, `sharedState` key includes tenant id). Sessions are tenant- **and owner-scoped** (`owner_uid`): every list/read/write filters `owner_uid = uid` when the caller has a uid, so each user sees only their own chats.
 

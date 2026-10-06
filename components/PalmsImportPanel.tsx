@@ -8,7 +8,7 @@ type Mismatch = { label: string; palms: number; slips: number };
 type State =
   | { kind: "idle" }
   | { kind: "busy" }
-  | { kind: "ok"; text: string }
+  | { kind: "ok"; text: string; notice?: string }
   | { kind: "mismatch"; text: string; items: Mismatch[] }
   | { kind: "err"; text: string };
 
@@ -19,8 +19,13 @@ const fmt = (v: number): string => (Number.isInteger(v) && Math.abs(v) >= 10000 
 /**
  * Upload for BNI's `Chapter Summary PALMS Report` (.xls/.xlsx): the meeting
  * attendance columns P A L M S + T for a single meeting date (From = To).
- * The meeting's slips must be imported first. After the import the response's
- * `comparison` verdict (PALMS Total row vs this week's slips) is shown at once.
+ * Two-step flow: picking a file only stores it — the explicit **Import**
+ * button starts the upload (choosing a file never imports by itself).
+ * Slips are NOT required first — either file may be imported first; when this
+ * meeting's slips are missing, the response's `warning` notice is shown as a
+ * red "not imported yet" box (and there is nothing to compare yet). With slips
+ * present, the response's `comparison` verdict (PALMS Total row vs this week's
+ * slips) is shown at once.
  *
  * On `/summary` the page passes `removeWeekId` (single-week scope with
  * attendance) + the current import `record`: the panel then shows which file
@@ -37,6 +42,7 @@ export default function PalmsImportPanel({
   record?: PalmsRecord | null;
 }) {
   const [state, setState] = useState<State>({ kind: "idle" });
+  const [picked, setPicked] = useState<File | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [removing, setRemoving] = useState(false);
   const router = useRouter();
@@ -96,9 +102,10 @@ export default function PalmsImportPanel({
       } else if (cmp) {
         setState({ kind: "ok", text: `${base} PALMS counts match the imported slips.` });
       } else {
-        setState({ kind: "ok", text: base });
+        setState({ kind: "ok", text: base, notice: data.warning });
       }
       onImported?.();
+      setPicked(null);
       router.refresh();
     } catch (err) {
       setState({ kind: "err", text: err instanceof Error ? err.message : "Network error" });
@@ -130,22 +137,39 @@ export default function PalmsImportPanel({
       ) : null}
       <form>
         <label className="field">
-          Chapter Summary PALMS Report (.xls / .xlsx — single meeting date; import that week&apos;s
-          slips first)
+          Chapter Summary PALMS Report (.xls / .xlsx — single meeting date)
           <input
             type="file"
             accept=".xls,.xlsx"
-            required
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) upload(f);
+              if (f) setPicked(f);
               e.target.value = "";
             }}
           />
         </label>
+        <button
+          type="button"
+          className="primary btn-block"
+          disabled={!picked || state.kind === "busy"}
+          onClick={() => picked && upload(picked)}
+        >
+          {state.kind === "busy" ? "Importing…" : "Import"}
+        </button>
+        {picked ? <p className="muted">Selected: {picked.name}</p> : null}
       </form>
       {state.kind === "busy" ? <p className="muted">Importing…</p> : null}
       {state.kind === "ok" ? <div className="data-alert ok">{state.text}</div> : null}
+      {state.kind === "ok" && state.notice ? (
+        <div className="data-alert bad" role="alert">
+          <span className="alert-title">Meeting data not imported yet</span>
+          <span>{state.notice}</span>
+          <p className="alert-sub">
+            Import the missing file from the Import screen — slips and the Chapter Summary PALMS can be
+            uploaded in any order.
+          </p>
+        </div>
+      ) : null}
       {state.kind === "mismatch" ? (
         <div className="data-alert bad" role="alert">
           <span className="alert-title">PALMS vs slips mismatch</span>

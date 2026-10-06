@@ -10,6 +10,8 @@ import type { WeekOption } from "@/lib/weeks";
 
 type Col = { key: string; label: string };
 
+type ActiveToggle = { param: string; label: string; checked: boolean };
+
 export default function ListShell({
   title,
   total,
@@ -26,6 +28,8 @@ export default function ListShell({
   columnFilters = {},
   filterOptions = {},
   hideWeekBar = false,
+  sub,
+  activeToggle,
 }: {
   title: string;
   total: number;
@@ -44,6 +48,10 @@ export default function ListShell({
   filterOptions?: Record<string, ComboOption[]>;
   /** Week lives in the header cell filter instead of the top bar. */
   hideWeekBar?: boolean;
+  /** Extra line under the title (e.g. the active/inactive counts). */
+  sub?: string;
+  /** Optional boolean URL filter rendered as a checkbox in the toolbar. */
+  activeToggle?: ActiveToggle;
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -78,6 +86,7 @@ export default function ListShell({
             {rows.length} of {total.toLocaleString("en-IN")}
           </span>
         </h1>
+        {sub ? <p className="sub muted">{sub}</p> : null}
         {activeWeek ? (
           <p className="sub muted">
             Filtered to {activeWeek.label}
@@ -88,6 +97,22 @@ export default function ListShell({
       </div>
 
       <div className="toolbar">
+        {activeToggle ? (
+          <label className="check-inline">
+            <input
+              type="checkbox"
+              checked={activeToggle.checked}
+              onChange={(e) => {
+                const params = new URLSearchParams(search.toString());
+                if (e.target.checked) params.set(activeToggle.param, "1");
+                else params.delete(activeToggle.param);
+                params.delete("page");
+                go(`${basePath}?${params.toString()}`);
+              }}
+            />
+            {activeToggle.label}
+          </label>
+        ) : null}
         <FilterBar
           basePath={basePath}
           q={q}
@@ -96,7 +121,7 @@ export default function ListShell({
           hideSearch
           onNavigate={go}
         />
-        {q || weekId || Object.keys(columnFilters).length > 0 ? (
+        {q || weekId || activeToggle?.checked || Object.keys(columnFilters).length > 0 ? (
           <Link href={basePath}>
             <button type="button">Clear all</button>
           </Link>

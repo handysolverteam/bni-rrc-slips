@@ -511,7 +511,55 @@ function PanelSkeleton({ title, toggle }: { title: string; toggle?: string }) {
 
 const IMPORT_HEAD = ["File", "Imported", "Skipped"];
 
-/** /import — both upload panels + the "Imported weeks" history table. */
+/** /import — both upload panels + the two history tables (slips, PALMS). */
+function ImportHistorySkeleton({ heading, rows }: { heading: string; rows: number }) {
+  return (
+    <div className="card history-card">
+      <h2>{heading}</h2>
+      <div className="table-card">
+        <div className="table-scroll">
+          <table className="grid">
+            <thead>
+              <tr>
+                <th>
+                  <span className="combo">
+                    <span className="combo-field" style={{ height: 39 }}>
+                      <Bar w={130} h={16} r={4} />
+                    </span>
+                  </span>
+                </th>
+                <th>
+                  <span className="th-label">{IMPORT_HEAD[0]}</span>
+                </th>
+                <th>
+                  <ColumnFilter paramKey="sk_iw_week" defaultValue="" options={[]} label="Week" allLabel="All weeks" />
+                </th>
+                <th>
+                  <span className="th-label">{IMPORT_HEAD[1]}</span>
+                </th>
+                <th>
+                  <span className="th-label">{IMPORT_HEAD[2]}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: rows }, (_, i) => (
+                <tr key={i}>
+                  <td><Bar h={18} w={`${CELL_W[i % CELL_W.length]}%`} r={4} /></td>
+                  <td><Bar h={18} w={`${CELL_W[(i + 1) % CELL_W.length]}%`} r={4} /></td>
+                  <td><Bar h={18} w={`${CELL_W[(i + 2) % CELL_W.length]}%`} r={4} /></td>
+                  <td><Bar h={18} w={`${CELL_W[(i + 3) % CELL_W.length]}%`} r={4} /></td>
+                  <td><Bar h={18} w={`${CELL_W[(i + 4) % CELL_W.length]}%`} r={4} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ImportSkeleton() {
   return (
     <div>
@@ -523,49 +571,8 @@ export function ImportSkeleton() {
         <PanelSkeleton title="Chapter Summary PALMS (attendance)" />
       </div>
 
-      <div className="card history-card">
-        <h2>Imported weeks</h2>
-        <div className="table-card">
-          <div className="table-scroll">
-            <table className="grid">
-              <thead>
-                <tr>
-                  <th>
-                    <span className="combo">
-                      <span className="combo-field" style={{ height: 39 }}>
-                        <Bar w={130} h={16} r={4} />
-                      </span>
-                    </span>
-                  </th>
-                  <th>
-                    <span className="th-label">{IMPORT_HEAD[0]}</span>
-                  </th>
-                  <th>
-                    <ColumnFilter paramKey="sk_iw_week" defaultValue="" options={[]} label="Week" allLabel="All weeks" />
-                  </th>
-                  <th>
-                    <span className="th-label">{IMPORT_HEAD[1]}</span>
-                  </th>
-                  <th>
-                    <span className="th-label">{IMPORT_HEAD[2]}</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from({ length: 6 }, (_, i) => (
-                  <tr key={i}>
-                    <td><Bar h={18} w={`${CELL_W[i % CELL_W.length]}%`} r={4} /></td>
-                    <td><Bar h={18} w={`${CELL_W[(i + 1) % CELL_W.length]}%`} r={4} /></td>
-                    <td><Bar h={18} w={`${CELL_W[(i + 2) % CELL_W.length]}%`} r={4} /></td>
-                    <td><Bar h={18} w={`${CELL_W[(i + 3) % CELL_W.length]}%`} r={4} /></td>
-                    <td><Bar h={18} w={`${CELL_W[(i + 4) % CELL_W.length]}%`} r={4} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+      <ImportHistorySkeleton heading="Imported Slips Audit Reports" rows={6} />
+      <ImportHistorySkeleton heading="Imported Chapter Summary PALMS" rows={3} />
     </div>
   );
 }

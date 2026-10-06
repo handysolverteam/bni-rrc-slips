@@ -969,3 +969,6 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .data-alert.bad { background: var(--red-soft); border-color: #efb5ae; color: #8f2b1f; }
 .data-alert.ok { background: var(--green-soft); border-color: #a9d4ba; color: #1d6b41; }
 .data-alert.info { background: var(--blue-soft); border-color: #b5d0e8; color: #23507c; }
+/* Import panels: space between the Import button/form and its result message. */
+form + .data-alert,
+form + .preview-warn { margin-top: 12px; }

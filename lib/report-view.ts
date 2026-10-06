@@ -242,7 +242,7 @@ export async function fetchReportSections(
   // a meeting between two home members is 2.
   const otoMetric = fOto.reduce((n, r) => n + (r.fromBold || r.toBold ? 1 : 2), 0);
 
-  const ceuStat = fCeu.length > 0 ? `${Math.round(fCeuSum).toLocaleString("en-IN")} credits` : null;
+  const ceuStat = fCeu.length > 0 ? `${Math.round(fCeuSum).toLocaleString("en-IN")} CEU credits` : null;
   const ceuMembers = new Set(fCeu.map((r) => r.from.trim().toLowerCase()).filter(Boolean)).size;
   // PALMS referral split (confirmed against the PALMS totals row): "given" is
   // a row whose From side is home (not bold); RGI/RRI are Tier 1, RGO/RRO Tier 2.

@@ -8,35 +8,37 @@ Import a weekly BNI `Report` XLS (columns: From, To, Slip Type, Inside/Outside, 
 2. App POSTs the file to `/api/import/report`.
 3. Server parses, upserts members/weeks, inserts slips, returns `{ imported, skipped, errors }`.
 4. User browses 6 read-only paginated screens:
-   - `/members` — Bni Member (Active, Name, Chapter, Category, Company, Phone — Category/Company/Phone are empty placeholders until CRUD; the Active column is the active/inactive toggle)
+   - `/members` — Bni Member (Active, Name, Chapter, Category, Company, Phone — Category/Company/Phone are empty placeholders until CRUD; the Active column is the active/inactive toggle). The header shows the **active/inactive counts** under the title plus an **Active checkbox filter** (`?active=1`) that lists only active members.
    - `/referrals` — Slip Referrals (BNI Week, Referral From, Referral To, Other Member's Chapter, Inside/Outside)
    - `/one-to-ones` — Slip 121 (BNI Week, Initiated By, Met With, Other Member's Chapter, Photo Proof, Gains Shared)
    - `/visitors` — Slip Visitors (Full Name, Company, Invited By, BNI Week, Email, Phone, Attending, etc.)
    - `/tyfcb` — Slip TYFCB (BNI Week, BNI Member, Amount, Thanking Member's Chapter)
    - `/ceus` — Slip CEU (BNI Week, BNI Member, CEU Credits)
-   - `/report` — Week Report: one section/tab per slip type (One-to-One, Referrals, TYFCB, Visitors, CEU) with filters and xlsx/csv/pdf export. Stat cards: Referral shows the given count (RGI+RGO) with RGI/RGO/RRI/RRO chips; CEU shows distinct members + credits. Every export opens with a **Summary block that mirrors those stat cards** — same counts, same chip/member lines — so the files show what the screen shows.
+   - `/report` — Week Report: one section/tab per slip type (One-to-One, Referrals, TYFCB, Visitors, CEU) with filters and xlsx/csv/pdf export. Stat cards: Referral shows the given count (RGI+RGO) with RGI/RGO/RRI/RRO chips; CEU shows distinct members + CEU credits. Every export opens with a **Summary block that mirrors those stat cards** — same counts, same chip/member lines — so the files show what the screen shows. The xlsx and pdf exports print **bold (other-chapter) names in bold exactly like the screen tables** (CSV stays plain text). The page head also carries the **Chapter Summary PALMS upload panel** (two-step, see below).
    - `/summary` — Chapter Summary: one row per member with P A L M S (attendance, from the PALMS import) + RGI RGO RRI RRO, V, 1-2-1, TYFCB, CEU, T (computed from slips) + Total row. Shows the PALMS upload panel, data-health warnings (only when something is wrong), the PALMS-vs-slips comparison table for the selected week(s) at the bottom, and the same Export switch as `/report` (xlsx/csv/pdf) in the page head.
 
 No CRUD in MVP. CRUD later.
 
 ## Chapter Summary (PALMS attendance)
 - **Attendance cannot be derived from slips** (a member may be Present with zero slips and file slips while absent) — `P/A/L/M/S/T` come from BNI's own `Chapter Summary PALMS Report` (.xls, columns First Name…T, `From:`/`To:` = the single meeting date).
-- Second upload panel on `/import` → `POST /api/import/palms`; one row per member stored in `member_attendance` for that week. **Single-meeting files only** (`From = To`); the meeting week must already exist (import the Slips Audit Report first). Re-importing a week replaces its attendance rows; file rows `Visitors`, `BNI`, `Total` are not members and are skipped.
+- Second upload panel on `/import` → `POST /api/import/palms`; one row per member stored in `member_attendance` for that week. **Single-meeting files only** (`From = To`); the meeting date must be on the chapter's Wednesday calendar (`bni_weeks`). **Either file can be imported first** — slips and the PALMS summary are independent; when the *other* file for that meeting is not imported yet, the upload still succeeds and the screen shows a red **"… not imported yet"** notice naming the missing file (never a blocked import). Re-importing a week replaces its attendance rows; file rows `Visitors`, `BNI`, `Total` are not members and are skipped. **Two-step upload everywhere**: picking a file never imports it by itself — the panel shows the selected file and an explicit **Import** button that starts the import.
 - `/summary` joins that attendance with slip-derived per-member counts (same home/bold and owner-count rules as the report), so the Total row always agrees with the report cards.
-- **Import from the summary screen too**: `/summary` carries the same PALMS upload panel as `/import`, so a re-import updates the table and the comparison immediately.
-- **Remove an import**: the Import screen's history table has a **Delete** action per uploaded file (confirm dialog) that removes the import record **and every row that import created** — its slips, or for a PALMS file its attendance + comparison stats. The Chapter Summary screen carries the same removal for the selected week: the PALMS panel shows which file was imported (filename + date) and a **Remove PALMS summary** action that drops that week's attendance and comparison — the slips import stays.
+- **Import from every relevant screen**: `/import`, `/summary` **and** `/report` carry the same two-step PALMS upload panel, so a re-import updates the table, cards and comparison immediately.
+- **Remove an import**: the Import screen's history table has a **Delete** action per uploaded file (confirm dialog) that removes the import record **and every row that import created** — its slips, or for a PALMS file its attendance + comparison stats. The Chapter Summary screen carries the same removal for the selected week: the PALMS panel shows which file was imported (filename + date) and a **Remove PALMS summary** action that drops that week's attendance and comparison — the slips import stays. The history itself is **split into two tables** — one for Slips Audit Report imports, one for Chapter Summary PALMS imports — each with its own date/week filters and Delete action.
 - **PALMS vs slips comparison**: the PALMS file's own `Total` row (RGI, RGO, RRI, RRO, V, 1-2-1, TYFCB, CEU) is stored per week in `palms_stats` and compared with the counts computed from the imported slips for that same week. All match → nothing is shown (warnings only); any mismatch → a warning banner naming the week, metric, PALMS value and slips value. `/summary` also shows the side-by-side comparison table (metric | PALMS | Slips | status) at the bottom of the screen, below the member table.
 - **Export**: the page head carries the same Export switch as `/report` — `xlsx`, `csv` or `pdf` of the member table with its Total row (cells match the screen: `–` for missing attendance, en-IN TYFCB). The PALMS-vs-slips comparison table and the mismatch warnings are **screen-only** — they stay on `/summary` but are not part of the exported files.
 
 ## Data health warnings (`/report` and `/summary`)
 - **Missing meeting files**: chapter meets every Wednesday. For every Wednesday between the first imported meeting and today, the app checks that the tenant has an imported slips file; any gap (a skipped week, or a Wednesday that has passed with no file imported yet) is shown as a warning banner listing the dates.
-- **PALMS mismatch**: the PALMS-vs-slips comparison above also runs on `/report` for the selected week scope — any week whose stored PALMS totals disagree with the slips raises the same warning banner there (and vice versa: both screens always show it).
+- **PALMS mismatch**: the PALMS-vs-slips comparison above also runs on `/report` for the selected week scope — any week whose stored PALMS totals disagree with the slips raises the same warning banner there (and vice versa: both screens always show it). Weeks whose slips are not imported yet are simply not compared (there is nothing to compare against).
+- **Not imported yet**: for the selected week scope, any meeting missing its slips file **or** its PALMS summary is listed in a red banner naming the meeting and the missing file ("… not imported yet"). The same notice appears on the Import screen under a freshly uploaded file when the week's *other* file is still missing. Nothing blocks either import order.
 
 ## Active / inactive members
 - Every member is **active by default** (`members.is_inactive` defaults to false); import never marks anyone inactive, and historical rows stay exactly as imported.
 - The `/members` table gets an **Active toggle in the first column, before Name**.
 - **Every app user** can mark a member active/inactive in place (no edit page) and **sees inactive members** in the list.
 - Marking someone inactive never deletes anything: their slips, chat answers, exports and member row all stay.
+- The `/members` header shows `N active · M inactive` under the title (always the unfiltered totals) and an **Active** checkbox filter (`?active=1`) narrows the list to active members only.
 
 ## XLS mapping assumptions (explicit — bold not readable by `xlsx`)
 Source columns: `From | To | Slip Type | Inside/Outside | TYFCB | CEU Credits | Detail`.
@@ -59,6 +61,9 @@ Source columns: `From | To | Slip Type | Inside/Outside | TYFCB | CEU Credits | 
 - A Wednesday between the first imported meeting and today without an imported slips file is listed in a warning banner on `/report` and `/summary`.
 - Every file entry is correct: duplicate entries (identical rows, or re-importing the same week) are imported as-is — nothing is skipped for being a duplicate (`supabase/migrations/003_allow_duplicate_slips.sql` drops the per-week dedupe indexes). Only typing mistakes (unknown Slip Type, missing From/To, a number instead of a name) pause the import with a confirmation dialog; those rows are skipped only after the user agrees.
 - Deleting an import removes its rows everywhere (6 screens, report, chat totals) while other imports of the same week stay intact; removing a week's PALMS summary empties its attendance/comparison but never touches its slips (both verified by tests).
+- Either file can be imported first: PALMS without slips and slips without PALMS both succeed, and the screen that is missing its data shows a red **"… not imported yet"** notice naming the meeting and the missing file — an import is never blocked by the other file's absence.
+- Picking a PALMS file never imports it on its own: `/import`, `/summary` and `/report` use a two-step panel (choose file → explicit Import button).
+- `/members` shows active/inactive counts under the title with an Active-only checkbox filter; the import history lists Slips Audit Report and Chapter Summary PALMS files in **separate tables**; report xlsx/pdf print bold names in bold like the screen; every "… credits" line reads "… CEU credits".
 - `npm run build` passes.
 
 ---

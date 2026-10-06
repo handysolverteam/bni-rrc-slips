@@ -107,9 +107,11 @@ export async function fetchSlipTotalsByWeek(
 }
 
 /**
- * For every selected week that has a stored PALMS `Total` row (`palms_stats`),
- * compare it with the app's live slip counts. Weeks without PALMS data are
- * simply not part of the result (the screens note that separately).
+ * For every selected week that has a stored PALMS `Total` row (`palms_stats`)
+ * **and at least one imported slip row**, compare it with the app's live slip
+ * counts. Weeks without PALMS data — and weeks whose slips are not imported
+ * yet (nothing to compare against) — are simply not part of the result; the
+ * screens note them separately as "not imported yet".
  */
 export async function fetchPalmsComparisons(
   tenantId: string,
@@ -125,7 +127,9 @@ export async function fetchPalmsComparisons(
     fetchSlipTotalsByWeek(tenantId, weekIds),
   ]);
 
-  const comparisons = stats.map((s) => {
+  const comparisons = stats.flatMap((s) => {
+    const ours = slips.get(s.bni_week_id);
+    if (!ours) return []; // slips not imported yet — skip, the screens warn instead.
     const palms: SlipTotals = {
       rgi: s.rgi,
       rgo: s.rgo,
@@ -136,7 +140,6 @@ export async function fetchPalmsComparisons(
       tyfcb: s.tyfcb,
       ceu: s.ceu,
     };
-    const ours = slips.get(s.bni_week_id) ?? emptyTotals();
     const rows: ComparisonRow[] = COMPARE_METRICS.map((m) => ({
       key: m.key as MetricKey,
       label: m.label,
@@ -144,13 +147,13 @@ export async function fetchPalmsComparisons(
       slips: ours[m.key],
       match: palms[m.key] === ours[m.key],
     }));
-    return {
+    return [{
       weekId: s.bni_week_id,
       weekLabel: s.bni_weeks?.label ?? "",
       meetingDate: s.bni_weeks?.meeting_date ?? "",
       rows,
       allMatch: rows.every((r) => r.match),
-    };
+    }];
   });
   return comparisons.sort((a, b) => a.meetingDate.localeCompare(b.meetingDate));
 }

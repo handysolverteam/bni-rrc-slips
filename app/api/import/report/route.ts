@@ -463,6 +463,19 @@ export async function POST(request: Request) {
     clearLatestImportedWeekCache();
     clearSlipsSnapshotCache();
 
+    // Either file may be imported first: when this week's PALMS attendance is
+    // still missing, tell the uploader (red notice on the Import screen).
+    const { data: attendanceRow } = await supabase
+      .from("member_attendance")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("bni_week_id", week.id)
+      .limit(1)
+      .maybeSingle();
+    const warning = attendanceRow
+      ? undefined
+      : `No PALMS summary imported for ${week.label} — upload the Chapter Summary PALMS Report.`;
+
     return Response.json({
       importedCount: imported,
       skippedCount: skipped,
@@ -470,6 +483,7 @@ export async function POST(request: Request) {
       boldUsed,
       errors,
       bniWeek: bniWeekLabel,
+      ...(warning ? { warning } : {}),
       columns: headers.filter(Boolean),
       columnMap,
     });

@@ -9,6 +9,7 @@ type Result = {
   title: string;
   detail?: string;
   errors?: string[];
+  warning?: string;
 };
 
 type RowIssues = {
@@ -172,6 +173,7 @@ export default function ImportPanel({
             kind: "success",
             title: `${p.filename}: ${bits.join(" · ")}`,
             errors: Array.isArray(data.errors) && data.errors.length > 0 ? data.errors : undefined,
+            warning: typeof data.warning === "string" ? data.warning : undefined,
           }]);
         }
       } catch (err) {
@@ -281,6 +283,11 @@ export default function ImportPanel({
             {done.map((n) => (
               <li key={n.title}>
                 <span className="done-tick">✓</span> {n.title}
+                {n.warning ? (
+                  <p className="preview-warn" role="alert">
+                    {n.warning}
+                  </p>
+                ) : null}
                 <button
                   type="button"
                   className="mini-x"

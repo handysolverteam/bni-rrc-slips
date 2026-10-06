@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { detailLabelFor, fetchReportSections, fromToLabelsFor, rowCells, totalRowCells, visibleColumns, type ReportSectionKey } from "@/lib/report-view";
@@ -166,6 +166,7 @@ export async function GET(request: Request) {
             title: s.title,
             totalLabel: s.totalLabel,
             headers: cols.map((c) => c.label),
+            keys: cols.map((c) => c.key),
             rows: s.rows.map((r) => rowCells(r, cols)),
             bold: s.rows.map((r) => [r.fromBold, r.toBold]),
             totalRow: withTotal ? totalRowCells(cols, s.totalAmount as number) : null,
@@ -199,32 +200,39 @@ export async function GET(request: Request) {
     }
 
     if (format === "xlsx") {
-      const wb = XLSX.utils.book_new();
+      // ExcelJS (not SheetJS): the community edition cannot write cell styles,
+      // and bold (other-chapter) names must print bold exactly like the screen
+      // and the PDF.
+      const wb = new ExcelJS.Workbook();
       // Summary opens first: week/filters + stat-card rows (no slips grand total).
-      const sumWs = XLSX.utils.aoa_to_sheet([
-        [`Week Report — ${titleWeek}`],
-        [`Filters: ${filterLine}`],
-        [],
-        ["Section", "Count", "Details"],
-        ...summary.rows.map((r) => [r.section, r.count, r.info]),
-      ]);
-      sumWs["!cols"] = [{ wch: 18 }, { wch: 8 }, { wch: 26 }];
-      XLSX.utils.book_append_sheet(wb, sumWs, "Summary");
+      const sum = wb.addWorksheet("Summary");
+      sum.addRow([`Week Report — ${titleWeek}`]);
+      sum.addRow([`Filters: ${filterLine}`]);
+      sum.addRow([]);
+      sum.addRow(["Section", "Count", "Details"]);
+      for (const r of summary.rows) sum.addRow([r.section, r.count, r.info]);
+      sum.getColumn(1).width = 18;
+      sum.getColumn(2).width = 8;
+      sum.getColumn(3).width = 26;
       for (const s of picked) {
         const cols = visibleColumns(s.rows, wideOf(s.key), s.key);
-        const headers = cols.map((c) => c.label);
-        const ws = XLSX.utils.aoa_to_sheet([
-          [`${titleWeek} — ${s.title} (${s.rows.length})`],
-          [`Filters: ${filterLine}`],
-          headers,
-          ...s.rows.map((r) => rowCells(r, cols)),
-          ...(s.totalAmount != null && s.rows.length > 0
-            ? [totalRowCells(cols, s.totalAmount)]
-            : []),
-        ]);
-        XLSX.utils.book_append_sheet(wb, ws, s.title.slice(0, 28));
+        const fromIdx = cols.findIndex((c) => c.key === "from");
+        const toIdx = cols.findIndex((c) => c.key === "to");
+        const ws = wb.addWorksheet(s.title.slice(0, 28));
+        ws.addRow([`${titleWeek} — ${s.title} (${s.rows.length})`]);
+        ws.addRow([`Filters: ${filterLine}`]);
+        ws.addRow(cols.map((c) => c.label));
+        for (let i = 0; i < s.rows.length; i++) {
+          const r = s.rows[i];
+          const row = ws.addRow(rowCells(r, cols));
+          if (fromIdx >= 0 && r.fromBold) row.getCell(fromIdx + 1).font = { bold: true };
+          if (toIdx >= 0 && r.toBold) row.getCell(toIdx + 1).font = { bold: true };
+        }
+        if (s.totalAmount != null && s.rows.length > 0) {
+          ws.addRow(totalRowCells(cols, s.totalAmount));
+        }
       }
-      const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+      const buf = Buffer.from(await wb.xlsx.writeBuffer());
       return new Response(new Uint8Array(buf), {
         headers: {
           "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

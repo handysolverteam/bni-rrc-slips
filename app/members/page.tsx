@@ -19,6 +19,7 @@ export default async function MembersPage({
   const page = Math.max(1, Number(sp.page || 1));
   const pageSize = 100;
   const q = sp.q || "";
+  const activeOnly = sp.active === "1";
   const sb = getSupabaseServer();
   let query = sb
     .from("members")
@@ -26,6 +27,7 @@ export default async function MembersPage({
     .eq("tenant_id", tenantId)
     .order("name");
   if (q) query = query.ilike("name", `%${q}%`);
+  if (activeOnly) query = query.eq("is_inactive", false);
   const columnFilters: Record<string, string> = {};
   for (const k of ["name", "category", "company", "phone"]) {
     const v = (sp[`c_${k}`] || "").trim();
@@ -49,7 +51,7 @@ export default async function MembersPage({
   }
 // Everyone sees active and inactive members, so dropdowns list both.
 const memberEq: [string, unknown][] = [];
-  const [{ data, count }, filterOptions] = await Promise.all([
+  const [{ data, count }, filterOptions, counts] = await Promise.all([
     query.range((page - 1) * pageSize, page * pageSize - 1),
     Promise.all([
       distinctValues(tenantId, "chapters", "name"),
@@ -64,6 +66,11 @@ const memberEq: [string, unknown][] = [];
       company,
       phone,
     })),
+    // Unfiltered header counts: "N active · M inactive".
+    Promise.all([
+      sb.from("members").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId),
+      sb.from("members").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("is_inactive", false),
+    ]).then(([all, act]) => ({ all: all.count ?? 0, active: act.count ?? 0 })),
   ]);
   const rows = ((data ?? []) as Record<string, unknown>[]).map((m) => {
     const rel = m.chapters as { name?: string } | { name?: string }[] | null;
@@ -84,6 +91,8 @@ const memberEq: [string, unknown][] = [];
       q={q}
       weekId=""
       weeks={[]}
+      sub={`${counts.active.toLocaleString("en-IN")} active · ${(counts.all - counts.active).toLocaleString("en-IN")} inactive`}
+      activeToggle={{ param: "active", label: "Active", checked: activeOnly }}
       columns={[
         ...[{ key: "active", label: "Active" }],
         { key: "name", label: "Name" },

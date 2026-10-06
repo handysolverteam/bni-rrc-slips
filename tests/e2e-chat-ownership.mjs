@@ -37,6 +37,25 @@ const check = (name, ok, detail = "") =>
 const getJson = (path, headers) => fetch(`${APP}${path}`, { headers }).then((r) => r.json());
 const getHtml = (path, headers) => fetch(`${APP}${path}`, { headers }).then((r) => r.text());
 
+/**
+ * The shell server-renders only a spinner; page content ships as element
+ * trees in the RSC flight payload. Decode the pushed segments into one
+ * string so assertions can search the rendered tree.
+ */
+function flight(html) {
+  const out = [];
+  const re = /self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/g;
+  let m;
+  while ((m = re.exec(html))) {
+    try {
+      out.push(JSON.parse(m[1]));
+    } catch {
+      // segment not a plain string row — skip
+    }
+  }
+  return out.join("");
+}
+
 async function memberCount() {
   const { count } = await sb
     .from("tenant_members")
@@ -222,6 +241,51 @@ let sessionB = null;
       "page shows the inactive name to both users",
       nameIn(await getHtml("/members", asA), target.name) && nameIn(await getHtml("/members", asB), target.name),
       `name=${target.name}`,
+    );
+
+    // Requirement: active/inactive counts under the title + an Active
+    // checkbox filter that hides inactive rows.
+    const decM = flight(await getHtml("/members", asA));
+    const cAll = await sb.from("members").select("id", { count: "exact", head: true }).eq("tenant_id", DEFAULT_T);
+    const cAct = await sb
+      .from("members").select("id", { count: "exact", head: true })
+      .eq("tenant_id", DEFAULT_T).eq("is_inactive", false);
+    const nAll = cAll.count ?? 0;
+    const nAct = cAct.count ?? 0;
+    const fmtN = (n) => n.toLocaleString("en-IN");
+    check(
+      "members title shows 'N active · M inactive'",
+      decM.includes(`${fmtN(nAct)} active \u00b7 ${fmtN(nAll - nAct)} inactive`),
+      `${nAct} active / ${nAll - nAct} inactive`,
+    );
+    check(
+      "members page ships the Active checkbox filter",
+      decM.includes('"activeToggle"') && decM.includes('"label":"Active"'),
+      "",
+    );
+    const atSlice = (dec) => {
+      const a = dec.indexOf('"activeToggle":');
+      return a < 0 ? "" : dec.slice(a, a + 140);
+    };
+    check("plain page renders the checkbox unchecked", atSlice(decM).includes('"checked":false'), atSlice(decM));
+    check("active=1 renders the checkbox checked", atSlice(flight(await getHtml("/members?active=1", asA))).includes('"checked":true'), "");
+
+    // The rows prop sits between "rows":[ and "filterable": in the flight
+    // payload, so the name check is scoped to table rows (the name column
+    // filter options still list every member either way).
+    const rowsSliceOf = (dec) => {
+      const a = dec.indexOf('"rows":[');
+      if (a < 0) return "";
+      const b = dec.indexOf('"filterable":', a);
+      return b > a ? dec.slice(a, b) : dec.slice(a, a + 40000);
+    };
+    const qName = encodeURIComponent(target.name);
+    const decQ = flight(await getHtml(`/members?q=${qName}`, asA));
+    const decQa = flight(await getHtml(`/members?q=${qName}&active=1`, asA));
+    check(
+      "active=1 hides the inactive row (unfiltered search still shows it)",
+      rowsSliceOf(decQ).includes(String(target.name)) && !rowsSliceOf(decQa).includes(String(target.name)),
+      `unfiltered=${rowsSliceOf(decQ).slice(0, 160)}`,
     );
 
     const bad = await patch(asA, { isInactive: "yes" });

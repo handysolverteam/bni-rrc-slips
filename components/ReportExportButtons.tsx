@@ -70,7 +70,7 @@ export default function ReportExportButtons({
       weekLabel: string;
       filterLine: string;
       summary: { rows: { section: string; count: number; info: string }[]; total: number };
-      sections: { title: string; totalLabel: string; headers: string[]; rows: string[][]; bold: [boolean, boolean][]; totalRow: string[] | null }[];
+      sections: { title: string; totalLabel: string; headers: string[]; keys: string[]; rows: string[][]; bold: [boolean, boolean][]; totalRow: string[] | null }[];
     };
     const { jsPDF } = await import("jspdf");
     const { default: autoTable } = await import("jspdf-autotable");
@@ -100,8 +100,10 @@ export default function ReportExportButtons({
     first = false;
     for (const s of data.sections) {
       const headers = s.headers;
-      const fromCol = headers.indexOf("From");
-      const toCol = headers.indexOf("To");
+      // Column keys, not labels — section headers are renamed per report
+      // ("Referral From", "Thanker", …) while the flags stay keyed from/to.
+      const fromCol = s.keys.indexOf("from");
+      const toCol = s.keys.indexOf("to");
       // Section title only — the styled table below repeats its own header
       // on every page, so no plain-text column-header row above it.
       autoTable(doc, {

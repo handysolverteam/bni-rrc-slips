@@ -1,7 +1,10 @@
 // E2E: Chapter Summary PALMS attendance import — parser guards (wrong file,
-// range report, unknown week, calendar week without slips), replace-per-week
-// semantics, tenant scoping, and the /summary member-wise table (P A L M S +
-// slip stats, totals row). Plus the data-health features: palms_stats Total-row
+// range report, unknown week), replace-per-week semantics, tenant scoping, and
+// the /summary member-wise table (P A L M S + slip stats, totals row). Either
+// file may be imported first: a calendar week without slips imports fine and
+// the response + screens show the red "not imported yet" notice instead of a
+// 400, and a slips import without PALMS warns the same way. Plus the
+// data-health features: palms_stats Total-row
 // storage, the immediate PALMS-vs-slips comparison verdict, the green match /
 // red mismatch banners on /summary and /report, and the missing-Wednesday
 // warning staying quiet while the import history is gap-free. Plus the
@@ -139,6 +142,7 @@ let baselineStats = [];
 
 async function preClean() {
   await sb.from("member_attendance").delete().eq("tenant_id", TENANT).like("member_name", "E2E %");
+  await sb.from("members").delete().eq("tenant_id", TENANT).like("name", "E2E %");
   // Stats were snapshotted before this call; the run replaces the week's rows
   // wholesale, so drop everything now and restore the snapshot in cleanup().
   await sb.from("palms_stats").delete().eq("tenant_id", TENANT);
@@ -158,6 +162,8 @@ async function cleanup() {
     .eq("tenant_id", TENANT)
     .like("filename", "e2e-palms%");
   for (const b of batches ?? []) await sb.from("import_batches").delete().eq("id", b.id);
+  // The 10b slips fixture creates member rows; drop them with the rest.
+  await sb.from("members").delete().eq("tenant_id", TENANT).like("name", "E2E %");
   // Restore the snapshotted attendance exactly (tests replace week rows).
   await sb.from("member_attendance").delete().eq("tenant_id", TENANT).eq("bni_week_id", weekId);
   if (baseline.length > 0) {
@@ -224,10 +230,10 @@ try {
   j = await r.json();
   check("range report (From != To): 400", r.status === 400 && /range/i.test(j.error ?? ""), `${r.status} ${j.error}`);
 
-  // 4) unknown meeting date -> slips-first hint
+  // 4) unknown meeting date -> calendar-only error (slips are never required)
   r = await postPalms(await buildPalms(membersV1, { from: 46000, to: 46000 }), "e2e-palms-unknown.xls");
   j = await r.json();
-  check("unknown meeting date: 400 mentions Slips Audit first", r.status === 400 && /Slips Audit Report/i.test(j.error ?? ""), `${r.status} ${j.error}`);
+  check("unknown meeting date: 400 names the calendar", r.status === 400 && /Wednesday calendar/i.test(j.error ?? ""), `${r.status} ${j.error}`);
 
   // 5) happy path
   r = await postPalms(await buildPalms(membersV1), "e2e-palms.xls");
@@ -273,14 +279,55 @@ try {
   const html3 = await (await fetch(`${APP}/summary?week=all`, { headers: { ...AUTH } })).text();
   check("/summary week=all still renders", flight(html3).includes('["Chapter Summary"'));
 
-  // 10) the calendar week exists but this tenant has no slips for it
-  r = await postPalms(await buildPalms(membersV1, { from: 46302, to: 46302 }), "e2e-palms-noslips.xls");
+  // 10) calendar week without slips (14 Oct, serial 46309): the import
+  // SUCCEEDS and the response + both screens carry the red notice.
+  r = await postPalms(await buildPalms(membersV1, { from: 46309, to: 46309 }), "e2e-palms-noslips.xls");
   j = await r.json();
   check(
-    "calendar week without tenant slips: 400 'No slips imported'",
-    r.status === 400 && /^No slips imported for/.test(j.error ?? ""),
-    `${r.status} ${j.error}`,
+    "calendar week without slips: import succeeds, comparison null",
+    r.ok && j.importedCount === 3 && (j.comparison ?? null) === null,
+    `${r.status} ${JSON.stringify(j).slice(0, 260)}`,
   );
+  check("response warns that the slips file is missing", /^No slips imported for /.test(j.warning ?? ""), String(j.warning ?? ""));
+  const { data: w42row } = await sb.from("bni_weeks").select("id").eq("meeting_date", "2026-10-14").maybeSingle();
+  const w42 = w42row?.id ?? "";
+  check("slipless calendar week (14 Oct 2026) resolved", !!w42, String(w42));
+  const htmlN1 = await (await fetch(`${APP}/summary?week=${w42}`, { headers: { ...AUTH } })).text();
+  const decN1 = flight(htmlN1);
+  check(
+    "/summary shows the red not-imported-yet box for the slips side",
+    decN1.includes("Meeting data not imported yet in 1 meeting") && decN1.includes("Slips Audit Report not imported yet"),
+    "",
+  );
+  const htmlN2 = await (await fetch(`${APP}/report?week=${w42}`, { headers: { ...AUTH } })).text();
+  check("/report shows the same slips-not-imported notice", flight(htmlN2).includes("Slips Audit Report not imported yet"), "");
+  const delW42 = await fetch(`${APP}/api/import/palms?week=${w42}`, { method: "DELETE", headers: { ...AUTH } });
+  check("week 42 PALMS removed again (cleanup)", delW42.ok && (await attendanceRows({ bni_week_id: w42 })).length === 0, String(delW42.status));
+
+  // 10b) the other order: slips first, no PALMS yet -> the slips import
+  // succeeds with a warning and the screen flips to the PALMS-side notice.
+  const slipsCsv =
+    "Slips Audit Report for 14/10/2026\n" +
+    "From,To,Slip Type,Inside/Outside,TYFCB Amount,CEU Credits,Detail\n" +
+    "E2E Slip Person,E2E Slip Target,Referral,Tier 1,,,\n";
+  r = await fetch(`${APP}/api/import/report`, {
+    method: "POST",
+    body: fd(slipsCsv, "e2e-palms-slips-w42.csv", "text/csv"),
+    headers: { ...AUTH },
+  });
+  j = await r.json();
+  check(
+    "slips import without PALMS: 200 + warning",
+    r.ok && /^No PALMS summary imported for /.test(j.warning ?? ""),
+    `${r.status} ${JSON.stringify(j).slice(0, 240)}`,
+  );
+  const htmlN3 = await (await fetch(`${APP}/report?week=${w42}`, { headers: { ...AUTH } })).text();
+  check("/report flips to the PALMS-not-imported notice", flight(htmlN3).includes("Chapter Summary PALMS not imported yet"), "");
+  const slBatch = await latestBatch("e2e-palms-slips-w42.csv");
+  const delSl = slBatch
+    ? await fetch(`${APP}/api/import/batches/${slBatch.id}`, { method: "DELETE", headers: { ...AUTH } })
+    : null;
+  check("week 42 slips batch removed (cleanup)", !!delSl?.ok, `${delSl?.status ?? "no batch"}`);
 
   // 11) the real Chapter Summary file (77 members) -> palms_stats + verdict
   const real = readFileSync("C:\\Users\\HP\\Downloads\\Chapter_Summary_PALMS_Report_05-10-2026_10-57_PM.xls");
@@ -331,11 +378,48 @@ try {
   check("/report hides the success banner (warnings only)", !dec5.includes("PALMS matches slip data"), "");
   check("/report no missing-file banner (history gap-free)", !dec5.includes("Missing slip file"), "");
   check("/report still ships its loading skeleton", dec5.includes('"skel"'), "");
+  // Client-component subtrees are not serialized into flight (only their
+  // props are), so assert the mount from the server page's JSX order —
+  // same approach as the /summary comparison-table check below.
+  const reportSrc = readFileSync(new URL("../app/report/page.tsx", import.meta.url), "utf8");
+  const dwAt = reportSrc.indexOf("<DataWarnings");
+  const palmsAt = reportSrc.indexOf("<PalmsImportPanel");
+  const cardsAt = reportSrc.indexOf('className="cards stat-cards"');
+  check(
+    "/report mounts the PALMS import panel (between DataWarnings and the stat cards)",
+    dwAt > 0 && palmsAt > dwAt && cardsAt > palmsAt,
+    `dw=${dwAt} palms=${palmsAt} cards=${cardsAt}`,
+  );
+  const panelSrc = readFileSync(new URL("../components/PalmsImportPanel.tsx", import.meta.url), "utf8");
+  const fileAt = panelSrc.indexOf('type="file"');
+  const importBtnAt = panelSrc.indexOf("onClick={() => picked && upload(picked)}");
+  check(
+    "PALMS panel is two-step: picking a file never uploads",
+    fileAt > 0 &&
+      importBtnAt > fileAt &&
+      panelSrc.slice(fileAt, importBtnAt).includes("setPicked") &&
+      !panelSrc.slice(fileAt, importBtnAt).includes("upload(") &&
+      panelSrc.includes('disabled={!picked || state.kind === "busy"}'),
+    `fileAt=${fileAt} btnAt=${importBtnAt}`,
+  );
 
   // 13b) /import ships the matching skeleton too
   const htmlImp = await (await fetch(`${APP}/import`, { headers: { ...AUTH } })).text();
   const decImp = flight(htmlImp);
   check("/import ships its loading skeleton", decImp.includes('"skel"'), "");
+  check(
+    "/import skeleton mirrors the two history tables",
+    decImp.includes("Imported Slips Audit Reports") && decImp.includes("Imported Chapter Summary PALMS"),
+    "",
+  );
+  const importPageSrc = readFileSync(new URL("../components/ImportPage.tsx", import.meta.url), "utf8");
+  check(
+    "ImportPage renders both history tables (no single 'Imported weeks' table)",
+    importPageSrc.includes('title="Imported Slips Audit Reports"') &&
+      importPageSrc.includes('title="Imported Chapter Summary PALMS"') &&
+      !importPageSrc.includes("Imported weeks"),
+    "",
+  );
 
   // 14) a mismatching Total row flips the verdict
   const membersBad = membersV1.map((row, i) =>
@@ -440,7 +524,7 @@ try {
   );
   check(
     "report export Summary mirrors the CEU card line",
-    bySec.CEU?.count === 12 && bySec.CEU?.info === "12 Members · 87 credits",
+    bySec.CEU?.count === 12 && bySec.CEU?.info === "12 Members · 87 CEU credits",
     JSON.stringify(bySec.CEU),
   );
   check(
@@ -479,6 +563,13 @@ try {
     `att=${attGone.length} stats=${(statsGone ?? []).length}`,
   );
   check("referenced PALMS batch removed from history", !(await latestBatch("e2e-palms-real-restore.xls")), "");
+  const htmlGone = await (await fetch(`${APP}/summary?week=${weekId}`, { headers: { ...AUTH } })).text();
+  const decGone = flight(htmlGone);
+  check(
+    "/summary flags the removed PALMS summary as not imported yet",
+    decGone.includes("Meeting data not imported yet in 1 meeting") && decGone.includes("Chapter Summary PALMS not imported yet"),
+    "",
+  );
   const rd404 = await fetch(`${APP}/api/import/palms?week=11111111-2222-3333-4444-555555555555`, {
     method: "DELETE",
     headers: { ...AUTH },
@@ -517,6 +608,14 @@ try {
     "final re-import leaves the baseline intact",
     r.ok && !!j.comparison && j.comparison.allMatch === true && (await attendanceRows({ bni_week_id: weekId })).length === 77,
     JSON.stringify(j.comparison),
+  );
+  // ...and with both files in place, no screen shows a not-imported-yet box.
+  const htmlEnd = await (await fetch(`${APP}/summary?week=${weekId}`, { headers: { ...AUTH } })).text();
+  const htmlEndR = await (await fetch(`${APP}/report?week=${weekId}`, { headers: { ...AUTH } })).text();
+  check(
+    "no not-imported-yet notice once both files are imported",
+    !flight(htmlEnd).includes("not imported yet") && !flight(htmlEndR).includes("not imported yet"),
+    "",
   );
 } finally {
   await cleanup();

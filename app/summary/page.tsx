@@ -7,7 +7,7 @@ import SummaryExportButtons from "@/components/SummaryExportButtons";
 import { requirePageTenant } from "@/lib/server-auth";
 import { defaultWeekId, getCachedWeekOptions } from "@/lib/server-weeks";
 import { latestImportedWeekId } from "@/lib/report-view";
-import { fetchMissingMeetingFiles } from "@/lib/data-health";
+import { fetchMissingMeetingFiles, fetchUnimportedData } from "@/lib/data-health";
 import { fetchPalmsComparisons } from "@/lib/palms-compare";
 import {
   fetchChapterSummary,
@@ -46,10 +46,11 @@ export default async function SummaryPage({
       ? `${activeWeeks.length} meetings`
       : activeWeeks.map((w) => w.label).join(" + ");
 
-  const [summary, missing, comparisons] = await Promise.all([
+  const [summary, missing, comparisons, unimported] = await Promise.all([
     fetchChapterSummary(tenantId, weekIds),
     fetchMissingMeetingFiles(tenantId),
     fetchPalmsComparisons(tenantId, weekIds),
+    fetchUnimportedData(tenantId, weekIds),
   ]);
   const colSpan = 1 + COLS.length;
   // Single-week scope with attendance → the panel can show the imported file
@@ -78,7 +79,7 @@ export default async function SummaryPage({
         </div>
       </div>
 
-      <DataWarnings missing={missing} comparisons={comparisons} />
+        <DataWarnings missing={missing} comparisons={comparisons} unimported={unimported} />
 
       <PalmsImportPanel
         removeWeekId={singleWeek && summary.hasAttendance ? singleWeek : null}
@@ -147,12 +148,6 @@ export default async function SummaryPage({
             </table>
           </div>
         </div>
-        {!summary.hasAttendance ? (
-          <p className="muted">
-            No PALMS attendance imported for this scope — upload the Chapter
-            Summary PALMS Report on the Import screen.
-          </p>
-        ) : null}
       </div>
 
       {comparisons.length > 0 ? (

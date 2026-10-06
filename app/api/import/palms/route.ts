@@ -16,8 +16,9 @@ export const maxDuration = 60;
  *
  * Replace semantics: the active tenant's `member_attendance` rows for that
  * week are replaced by the file's rows, so a re-import is always idempotent.
- * The tenant must have imported that meeting's slips first (the comparison
- * needs them, and the week must not be attendance-only).
+ * Slips are NOT required first — the two imports are independent; when the
+ * week's slips are missing the response carries a `warning` notice instead
+ * (and `comparison` is null: there is nothing to compare yet).
  * Requires tenant only — same write surface as the slips import.
  */
 export async function POST(request: Request) {
@@ -52,23 +53,7 @@ export async function POST(request: Request) {
     if (!week) {
       return Response.json(
         {
-          error: `No BNI week for ${meetingDate} — import the Slips Audit Report for that meeting first.`,
-        },
-        { status: 400 },
-      );
-    }
-    // The calendar is pre-seeded, so the week can exist without this tenant's
-    // slips — attendance-only weeks are refused (the comparison needs slips).
-    const { data: weekBatch } = await supabase
-      .from("import_batches")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .eq("bni_week_id", week.id)
-      .limit(1);
-    if (!weekBatch || weekBatch.length === 0) {
-      return Response.json(
-        {
-          error: `No slips imported for ${week.label} — import the Slips Audit Report for that meeting first.`,
+          error: `No BNI meeting week for ${meetingDate} — that date is not on the chapter's Wednesday calendar.`,
         },
         { status: 400 },
       );
@@ -173,7 +158,12 @@ export async function POST(request: Request) {
     }
 
     // Immediate verdict: PALMS's own numbers vs this week's imported slips.
+    // fetchPalmsComparisons skips weeks without imported slips, so a null
+    // comparison here means "slips not imported yet" — surfaced as a notice.
     const comparison = (await fetchPalmsComparisons(tenantId, [week.id]))[0] ?? null;
+    const warning = comparison
+      ? undefined
+      : `No slips imported for ${week.label} — import the Slips Audit Report for that meeting first.`;
 
     return Response.json({
       importedCount: imported,
@@ -181,6 +171,7 @@ export async function POST(request: Request) {
       meetingDate,
       weekLabel: week.label,
       comparison,
+      ...(warning ? { warning } : {}),
       errors: [],
     });
   } catch (e) {
