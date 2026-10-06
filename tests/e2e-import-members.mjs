@@ -93,7 +93,15 @@ async function dbSummary(weekId) {
     (n, r) => n + (r.initiated_by_is_other_chapter === true || r.met_with_is_other_chapter === true ? 1 : 2),
     0,
   );
-  return { otoWeighted, ref, tyfcb, vis, ceu, total: otoWeighted + ref + tyfcb + vis + ceu };
+  // The export Summary row for Referral mirrors the stat card: the GIVEN
+  // count only (From side home = not bold), not the raw row count.
+  const { data: refRows } = await sb
+    .from("slip_referrals")
+    .select("from_is_other_chapter")
+    .eq("tenant_id", TENANT)
+    .eq("bni_week_id", weekId);
+  const refGiven = (refRows ?? []).filter((r) => r.from_is_other_chapter !== true).length;
+  return { otoWeighted, ref, refGiven, tyfcb, vis, ceu, total: otoWeighted + ref + tyfcb + vis + ceu };
 }
 async function exportSummary(weekId) {
   const r = await fetch(`${APP}/api/report/export?week=${weekId}&tab=all&format=json`, { headers: { ...AUTH } });
@@ -246,8 +254,16 @@ const expNow = await exportSummary(weekId);
 check(
   "export summary matches DB after import",
   expNow && expNow.total === dbNow.total &&
-    JSON.stringify(expNow.rows.map((x) => x.count)) === JSON.stringify([dbNow.otoWeighted, dbNow.ref, dbNow.tyfcb, dbNow.vis, dbNow.ceu]),
+    JSON.stringify(expNow.rows.map((x) => x.count)) === JSON.stringify([dbNow.otoWeighted, dbNow.refGiven, dbNow.tyfcb, dbNow.vis, dbNow.ceu]),
   `export=${JSON.stringify(expNow?.rows)} total=${expNow?.total} db=${JSON.stringify(dbNow)}`,
+);
+check(
+  "export summary rows mirror the stat cards (referral chips + CEU member line)",
+  !!expNow &&
+    expNow.rows[1].info.startsWith("RGI ") &&
+    expNow.rows[4].info.includes("Member") &&
+    expNow.rows[4].info.includes("credits"),
+  JSON.stringify([expNow?.rows[1], expNow?.rows[4]]),
 );
 check("summary grew by the imported slips", dbNow.total > base.total, `${base.total} -> ${dbNow.total}`);
 

@@ -122,15 +122,16 @@ export async function GET(request: Request) {
       }
     }
     const filterLine = filterBits.join(" | ");
-    // Screen summary — stat-card section counts (One-to-One weighted per the
-    // owner rule) rendered ahead of the data in every format. summary.total is
-    // carried in the JSON payload for machine consumers only: the exported
-    // files carry no slips grand total.
+    // Screen summary — the stat cards rendered ahead of the data in every
+    // format: Referral shows the given count + RGI/RGO/RRI/RRO chips, CEU the
+    // distinct-member line (cardCount/cardStat, exactly what the page head
+    // shows). summary.total is carried in the JSON payload for machine
+    // consumers only: the exported files carry no slips grand total.
     const summary = {
       rows: picked.map((s) => ({
         section: s.title,
-        count: s.metricCount,
-        info: s.stat ?? s.totalLabel,
+        count: s.cardCount ?? s.metricCount,
+        info: s.cardStat ?? s.stat ?? s.totalLabel,
       })),
       total: picked.reduce((n, s) => n + s.metricCount, 0),
     };
