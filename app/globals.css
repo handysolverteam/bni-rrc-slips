@@ -666,6 +666,14 @@ button.danger:hover:not(:disabled) { background: var(--red-soft); }
 .trend-card { margin-top: 20px; }
 .trend-card .import-head { margin-bottom: 12px; }
 .trend-wrap { display: flex; flex-direction: column; gap: 14px; }
+/* Slip-type tabs + chart picker, above the legend and the graph. */
+.trend-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.trend-controls .trend-type-tabs { flex: 1 1 auto; min-width: 0; margin: 0; }
+.trend-controls .trend-chart-tabs { flex: 0 0 auto; margin: 0; gap: 6px; }
+.trend-controls .trend-chart-tabs button { padding: 5px 11px; font-size: 12.5px; letter-spacing: 0.02em; }
+.trend-controls .trend-chart-tabs button.active {
+  background: var(--ink); border-color: var(--ink); color: var(--panel); font-weight: 700;
+}
 .trend-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
 .trend-legend-item {
   display: inline-flex; align-items: center; gap: 7px;

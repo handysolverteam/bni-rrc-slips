@@ -165,7 +165,7 @@ export function ListSkeleton({
   );
 }
 
-const HOME_LEGEND = ["Slip 121", "Referrals", "TYFCB", "Visitors", "CEU"];
+const HOME_LEGEND = ["Slip 121", "Referrals", "TYFCB", "Visitors", "CEU", "Combined"];
 
 export function HomeSkeleton() {
   return (
@@ -189,6 +189,20 @@ export function HomeSkeleton() {
       <div className="card trend-card">
         <div className="import-head">
           <Bar w={330} h={20} />
+        </div>
+        <div className="trend-controls">
+          <div className="tabs trend-type-tabs">
+            {["All slips", ...HOME_LEGEND].map((l) => (
+              <span
+                key={l}
+                className="skel"
+                style={{ display: "block", width: l.length * 7 + 22, height: 33, borderRadius: 999 }}
+              />
+            ))}
+          </div>
+          <div className="tabs trend-chart-tabs">
+            <span className="skel" style={{ display: "block", width: 330, height: 27, borderRadius: 999 }} />
+          </div>
         </div>
         <div className="trend-legend">
           {HOME_LEGEND.map((l) => (

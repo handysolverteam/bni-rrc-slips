@@ -1,6 +1,8 @@
-// E2E: home dashboard — the `/` page must show all 5 slip types as weekly
-// (Wednesday) trend lines for the last 6 months, with counts that equal the
-// imported slip rows per week (0 for a week without an import).
+// E2E: home dashboard — the `/` page must show the last 6 months of weekly
+// (Wednesday) slip counts per type (counts equal the imported slip rows per
+// week, 0 for a week without an import), with slip-type tabs (All slips
+// combined + one per type) and the 7-mode chart picker (line, bar, area,
+// pie, bubble, radar, heat map) above the graph.
 //
 // Run:  node tests/e2e-dashboard.mjs   (from the repo root)
 // Ground truth is read live from Supabase, so the test stays valid as data grows.
@@ -197,6 +199,76 @@ const pageSrc = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8"
 const chartSrc = readFileSync(new URL("../components/TrendChart.tsx", import.meta.url), "utf8");
 check("page fetches trends server-side", pageSrc.includes("fetchSlipTrends") && pageSrc.includes("<TrendChart"));
 check("chart is a client SVG multi-line chart", chartSrc.includes('"use client"') && chartSrc.includes("polyline") && chartSrc.includes("viewBox"));
+
+// ---- slip-type tabs + chart picker (client state, derive from the same props)
+check(
+  "tab list = All slips + the series labels",
+  chartSrc.includes('label: "All slips"') &&
+    chartSrc.includes("...series.map((s) => ({ key: s.key, label: s.label }))"),
+);
+check(
+  "7 chart modes offered",
+  ["Line", "Bar", "Area", "Pie", "Bubble", "Radar", "Heat map"].every((l) => chartSrc.includes(`"${l}"`)),
+);
+check(
+  "defaults: All slips + line chart",
+  chartSrc.includes('useState("all")') && chartSrc.includes('useState<ChartKey>("line")'),
+);
+check(
+  "All slips adds a Combined sum series",
+  chartSrc.includes('label: "Combined"') &&
+    chartSrc.includes("series.reduce((a, s) => a + (s.counts[i] ?? 0), 0)"),
+);
+check("single type filters to that series", chartSrc.includes("series.find((s) => s.key === type)"));
+check(
+  "controls render above the graph",
+  chartSrc.indexOf('className="trend-controls"') < chartSrc.indexOf('className="trend-svg-scroll"'),
+);
+check(
+  "tabs expose selected/pressed + panel wiring",
+  chartSrc.includes('role="tab"') &&
+    chartSrc.includes("aria-selected=") &&
+    chartSrc.includes("aria-pressed=") &&
+    chartSrc.includes("aria-controls="),
+);
+check(
+  "active type tab takes its section hue",
+  chartSrc.includes('data-stat={t.key === "all" ? undefined : t.key}'),
+);
+check(
+  "line + area share the cartesian grid",
+  chartSrc.includes("renderLine(geom, weeks, view, true)") &&
+    chartSrc.includes("renderLine(geom, weeks, view, false)"),
+);
+check("area draws a filled band under the line", chartSrc.includes("fillOpacity: 0.16"));
+check("bar draws grouped rects per week", chartSrc.includes("slot * 0.72") && chartSrc.includes("<rect"));
+check("pie donut slices via arc paths", chartSrc.includes("function arcPath") && chartSrc.includes("renderPie(slices)"));
+check(
+  "pie: by slip type on All, by month on a single type",
+  chartSrc.includes("value: s.counts.reduce((a, b) => a + b, 0)") &&
+    chartSrc.includes("monthlyTotals(weeks, active.counts, months)"),
+);
+check("bubble radius scales with the count", chartSrc.includes("4 + 12 * Math.sqrt(v / max)"));
+check(
+  "radar buckets counts per month into spokes",
+  chartSrc.includes("renderRadar(weeks, view, months)") && chartSrc.includes("monthLabel(m)"),
+);
+check(
+  "heat map = weeks x series intensity grid",
+  chartSrc.includes("renderHeatmap(weeks, view)") && chartSrc.includes("fillOpacity: v === 0 ? 0.05"),
+);
+check("pie view carries a slice legend with percentages", chartSrc.includes("pct}%"));
+
+// ---- skeleton + styles ------------------------------------------------------
+const skelSrc = readFileSync(new URL("../components/Skeletons.tsx", import.meta.url), "utf8");
+check("skeleton mirrors the tab row", skelSrc.includes("trend-controls") && skelSrc.includes("trend-type-tabs"));
+check("loading flight ships the controls", dec.includes("trend-controls"));
+const cssSrc = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+check(
+  "globals styles the controls row (wraps, active picker)",
+  cssSrc.includes(".trend-controls { display: flex; flex-wrap: wrap;") &&
+    cssSrc.includes(".trend-chart-tabs button.active"),
+);
 
 console.log(results.join("\n"));
 const failed = results.filter((x) => x.startsWith("FAIL")).length;
