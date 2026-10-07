@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -28,6 +29,10 @@ const links = [
 export default function Nav() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Portal target only exists (and hydration only matches) on the client.
+  useEffect(() => setMounted(true), []);
 
   // A navigation always lands with the drawer closed.
   useEffect(() => setOpen(false), [pathname]);
@@ -72,6 +77,19 @@ export default function Nav() {
     );
   });
 
+  const panel = (
+    <>
+      <div className="nav-drawer-overlay" hidden={!open} onClick={() => setOpen(false)} />
+      <div id="nav-drawer" className={`nav-drawer${open ? " open" : ""}`} aria-hidden={!open}>
+        <nav className="nav-drawer-links">{pillLinks}</nav>
+        {/* Phone: the top-bar toggle is hidden ≤640px, so the drawer carries it. */}
+        <div className="nav-drawer-foot">
+          <ThemeToggle />
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <>
       <button
@@ -87,14 +105,10 @@ export default function Nav() {
         <span />
       </button>
       <nav className="nav-pills">{pillLinks}</nav>
-      <div className="nav-drawer-overlay" hidden={!open} onClick={() => setOpen(false)} />
-      <div id="nav-drawer" className={`nav-drawer${open ? " open" : ""}`} aria-hidden={!open}>
-        <nav className="nav-drawer-links">{pillLinks}</nav>
-        {/* Phone: the top-bar toggle is hidden ≤640px, so the drawer carries it. */}
-        <div className="nav-drawer-foot">
-          <ThemeToggle />
-        </div>
-      </div>
+      {/* The topbar carries backdrop-filter + z-index (a stacking context and a
+          containing block for fixed children), which traps the overlay/panel —
+          portal them to <body> so they layer above the page instead. */}
+      {mounted ? createPortal(panel, document.body) : null}
     </>
   );
 }

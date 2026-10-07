@@ -127,6 +127,14 @@ check(
   "Nav renders both pills and drawer links",
   navSrc.includes('className="nav-pills"') && navSrc.includes('className="nav-drawer-links"'),
 );
+check(
+  "drawer + overlay portal past the topbar stacking context",
+  navSrc.includes("createPortal(panel, document.body)"),
+);
+check(
+  "portal mounts only after hydration",
+  navSrc.includes("setMounted(true)") && navSrc.includes("mounted ? createPortal"),
+);
 
 // 10) every table source sits inside a table-scroll wrapper
 for (const f of ["../components/SlipsTable.tsx", "../components/ImportPage.tsx", "../components/PalmsComparisonTable.tsx"]) {
