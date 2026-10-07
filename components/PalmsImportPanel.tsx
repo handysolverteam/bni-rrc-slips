@@ -45,6 +45,7 @@ export default function PalmsImportPanel({
   const [picked, setPicked] = useState<File | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [open, setOpen] = useState(true);
   const router = useRouter();
 
   async function remove() {
@@ -116,8 +117,8 @@ export default function PalmsImportPanel({
     <div className="card">
       <div className="import-head">
         <h2>Chapter Summary PALMS (attendance)</h2>
-        {removeWeekId ? (
-          <div className="import-head-actions">
+        <div className="import-head-actions">
+          {removeWeekId ? (
             <button
               type="button"
               className="danger"
@@ -126,15 +127,25 @@ export default function PalmsImportPanel({
             >
               Remove PALMS summary
             </button>
-          </div>
-        ) : null}
+          ) : null}
+          <button
+            type="button"
+            className="import-toggle"
+            aria-expanded={open}
+            onClick={() => setOpen((o) => !o)}
+          >
+            {open ? "− Minimize" : "+ Import files"}
+          </button>
+        </div>
       </div>
-      {record ? (
-        <p className="muted">
-          Imported {record.filename}
-          {record.importedAt ? ` on ${new Date(record.importedAt).toLocaleString()}` : ""}
-        </p>
-      ) : null}
+      {open ? (
+        <>
+          {record ? (
+            <p className="muted">
+              Imported {record.filename}
+              {record.importedAt ? ` on ${new Date(record.importedAt).toLocaleString()}` : ""}
+            </p>
+          ) : null}
       <form>
         <label className="field">
           Chapter Summary PALMS Report (.xls / .xlsx — single meeting date)
@@ -184,6 +195,8 @@ export default function PalmsImportPanel({
         </div>
       ) : null}
       {state.kind === "err" ? <p className="preview-warn">{state.text}</p> : null}
+        </>
+      ) : null}
       {confirming && removeWeekId ? (
         <ConfirmDialog
           title="Remove PALMS summary?"

@@ -386,7 +386,7 @@ function renderBubble(g: Geom, weeks: TrendWeek[], view: TrendSeries[], max: num
     heat map is a weeks × series intensity grid. */
 export default function TrendChart({ weeks, series }: SlipTrends) {
   const [type, setType] = useState("all");
-  const [chart, setChart] = useState<ChartKey>("line");
+  const [chart, setChart] = useState<ChartKey>("bar");
 
   if (weeks.length === 0) {
     return (

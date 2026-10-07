@@ -43,7 +43,7 @@ bni-rrc-slips/
     members|referrals|one-to-ones|visitors|tyfcb|ceus|report|summary|import|chat pages (server components
                                  call getTenantContext() -> redirect /login, noAccess -> no-access screen)
   components/ImportPage.tsx     # import screen: ImportPanel (slips) + PalmsImportPanel (attendance, two-step) + TWO history tables (slips / PALMS) with per-row Delete (ConfirmDialog)
-  components/PalmsImportPanel.tsx # two-step upload (choose file -> explicit Import button) -> POST /api/import/palms; mounted on /import, /summary AND /report; on /summary also shows the imported file + Remove action
+  components/PalmsImportPanel.tsx # two-step upload (choose file -> explicit Import button) -> POST /api/import/palms; mounted on /import, /summary AND /report; collapsible head (− Minimize / + Import files, same .import-toggle as ImportPanel); on /summary also shows the imported file + Remove action
   components/DataWarnings.tsx   # server component: missing-Wednesday banner + PALMS-mismatch banner (warnings only, nothing on success)
   components/PalmsComparisonTable.tsx # metric | PALMS | Slips | status table (summary screen, at the bottom)
   components/SummaryExportButtons.tsx # xlsx/csv/pdf switch on the summary page head (PDF built in-browser from JSON)
@@ -51,7 +51,7 @@ bni-rrc-slips/
   components/SlipsTable.tsx     # shared read-only table + pagination
   components/ListShell.tsx      # shared list frame: title + count badge + optional sub line (active/inactive counts) + Active checkbox filter passed into the table's Active header cell (members list)
   components/MemberActiveToggle.tsx # checkbox in the Active column (members list only)
-  components/TrendChart.tsx  # client multi-view trend chart on the home dashboard: slip-type tabs (All = combined + the 5 types) + chart picker (line/bar/area/pie/bubble/radar/heat map) above the graph, 7 hand-rolled SVG renderers + legend from one { weeks, series } prop
+  components/TrendChart.tsx  # client multi-view trend chart on the home dashboard: slip-type tabs (All = combined + the 5 types) + chart picker (line/bar/area/pie/bubble/radar/heat map, bar = default) above the graph, 7 hand-rolled SVG renderers + legend from one { weeks, series } prop
 ```
 
 ## Data flow
@@ -71,7 +71,7 @@ bni-rrc-slips/
 
 **Data health** — on every `/report` and `/summary` render: (1) `lib/data-health.ts` lists Wednesdays from the tenant's first imported meeting to today without an imported slips file → amber banner; (2) `lib/palms-compare.ts` compares each selected week's stored `palms_stats` (PALMS `Total` row) with its live slip counts → warning banner listing week/metric/both values (weeks without imported slips are skipped — nothing to compare); (3) `lib/data-health.ts: fetchUnimportedData` lists each week in scope missing its slips file and/or its PALMS summary → red **"… not imported yet"** banner (`components/DataWarnings.tsx`, warnings only — nothing renders when everything is imported). `/summary` renders the side-by-side `PalmsComparisonTable` at the bottom of the page (below the member table); `app/import/loading.tsx` and `app/summary/loading.tsx` show the matching `ImportSkeleton` / `SummarySkeleton` during route navigation.
 
-**Home dashboard** — `/` runs `lib/trends.ts: fetchSlipTrends` server-side (last 6 months of Wednesdays from the global calendar + per-table slip counts) and renders `components/TrendChart.tsx` (client) with `{ weeks, series }` props; the chart keeps `type` (All combined | one slip type) and `chart` (line, bar, area, pie, bubble, radar, heat map) as its own client state in a `.tabs-row` above the graph — every view derives from the same props, so switching tabs/chart types never re-fetches; the old section-card grid and note card are gone — the top nav is the entry point to every list screen.
+**Home dashboard** — `/` runs `lib/trends.ts: fetchSlipTrends` server-side (last 6 months of Wednesdays from the global calendar + per-table slip counts) and renders `components/TrendChart.tsx` (client) with `{ weeks, series }` props; the chart keeps `type` (All combined | one slip type) and `chart` (line, bar, area, pie, bubble, radar, heat map — **bar is the default**) as its own client state in a `.tabs-row` above the graph — every view derives from the same props, so switching tabs/chart types never re-fetches; the old section-card grid and note card are gone — the top nav is the entry point to every list screen.
 
 **Active/inactive member** — `members.is_inactive` (default false = active; import never sets it). Every user gets an `Active` checkbox column before Name → optimistic flip → `PATCH /api/members/{id}` (tenant-scoped) → `router.refresh()`. `/members` + `GET /api/members` return inactive rows to everyone (no role filter). The `/members` header also shows the **active/inactive counts** (unfiltered) and an **Active** checkbox filter (`?active=1`) via optional `sub` / `activeToggle` props on `ListShell`. Flag flips never touch slips/exports/chat.
 

@@ -351,6 +351,8 @@ a { color: var(--accent-ink); }
 }
 /* Breathing room between stacked cards (import panel, history, controls). */
 .card + .card { margin-top: 18px; }
+/* A stacked card followed by a card grid (report: PALMS panel -> stat cards). */
+.card + .cards { margin-top: 18px; }
 
 .table-card {
   background: var(--card);
@@ -1226,6 +1228,9 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   /* Chart scrolls at its full 960px width; the skeleton mirrors it. */
   .trend-svg-scroll > .trend-svg { width: 960px; }
   .trend-svg-scroll > .trend-skel { width: 960px; }
+  /* The 7 chart-type pills (~430px) must shrink + wrap inside the card
+     instead of widening the document (page-level horizontal scroll). */
+  .trend-controls .trend-chart-tabs { flex: 1 1 auto; min-width: 0; }
 
   .dialog-actions { flex-wrap: wrap; }
 

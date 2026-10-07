@@ -402,6 +402,20 @@ try {
       panelSrc.includes('disabled={!picked || state.kind === "busy"}'),
     `fileAt=${fileAt} btnAt=${importBtnAt}`,
   );
+  // Collapse/expand: same import-toggle pattern as ImportPanel (body hidden
+  // when collapsed, Remove action + dialog stay reachable from the head).
+  check(
+    "PALMS panel collapses via a − Minimize / + Import files toggle",
+    panelSrc.includes('className="import-toggle"') &&
+      panelSrc.includes("aria-expanded={open}") &&
+      panelSrc.includes('useState(true)') &&
+      panelSrc.includes('{open ? "− Minimize" : "+ Import files"}'),
+    "",
+  );
+  const skelMirror = readFileSync(new URL("../components/Skeletons.tsx", import.meta.url), "utf8").includes(
+    'PanelSkeleton title="Chapter Summary PALMS (attendance)" toggle="− Minimize"',
+  );
+  check("PALMS skeleton mirrors the toggle", skelMirror, "");
 
   // 13b) /import ships the matching skeleton too
   const htmlImp = await (await fetch(`${APP}/import`, { headers: { ...AUTH } })).text();

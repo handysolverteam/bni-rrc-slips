@@ -92,7 +92,7 @@ export default function FilterBar({
           options={weeks.map((w) => ({ value: w.id, label: w.label }))}
           placeholder="All weeks"
           allLabel="All weeks"
-          showClear={false}
+          showClear={!!weekId && weekId !== "all"}
           multiple={multiSelect}
           onChange={(v) => go(v || "all")}
         />

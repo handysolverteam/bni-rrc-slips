@@ -211,8 +211,8 @@ check(
   ["Line", "Bar", "Area", "Pie", "Bubble", "Radar", "Heat map"].every((l) => chartSrc.includes(`"${l}"`)),
 );
 check(
-  "defaults: All slips + line chart",
-  chartSrc.includes('useState("all")') && chartSrc.includes('useState<ChartKey>("line")'),
+  "defaults: All slips + bar chart",
+  chartSrc.includes('useState("all")') && chartSrc.includes('useState<ChartKey>("bar")'),
 );
 check(
   "All slips adds a Combined sum series",

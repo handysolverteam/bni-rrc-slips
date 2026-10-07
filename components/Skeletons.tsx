@@ -415,7 +415,7 @@ export function ReportSkeleton() {
       </div>
 
       <div className="card">
-        <PanelSkeleton title="Chapter Summary PALMS (attendance)" />
+        <PanelSkeleton title="Chapter Summary PALMS (attendance)" toggle="− Minimize" />
       </div>
 
       <div className="cards stat-cards">
@@ -582,7 +582,7 @@ export function ImportSkeleton() {
       </div>
 
       <div className="card">
-        <PanelSkeleton title="Chapter Summary PALMS (attendance)" />
+        <PanelSkeleton title="Chapter Summary PALMS (attendance)" toggle="− Minimize" />
       </div>
 
       <ImportHistorySkeleton heading="Imported Slips Audit Reports" rows={6} />
@@ -615,7 +615,7 @@ export function SummarySkeleton() {
       </div>
 
       <div className="card">
-        <PanelSkeleton title="Chapter Summary PALMS (attendance)" />
+        <PanelSkeleton title="Chapter Summary PALMS (attendance)" toggle="− Minimize" />
       </div>
 
       <div className="card report-controls">

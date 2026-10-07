@@ -65,6 +65,7 @@ for (const [name, needle] of [
 for (const [name, needle] of [
   ["phone pins chart SVG to 960px", ".trend-svg-scroll > .trend-svg { width: 960px; }"],
   ["phone pins chart skeleton to 960px", ".trend-svg-scroll > .trend-skel { width: 960px; }"],
+  ["phone lets the chart-type pills wrap (no page overflow)", ".trend-controls .trend-chart-tabs { flex: 1 1 auto; min-width: 0; }"],
 ]) check(name, !!phone && phone.includes(needle), needle);
 
 // 7) base styles: the scroll wrapper exists (desktop = no-op overflow)
@@ -161,7 +162,16 @@ for (const f of ["../components/SlipsTable.tsx", "../components/ImportPage.tsx",
   check("built CSS ships the 640px block", flat.includes("@media(max-width:640px)"));
   check("built CSS ships the 1024px block", flat.includes("@media(max-width:1024px)"));
   check("built CSS ships the trend scroll wrapper + 960px pin", flat.includes(".trend-svg-scroll") && flat.includes("width:960px"));
+  check("built CSS ships the card-grid gap", flat.includes(".card+.cards") && flat.includes("margin-top:18px"));
 }
+
+// 12) stacked cards never touch + the week box can deselect all weeks
+check(".card + .cards gap (report: PALMS panel -> stat cards)", css.includes(".card + .cards { margin-top: 18px; }"));
+const filterSrc = read("../components/FilterBar.tsx");
+check(
+  "week box shows its clear (✕) button only for a real selection",
+  filterSrc.includes('showClear={!!weekId && weekId !== "all"}'),
+);
 
 console.log(results.join("\n"));
 const failed = results.filter((x) => x.startsWith("FAIL")).length;
