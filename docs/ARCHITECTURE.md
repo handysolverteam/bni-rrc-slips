@@ -23,6 +23,7 @@ bni-rrc-slips/
     report-view.ts       # fetchReportSections(tenantId, ...) — all report/export queries
     summary-view.ts      # fetchChapterSummary(tenantId, weekIds) — member-wise attendance + slip metrics;
                          # SUMMARY_COLS + summaryCell shared by the screen and the summary export
+    trends.ts            # fetchSlipTrends(tenantId, months = 6) — weekly (Wednesday) slip counts per type, home dashboard
     list-filters.ts lists.ts distinct.ts server-weeks.ts  # every query takes/uses tenantId
     member-chapters.ts   # resolveHomeChapter(tenant) — home_chapter_name ?? env (default tenant only) ?? tenant.name
     chat/snapshot.ts     # getSlipsData(tenantId) — per-tenant snapshot, cache key includes tenant_id
@@ -48,8 +49,9 @@ bni-rrc-slips/
   components/SummaryExportButtons.tsx # xlsx/csv/pdf switch on the summary page head (PDF built in-browser from JSON)
   components/TenantSwitcher.tsx # chapter switcher in the top nav (GET/POST /api/tenant)
   components/SlipsTable.tsx     # shared read-only table + pagination
-  components/ListShell.tsx      # shared list frame: title + count badge + optional sub line (active/inactive counts) + Active checkbox filter (members list)
+  components/ListShell.tsx      # shared list frame: title + count badge + optional sub line (active/inactive counts) + Active checkbox filter passed into the table's Active header cell (members list)
   components/MemberActiveToggle.tsx # checkbox in the Active column (members list only)
+  components/TrendChart.tsx  # client SVG multi-line trend chart (6-month weekly Wednesday points) on the home dashboard
 ```
 
 ## Data flow
@@ -69,6 +71,8 @@ bni-rrc-slips/
 
 **Data health** — on every `/report` and `/summary` render: (1) `lib/data-health.ts` lists Wednesdays from the tenant's first imported meeting to today without an imported slips file → amber banner; (2) `lib/palms-compare.ts` compares each selected week's stored `palms_stats` (PALMS `Total` row) with its live slip counts → warning banner listing week/metric/both values (weeks without imported slips are skipped — nothing to compare); (3) `lib/data-health.ts: fetchUnimportedData` lists each week in scope missing its slips file and/or its PALMS summary → red **"… not imported yet"** banner (`components/DataWarnings.tsx`, warnings only — nothing renders when everything is imported). `/summary` renders the side-by-side `PalmsComparisonTable` at the bottom of the page (below the member table); `app/import/loading.tsx` and `app/summary/loading.tsx` show the matching `ImportSkeleton` / `SummarySkeleton` during route navigation.
 
+**Home dashboard** — `/` runs `lib/trends.ts: fetchSlipTrends` server-side (last 6 months of Wednesdays from the global calendar + per-table slip counts) and renders `components/TrendChart.tsx` (client) with `{ weeks, series }` props; the old section-card grid and note card are gone — the top nav is the entry point to every list screen.
+
 **Active/inactive member** — `members.is_inactive` (default false = active; import never sets it). Every user gets an `Active` checkbox column before Name → optimistic flip → `PATCH /api/members/{id}` (tenant-scoped) → `router.refresh()`. `/members` + `GET /api/members` return inactive rows to everyone (no role filter). The `/members` header also shows the **active/inactive counts** (unfiltered) and an **Active** checkbox filter (`?active=1`) via optional `sub` / `activeToggle` props on `ListShell`. Flag flips never touch slips/exports/chat.
 
 **Import history** — `GET /api/import/batches` returns each batch with a derived `kind` (`slips` | `palms`: linked to attendance/stats, else filename fallback); `components/ImportPage.tsx` renders **two tables**, one per kind, each with its own date/week filters and per-row Delete.
@@ -80,6 +84,7 @@ bni-rrc-slips/
 **WhatsApp share** — pure client-side, no API route: `lib/whatsapp.ts` builds `https://wa.me/?text=<encoded>` from `whatsappShareUrl()` and formats the transcript with `buildChatShare()` → `{ text, total, included }` (greeting dropped, `You:`/`Slips AI:` per turn, `[file: …]` for attachments, and past the 20 000-char URL budget the oldest turns dropped so `included < total`). `ChatBox`'s toolbar button "Share chat" sends the whole transcript and, whenever `included < total`, states the `N of M` count in the toolbar; the per-message ⋮ menu's "Share to WhatsApp" sends that message only — both `window.open(url, "_blank")` in a user gesture, so WhatsApp opens prefilled and the app itself never transmits anything.
 
 ## Decisions (multi-tenant MVP)
+- **Responsive via CSS only**: one stylesheet (`app/globals.css`) with two media queries — `≤1024px` (tablet/iPad) and `≤640px` (phone) — instead of a viewport library or per-page layouts. Flexbox wrapping already covers toolbars/filters/export switches; tables scroll inside the existing `.table-scroll` (sticky `nowrap` headers make them overflow naturally); the only structural addition is a `.trend-svg-scroll` wrapper around the home chart SVG (and its skeleton twin) that pins the chart to its fixed 960px viewBox width on phones so the axis labels stay readable. Skeletons share the real CSS classes, so every responsive rule applies to loading states automatically.
 - **Tenant = chapter**, many-to-many memberships + switcher. **Open sign-in**: the Home Chapter is auto-granted on first sign-in (`lib/tenant-grant.ts`, open to every Google account, no admin UI); other chapters are provisioned by SQL insert per tenant.
 - **No roles** (removed 2026-10-05, re-appliable later): every member of a tenant can import, browse, export, toggle members and chat — the only server-side gates are *authenticated* (`bni_session` cookie) and *member of this tenant*, both resolved by `getTenantContext()`. Migration 005 stays applied and `tenant_members.role` is unused, so re-adding roles later is pure code (no new DDL).
 - **Per-user chats via `chat_sessions.owner_uid`**: ownership is checked in the API layer next to the tenant filter (list/create/rename/delete/messages/persist), not in RLS. Chats stay tenant-scoped too (owner scoping never replaces tenant scoping). Plain service-key callers (tests/scripts) have no uid → root view of the tenant's sessions; a service caller can pass `x-user-uid` to act as a specific member (also how the chat e2e test exercises owner scoping without a live Firebase session).

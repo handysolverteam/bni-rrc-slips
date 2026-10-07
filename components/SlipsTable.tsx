@@ -50,6 +50,7 @@ export default function SlipsTable({
   filterOptions = {},
   emptyHint = "No records yet — import a Report XLS to get started.",
   loading = false,
+  activeToggle,
 }: {
   columns: Col[];
   rows: Record<string, unknown>[];
@@ -58,6 +59,8 @@ export default function SlipsTable({
   filterOptions?: Record<string, ComboOption[]>;
   emptyHint?: string;
   loading?: boolean;
+  /** Boolean URL filter shown as a checkbox inside its column's header cell. */
+  activeToggle?: { param: string; label: string; checked: boolean; onChange: (checked: boolean) => void };
 }) {
   // Same row height the real cells produce: pills (Inside/Outside) render
   // taller than plain text, so shimmer cells must match per table.
@@ -71,7 +74,16 @@ export default function SlipsTable({
             <tr>
               {columns.map((c) => (
                 <th key={c.key}>
-                  {filterable.includes(c.key) ? (
+                  {activeToggle && c.key === activeToggle.param ? (
+                    <label className="check-inline">
+                      <input
+                        type="checkbox"
+                        checked={activeToggle.checked}
+                        onChange={(e) => activeToggle.onChange(e.target.checked)}
+                      />
+                      {c.label}
+                    </label>
+                  ) : filterable.includes(c.key) ? (
                     <ColumnFilter
                       paramKey={`c_${c.key}`}
                       defaultValue={initialFilters[c.key] ?? ""}

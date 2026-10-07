@@ -11,7 +11,7 @@ export default function UserMenu() {
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: "auto" }}>
-      <span className="muted" style={{ fontSize: 13, whiteSpace: "nowrap" }}>
+      <span className="muted user-label" style={{ fontSize: 13, whiteSpace: "nowrap" }}>
         {label}
       </span>
       <button type="button" onClick={() => void logout()} style={{ fontSize: 13, padding: "6px 12px" }}>

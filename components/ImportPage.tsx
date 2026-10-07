@@ -56,6 +56,9 @@ function HistoryTable({
   batches: Batch[];
   onAskDelete: (id: string) => void;
 }) {
+  // Collapse/expand, same pattern (and button) as the import panels above:
+  // header always visible, table hidden while minimized.
+  const [open, setOpen] = useState(true);
   const [openSkip, setOpenSkip] = useState<string | null>(null);
   // Header filters (client-side, like the other tables' column filters):
   // "Imported On" picks a single day, "Week" multi-selects week labels.
@@ -83,8 +86,18 @@ function HistoryTable({
 
   return (
     <div className="card history-card">
-      <h2>{title}</h2>
-      {batches.length === 0 ? (
+      <div className="import-head">
+        <h2>{title}</h2>
+        <button
+          type="button"
+          className="import-toggle"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? "− Minimize" : "+ Show table"}
+        </button>
+      </div>
+      {!open ? null : batches.length === 0 ? (
         <p className="muted">{emptyText}</p>
       ) : (
         <div className="table-card">

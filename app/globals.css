@@ -322,6 +322,9 @@ table.grid tfoot tr.sum-row td {
 
 /* ---------- Toolbar / forms ---------- */
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+/* Boolean URL filter (Active) shown inside its table header cell. */
+.check-inline { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.check-inline input { margin: 0; }
 .search-form { display: flex; gap: 8px; flex: 1; min-width: 220px; max-width: 420px; }
 .search-form input { flex: 1; }
 .filter-form { display: flex; gap: 8px; flex: 1; flex-wrap: wrap; align-items: center; }
@@ -467,6 +470,36 @@ button.danger:hover:not(:disabled) { background: var(--red-soft); }
   background: var(--sec-soft); color: var(--sec);
 }
 .note-card { margin-top: 20px; }
+
+/* ---------- Home trend dashboard ---------- */
+.trend-card { margin-top: 20px; }
+.trend-card .import-head { margin-bottom: 12px; }
+.trend-wrap { display: flex; flex-direction: column; gap: 14px; }
+.trend-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+.trend-legend-item {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 13px; font-weight: 600; color: var(--ink, #26221c);
+}
+.trend-legend-item .trend-total {
+  font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.trend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.trend-svg { display: block; width: 100%; height: auto; }
+/* Scroll container: on phones the chart stays at its full 960px viewBox
+   width inside here, so the axis labels never shrink below legibility. */
+.trend-svg-scroll {
+  overflow-x: auto; scrollbar-width: thin; scrollbar-color: #cfc6b0 transparent;
+}
+.trend-svg-scroll::-webkit-scrollbar { height: 8px; }
+.trend-svg-scroll::-webkit-scrollbar-thumb { background: #d8cfba; border-radius: 8px; }
+.trend-svg-scroll::-webkit-scrollbar-track { background: transparent; }
+.trend-grid { stroke: var(--line, #e4ddd0); stroke-width: 1; }
+.trend-axis { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.trend-skel {
+  display: flex; flex-direction: column; justify-content: space-between;
+  aspect-ratio: 960 / 340; padding: 16px 0 32px;
+}
+.trend-skel-row { display: flex; align-items: center; gap: 12px; }
 
 /* ---------- Toast ---------- */
 .toast-stack { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
@@ -766,6 +799,7 @@ button.danger:hover:not(:disabled) { background: var(--red-soft); }
 .preview-warn { color: #8f2b1f; font-size: 13px; font-weight: 600; }
 .preview-note { color: #8a6d1a; font-size: 13px; font-weight: 600; }
 .history-card h2 { margin: 0 0 12px; font-size: 18px; }
+.history-card .import-head { margin-bottom: 12px; }
 .card > h2 { margin: 0 0 8px; font-size: 18px; }
 /* Collapsible import panel header. */
 .import-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -945,10 +979,59 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .dialog p { margin: 0 0 16px; line-height: 1.5; }
 .dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
 
+/* ---------- Responsive: tablet / iPad (≤1024px) ---------- */
+@media (max-width: 1024px) {
+  .wrap { padding: 24px 18px 64px; }
+  .page-head h1 { font-size: 25px; }
+  .hero { padding: 26px 22px; }
+  .report-controls-row { gap: 14px; }
+  .report-controls-row .report-actions { padding-left: 14px; }
+  .chat-stack { max-width: 90%; }
+}
+
+/* ---------- Responsive: phone (≤640px) ---------- */
 @media (max-width: 640px) {
+  /* Top bar: badge-only brand, scrolling nav, compact chapter/user controls. */
+  .topbar { gap: 10px; padding: 0 12px; }
+  .brand-name { display: none; }
+  .user-label { display: none; }
+  .tenant-switcher, .tenant-switcher.single { max-width: 110px; }
+  .tenant-switcher.single {
+    display: inline-block; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; vertical-align: middle;
+  }
+  .topbar nav a { padding: 10px 11px; }
+
   .wrap { padding: 18px 12px 60px; }
+  .page-head h1 { font-size: 22px; }
   .hero h1 { font-size: 24px; }
-  .topbar { padding: 0 12px; }
+  .card:not(.chat-card) { padding: 16px; }
+  .section-card { padding: 16px; }
+
+  /* Filter rows stack full-width instead of the desktop min-width combos. */
+  .search-form { min-width: 0; }
+  .filter-form .combo { min-width: 0; }
+  .filter-form input[name="q"] { min-width: 0; }
+  .report-controls-row { gap: 12px; }
+  .report-controls-row .filter-form { width: 100%; }
+  .report-controls-row .filter-form .combo { min-width: 0; width: 100%; }
+  .report-controls-row .report-actions { padding-left: 0; border-left: none; }
+
+  /* iOS Safari zooms on focus for any font under 16px. */
+  input, select, textarea, .combo-input, .filter-form .combo-input, .chat-input textarea { font-size: 16px; }
+  .col-filter-date { width: 132px; }
+
+  /* Chart scrolls at its full 960px width; the skeleton mirrors it. */
+  .trend-svg-scroll > .trend-svg { width: 960px; }
+  .trend-svg-scroll > .trend-skel { width: 960px; }
+
+  .dialog-actions { flex-wrap: wrap; }
+
+  .chat-toolbar { flex-wrap: wrap; gap: 6px; }
+  .chat-stack { max-width: 92%; }
+  .chat-log { padding: 12px 10px; }
+  .chat-maximized { inset: 6px; }
+
   .toast { left: 12px; right: 12px; max-width: none; }
 }
 

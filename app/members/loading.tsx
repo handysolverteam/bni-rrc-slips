@@ -9,6 +9,7 @@ export default function Loading() {
       totalPages={7}
       badgeW={57}
       columns={[
+        { key: "active", label: "Active" },
         { key: "name", label: "Name" },
         { key: "chapter", label: "Chapter" },
         { key: "category", label: "Category" },

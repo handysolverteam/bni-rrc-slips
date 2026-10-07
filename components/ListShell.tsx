@@ -50,7 +50,7 @@ export default function ListShell({
   hideWeekBar?: boolean;
   /** Extra line under the title (e.g. the active/inactive counts). */
   sub?: string;
-  /** Optional boolean URL filter rendered as a checkbox in the toolbar. */
+  /** Optional boolean URL filter rendered as a checkbox in its column's header cell. */
   activeToggle?: ActiveToggle;
 }) {
   const router = useRouter();
@@ -97,22 +97,6 @@ export default function ListShell({
       </div>
 
       <div className="toolbar">
-        {activeToggle ? (
-          <label className="check-inline">
-            <input
-              type="checkbox"
-              checked={activeToggle.checked}
-              onChange={(e) => {
-                const params = new URLSearchParams(search.toString());
-                if (e.target.checked) params.set(activeToggle.param, "1");
-                else params.delete(activeToggle.param);
-                params.delete("page");
-                go(`${basePath}?${params.toString()}`);
-              }}
-            />
-            {activeToggle.label}
-          </label>
-        ) : null}
         <FilterBar
           basePath={basePath}
           q={q}
@@ -136,6 +120,20 @@ export default function ListShell({
           initialFilters={columnFilters}
           filterOptions={filterOptions}
           loading={isPending}
+          activeToggle={
+            activeToggle
+              ? {
+                  ...activeToggle,
+                  onChange: (checked: boolean) => {
+                    const params = new URLSearchParams(search.toString());
+                    if (checked) params.set(activeToggle.param, "1");
+                    else params.delete(activeToggle.param);
+                    params.delete("page");
+                    go(`${basePath}?${params.toString()}`);
+                  },
+                }
+              : undefined
+          }
         />
       </div>
 

@@ -165,14 +165,7 @@ export function ListSkeleton({
   );
 }
 
-const HOME_SECTIONS = [
-  { href: "/members", label: "Bni Member", kind: "members", numW: 48 },
-  { href: "/referrals", label: "Slip Referrals", kind: "referral", numW: 58 },
-  { href: "/one-to-ones", label: "Slip 121", kind: "one-to-one", numW: 58 },
-  { href: "/visitors", label: "Slip Visitors", kind: "visitor", numW: 40 },
-  { href: "/tyfcb", label: "Slip TYFCB", kind: "tyfcb", numW: 58 },
-  { href: "/ceus", label: "Slip CEU", kind: "ceu", numW: 48 },
-];
+const HOME_LEGEND = ["Slip 121", "Referrals", "TYFCB", "Visitors", "CEU"];
 
 export function HomeSkeleton() {
   return (
@@ -193,29 +186,29 @@ export function HomeSkeleton() {
         </div>
       </div>
 
-      <div className="cards">
-        {HOME_SECTIONS.map((s) => (
-          <Link
-            key={s.href}
-            href={s.href}
-            className="section-card"
-            data-stat={s.kind}
-          >
-            <div className="num">
-              <Bar w={s.numW} h={35} />
-            </div>
-            <div className="label">{s.label}</div>
-            <div className="go">Open →</div>
-          </Link>
-        ))}
-      </div>
-
-      <div className="card note-card">
-        <p className="muted" style={{ margin: 0 }}>
-          Note: bold formatting in Excel cannot be read by the current parser. All
-          names are stored as same-chapter members; Detail is stored as Other
-          Member&apos;s Chapter text.
-        </p>
+      <div className="card trend-card">
+        <div className="import-head">
+          <Bar w={330} h={20} />
+        </div>
+        <div className="trend-legend">
+          {HOME_LEGEND.map((l) => (
+            <span key={l} className="trend-legend-item">
+              <span className="trend-dot" />
+              <span className="skel" style={{ display: "block", width: l.length * 7, height: 12, borderRadius: 5 }} />
+              <span className="skel" style={{ display: "block", width: 26, height: 12, borderRadius: 5 }} />
+            </span>
+          ))}
+        </div>
+        <div className="trend-svg-scroll">
+          <div className="trend-skel">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} className="trend-skel-row">
+                <span className="skel" style={{ display: "block", width: 26, height: 11, borderRadius: 5 }} />
+                <Bar h={16} />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -407,6 +400,10 @@ export function ReportSkeleton() {
         </div>
       </div>
 
+      <div className="card">
+        <PanelSkeleton title="Chapter Summary PALMS (attendance)" />
+      </div>
+
       <div className="cards stat-cards">
         {REPORT_SECTIONS.map((s) => (
           <div key={s.key} className="section-card" data-stat={s.key}>
@@ -505,6 +502,9 @@ function PanelSkeleton({ title, toggle }: { title: string; toggle?: string }) {
         <Bar w={430} h={15} r={4} />
         <span className="skel" style={{ display: "block", width: "100%", height: 38, borderRadius: 5, marginTop: 6 }} />
       </label>
+      <button type="button" className="primary btn-block" disabled>
+        Import
+      </button>
     </>
   );
 }
