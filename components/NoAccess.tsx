@@ -23,7 +23,7 @@ on conflict do nothing;`;
         <p style={{ fontSize: 13, marginBottom: 4 }}>
           <strong>Your user id</strong>
         </p>
-        <code style={{ display: "block", background: "#f3eee2", padding: "8px 10px", borderRadius: 6, marginBottom: 16, wordBreak: "break-all" }}>
+        <code style={{ display: "block", background: "var(--chip)", padding: "8px 10px", borderRadius: 6, marginBottom: 16, wordBreak: "break-all" }}>
           {uid}
         </code>
         <p style={{ fontSize: 13, marginBottom: 4 }}>
@@ -31,7 +31,7 @@ on conflict do nothing;`;
         </p>
         <pre
           style={{
-            background: "#f3eee2",
+            background: "var(--chip)",
             padding: "10px 12px",
             borderRadius: 6,
             fontSize: 13,

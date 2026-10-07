@@ -3,13 +3,16 @@
 import Link from "next/link";
 import type { SlipTrends } from "@/lib/trends";
 
-/** Same section colours as the app's `data-stat` palette. */
+/** Same section colours as the app's `data-stat` palette — consumed as CSS
+    variables, so the lines/legend dots flip with the dark/light theme live
+    (no re-render). The `*-ink` vars are the hues tuned to read on app
+    surfaces: identical to the raw hues in light, brightened in dark. */
 const COLORS: Record<string, string> = {
-  "one-to-one": "#d35400",
-  referral: "#2e8b57",
-  tyfcb: "#b8860b",
-  visitor: "#2f6fb0",
-  ceu: "#6a4fc7",
+  "one-to-one": "var(--orange-ink)",
+  referral: "var(--green-ink)",
+  tyfcb: "var(--gold-ink)",
+  visitor: "var(--blue-ink)",
+  ceu: "var(--purple-ink)",
 };
 
 const W = 960;
@@ -61,7 +64,7 @@ export default function TrendChart({ weeks, series }: SlipTrends) {
           const total = s.counts.reduce((a, b) => a + b, 0);
           return (
             <span key={s.key} className="trend-legend-item">
-              <span className="trend-dot" style={{ background: COLORS[s.key] ?? "#555" }} />
+              <span className="trend-dot" style={{ background: COLORS[s.key] ?? "var(--muted)" }} />
               {s.label}
               <span className="trend-total">{total.toLocaleString("en-IN")}</span>
             </span>
@@ -91,18 +94,18 @@ export default function TrendChart({ weeks, series }: SlipTrends) {
           ) : null,
         )}
         {series.map((s) => {
-          const color = COLORS[s.key] ?? "#555";
+          const color = COLORS[s.key] ?? "var(--muted)";
           return (
             <g key={s.key}>
               <polyline
                 fill="none"
-                stroke={color}
+                style={{ stroke: color }}
                 strokeWidth={2}
                 strokeLinejoin="round"
                 points={s.counts.map((v, i) => `${x(i)},${y(v)}`).join(" ")}
               />
               {s.counts.map((v, i) => (
-                <circle key={i} cx={x(i)} cy={y(v)} r={3} fill={color}>
+                <circle key={i} cx={x(i)} cy={y(v)} r={3} style={{ fill: color }}>
                   <title>{`${s.label} — ${dayLabel(weeks[i].date)}: ${v}`}</title>
                 </circle>
               ))}

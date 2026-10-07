@@ -99,6 +99,35 @@ check(
 const userSrc = read("../components/UserMenu.tsx");
 check("UserMenu label carries user-label class", userSrc.includes('className="muted user-label"'));
 
+// 9b) phone nav drawer: toggle in the bar, slide-in panel, desktop guard
+check("phone shows hamburger toggle", !!phone && phone.includes(".nav-toggle { display: inline-flex; }"));
+check("phone hides inline nav pills", !!phone && phone.includes(".topbar .nav-pills { display: none; }"));
+const desktopGuard = extractMedia(css, "min-width: 641px");
+check(
+  "desktop guard hides drawer/toggle/overlay",
+  !!desktopGuard && desktopGuard.includes(".nav-toggle, .nav-drawer, .nav-drawer-overlay { display: none; }"),
+);
+check(
+  "drawer panel + open state styled",
+  css.includes(".nav-drawer {") && css.includes(".nav-drawer.open { transform: none; visibility: visible; }"),
+);
+check("drawer overlay + hamburger styled", css.includes(".nav-drawer-overlay {") && css.includes(".nav-toggle {"));
+
+const navSrc = read("../components/Nav.tsx");
+check(
+  "Nav toggle has aria wiring",
+  navSrc.includes('className="nav-toggle"') && navSrc.includes("aria-expanded") && navSrc.includes('aria-controls="nav-drawer"'),
+);
+check(
+  "drawer closes on Escape and route change",
+  navSrc.includes('"Escape"') && navSrc.includes("setOpen(false), [pathname]"),
+);
+check("drawer locks body scroll while open", navSrc.includes('document.body.style.overflow = "hidden"'));
+check(
+  "Nav renders both pills and drawer links",
+  navSrc.includes('className="nav-pills"') && navSrc.includes('className="nav-drawer-links"'),
+);
+
 // 10) every table source sits inside a table-scroll wrapper
 for (const f of ["../components/SlipsTable.tsx", "../components/ImportPage.tsx", "../components/PalmsComparisonTable.tsx"]) {
   const src = read(f);

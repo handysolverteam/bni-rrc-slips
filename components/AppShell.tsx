@@ -6,6 +6,7 @@ import { signInWithCustomToken } from "firebase/auth";
 import Nav from "@/components/Nav";
 import NoAccess from "@/components/NoAccess";
 import TenantSwitcher from "@/components/TenantSwitcher";
+import ThemeToggle from "@/components/ThemeToggle";
 import UserMenu from "@/components/UserMenu";
 import { useAuth } from "@/context/AuthContext";
 import { firebaseAuth, signOutFirebase } from "@/lib/firebase/client";
@@ -301,6 +302,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         </a>
         <Nav />
         <TenantSwitcher tenants={tenants} activeId={activeTenant?.id ?? null} />
+        <ThemeToggle />
         <UserMenu />
       </header>
       <main className="wrap">{children}</main>

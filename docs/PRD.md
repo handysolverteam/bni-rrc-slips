@@ -59,11 +59,17 @@ Source columns: `From | To | Slip Type | Inside/Outside | TYFCB | CEU Credits | 
 
 ## Responsive layout (mobile + tablet)
 Every screen stays usable on a phone (≤640px) and an iPad (≤1024px) with **no page-level horizontal scrolling**:
-- Top bar: the BNI badge + **scrolling nav** stay; on phones the brand text and user name collapse, the chapter switcher is capped, so all 11 links remain reachable by swipe.
+- Top bar: on tablets the BNI badge + scrolling link pills stay; on phones the pills are replaced by a **hamburger drawer** — tap the ☰ button to slide the menu in (close by tapping a link, tapping the overlay, pressing Escape, or on any navigation; the drawer also shuts itself if the viewport grows back to desktop width). The chapter switcher and Sign out stay visible in the bar.
 - Toolbars, filter forms, export switches and dialogs **wrap to multiple lines**; the week/filter combos go full width instead of their desktop min-widths.
 - Data tables scroll **horizontally inside their own card** (sticky headers), and the home trend chart scrolls inside its card at full width so the axis labels stay legible instead of shrinking to unreadable.
 - Skeletons mirror the real layout (same CSS classes), so loading states are responsive too.
 - Inputs render at 16px on phones so iOS Safari does not zoom on focus.
+
+## Dark / light theme
+Every screen supports a **light** and a **dark** theme (nav, tables, chat, dialogs, skeletons, trend chart):
+- Resolution: a tiny inline script in the layout reads the stored choice (`localStorage["bni-theme"]`) and falls back to the OS preference (`prefers-color-scheme`) on a first visit — applied before first paint, so there is no flash of the wrong theme, and it survives reloads.
+- Toggled with a **sun/moon button**: in the top bar on tablets/desktop, at the bottom of the hamburger drawer on phones. The choice is stored per browser.
+- Light stays exactly the current look; dark is one palette swap through CSS custom properties (`[data-theme="dark"]`), not per-component overrides.
 
 ## Success criteria
 - Upload Report XLS + week → rows appear in correct 6 screens with pagination (150/page default like screenshots).
@@ -77,6 +83,7 @@ Every screen stays usable on a phone (≤640px) and an iPad (≤1024px) with **n
 - `/members` shows active/inactive counts under the title with an Active-only checkbox filter; the import history lists Slips Audit Report and Chapter Summary PALMS files in **separate tables**; report xlsx/pdf print bold names in bold like the screen; every "… credits" line reads "… CEU credits".
 - `/` shows the last 6 months as weekly (Wednesday) trend lines for all 5 slip types; each point equals that week's imported slip count and a week without an import shows 0.
 - At 320–1024px viewport widths nothing overflows the page: nav, tables and the trend chart scroll inside their own containers, and the responsive CSS checks (`tests/unit-responsive.mjs`) pass.
+- The theme toggle flips every screen with no light surface left behind and no flash of the wrong theme on reload; the theme checks (`tests/unit-theme.mjs`) pass.
 - `npm run build` passes.
 
 ---
