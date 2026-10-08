@@ -383,12 +383,12 @@ try {
   // same approach as the /summary comparison-table check below.
   const reportSrc = readFileSync(new URL("../app/report/page.tsx", import.meta.url), "utf8");
   const dwAt = reportSrc.indexOf("<DataWarnings");
-  const palmsAt = reportSrc.indexOf("<PalmsImportPanel");
+  const impAt = reportSrc.indexOf("<ImportPanel");
   const cardsAt = reportSrc.indexOf('className="cards stat-cards"');
   check(
-    "/report mounts the PALMS import panel (between DataWarnings and the stat cards)",
-    dwAt > 0 && palmsAt > dwAt && cardsAt > palmsAt,
-    `dw=${dwAt} palms=${palmsAt} cards=${cardsAt}`,
+    "/report mounts the week-slips import panel (between DataWarnings and the stat cards), PALMS panel + toolbar button gone",
+    dwAt > 0 && impAt > dwAt && cardsAt > impAt && !reportSrc.includes("<PalmsImportPanel") && !reportSrc.includes('variant="toolbar"'),
+    `dw=${dwAt} slips=${impAt} cards=${cardsAt}`,
   );
   const panelSrc = readFileSync(new URL("../components/PalmsImportPanel.tsx", import.meta.url), "utf8");
   const fileAt = panelSrc.indexOf('type="file"');
@@ -416,6 +416,14 @@ try {
     'PanelSkeleton title="Chapter Summary PALMS (attendance)" toggle="− Minimize"',
   );
   check("PALMS skeleton mirrors the toggle", skelMirror, "");
+  const skelAll = readFileSync(new URL("../components/Skeletons.tsx", import.meta.url), "utf8");
+  const repSkelAt = skelAll.indexOf("export function ReportSkeleton");
+  const repSkelSlice = skelAll.slice(repSkelAt, skelAll.indexOf("function PanelSkeleton"));
+  check(
+    "/report skeleton mirrors the slips upload card (no PALMS panel)",
+    repSkelSlice.includes('PanelSkeleton title="Import Report XLS"') && !repSkelSlice.includes("Chapter Summary PALMS"),
+    "",
+  );
 
   // 13b) /import ships the matching skeleton too
   const htmlImp = await (await fetch(`${APP}/import`, { headers: { ...AUTH } })).text();

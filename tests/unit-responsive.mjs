@@ -166,7 +166,7 @@ for (const f of ["../components/SlipsTable.tsx", "../components/ImportPage.tsx",
 }
 
 // 12) stacked cards never touch + the week box can deselect all weeks
-check(".card + .cards gap (report: PALMS panel -> stat cards)", css.includes(".card + .cards { margin-top: 18px; }"));
+check(".card + .cards gap (report: upload panel -> stat cards)", css.includes(".card + .cards { margin-top: 18px; }"));
 const filterSrc = read("../components/FilterBar.tsx");
 check(
   "week box shows its clear (✕) button only for a real selection",

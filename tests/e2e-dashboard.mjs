@@ -262,6 +262,7 @@ check("pie view carries a slice legend with percentages", chartSrc.includes("pct
 // ---- skeleton + styles ------------------------------------------------------
 const skelSrc = readFileSync(new URL("../components/Skeletons.tsx", import.meta.url), "utf8");
 check("skeleton mirrors the tab row", skelSrc.includes("trend-controls") && skelSrc.includes("trend-type-tabs"));
+check("skeleton wraps controls/legend/graph in .trend-wrap (blocks never flush)", skelSrc.includes('className="trend-wrap"'));
 check("loading flight ships the controls", dec.includes("trend-controls"));
 const cssSrc = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 check(

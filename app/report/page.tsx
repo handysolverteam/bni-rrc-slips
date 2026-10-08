@@ -20,7 +20,6 @@ import ReportExportButtons from "@/components/ReportExportButtons";
 import ReportTabs from "@/components/ReportTabs";
 import FilterBar from "@/components/FilterBar";
 import DataWarnings from "@/components/DataWarnings";
-import PalmsImportPanel from "@/components/PalmsImportPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -240,7 +239,6 @@ export default async function ReportPage({
           {allWeeks ? <p className="sub muted">All weeks</p> : weeksLabel ? <p className="sub muted">{weeksLabel}</p> : null}
         </div>
         <div className="report-head-actions">
-          <ImportPanel variant="toolbar" defaultCollapsed />
           <ReportExportButtons
             weekId={weekId}
             tab={tab}
@@ -251,7 +249,7 @@ export default async function ReportPage({
 
         <DataWarnings missing={missing} comparisons={comparisons} unimported={unimported} />
 
-        <PalmsImportPanel />
+        <ImportPanel />
 
 
       <div className="cards stat-cards">

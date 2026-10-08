@@ -40,9 +40,9 @@ type Preview = {
  * multi-file picker, per-file preview cards (week, rows, bold,
  * typing-mistake rows), one confirmation when bad rows exist, per-file
  * results. Duplicates are never flagged: every entry is imported as-is.
- * variant "card": self-contained card with its own head (/import page).
- * variant "toolbar": solid accent button + dropdown panel — sits inside a
- * page toolbar next to other actions (report header).
+ * variant "card": self-contained card with its own head (/import page and /report).
+ * variant "toolbar": solid accent button + dropdown panel — available for a
+ * toolbar next to other actions (currently unused).
  */
 export default function ImportPanel({
   title = "Import Report XLS",

@@ -43,7 +43,7 @@ bni-rrc-slips/
     members|referrals|one-to-ones|visitors|tyfcb|ceus|report|summary|import|chat pages (server components
                                  call getTenantContext() -> redirect /login, noAccess -> no-access screen)
   components/ImportPage.tsx     # import screen: ImportPanel (slips) + PalmsImportPanel (attendance, two-step) + TWO history tables (slips / PALMS) with per-row Delete (ConfirmDialog)
-  components/PalmsImportPanel.tsx # two-step upload (choose file -> explicit Import button) -> POST /api/import/palms; mounted on /import, /summary AND /report; collapsible head (− Minimize / + Import files, same .import-toggle as ImportPanel); on /summary also shows the imported file + Remove action
+  components/PalmsImportPanel.tsx # two-step upload (choose file -> explicit Import button) -> POST /api/import/palms; mounted on /import AND /summary (no longer on /report — /report mounts the slips ImportPanel card instead, and the separate ImportPanel "toolbar" button in the report head-actions is gone); collapsible head (− Minimize / + Import files, same .import-toggle as ImportPanel); on /summary also shows the imported file + Remove action
   components/DataWarnings.tsx   # server component: missing-Wednesday banner + PALMS-mismatch banner (warnings only, nothing on success)
   components/PalmsComparisonTable.tsx # metric | PALMS | Slips | status table (summary screen, at the bottom)
   components/SummaryExportButtons.tsx # xlsx/csv/pdf switch on the summary page head (PDF built in-browser from JSON)

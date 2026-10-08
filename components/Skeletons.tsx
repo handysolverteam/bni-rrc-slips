@@ -1,6 +1,5 @@
 import Link from "next/link";
 import ColumnFilter from "@/components/ColumnFilter";
-import ImportPanel from "@/components/ImportPanel";
 import ReportExportButtons from "@/components/ReportExportButtons";
 import SummaryExportButtons from "@/components/SummaryExportButtons";
 import ReportTabs from "@/components/ReportTabs";
@@ -190,37 +189,39 @@ export function HomeSkeleton() {
         <div className="import-head">
           <Bar w={330} h={20} />
         </div>
-        <div className="trend-controls">
-          <div className="tabs trend-type-tabs">
-            {["All slips", ...HOME_LEGEND].map((l) => (
-              <span
-                key={l}
-                className="skel"
-                style={{ display: "block", width: l.length * 7 + 22, height: 33, borderRadius: 999 }}
-              />
+        <div className="trend-wrap">
+          <div className="trend-controls">
+            <div className="tabs trend-type-tabs">
+              {["All slips", ...HOME_LEGEND].map((l) => (
+                <span
+                  key={l}
+                  className="skel"
+                  style={{ display: "block", width: l.length * 7 + 22, height: 33, borderRadius: 999 }}
+                />
+              ))}
+            </div>
+            <div className="tabs trend-chart-tabs">
+              <span className="skel" style={{ display: "block", width: 330, height: 27, borderRadius: 999 }} />
+            </div>
+          </div>
+          <div className="trend-legend">
+            {HOME_LEGEND.map((l) => (
+              <span key={l} className="trend-legend-item">
+                <span className="trend-dot" />
+                <span className="skel" style={{ display: "block", width: l.length * 7, height: 12, borderRadius: 5 }} />
+                <span className="skel" style={{ display: "block", width: 26, height: 12, borderRadius: 5 }} />
+              </span>
             ))}
           </div>
-          <div className="tabs trend-chart-tabs">
-            <span className="skel" style={{ display: "block", width: 330, height: 27, borderRadius: 999 }} />
-          </div>
-        </div>
-        <div className="trend-legend">
-          {HOME_LEGEND.map((l) => (
-            <span key={l} className="trend-legend-item">
-              <span className="trend-dot" />
-              <span className="skel" style={{ display: "block", width: l.length * 7, height: 12, borderRadius: 5 }} />
-              <span className="skel" style={{ display: "block", width: 26, height: 12, borderRadius: 5 }} />
-            </span>
-          ))}
-        </div>
-        <div className="trend-svg-scroll">
-          <div className="trend-skel">
-            {[0, 1, 2, 3, 4].map((i) => (
-              <div key={i} className="trend-skel-row">
-                <span className="skel" style={{ display: "block", width: 26, height: 11, borderRadius: 5 }} />
-                <Bar h={16} />
-              </div>
-            ))}
+          <div className="trend-svg-scroll">
+            <div className="trend-skel">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="trend-skel-row">
+                  <span className="skel" style={{ display: "block", width: 26, height: 11, borderRadius: 5 }} />
+                  <Bar h={16} />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -409,13 +410,12 @@ export function ReportSkeleton() {
           </p>
         </div>
         <div className="report-head-actions">
-          <ImportPanel variant="toolbar" defaultCollapsed />
           <ReportExportButtons weekId="" tab="all" scopeLabel="week" />
         </div>
       </div>
 
       <div className="card">
-        <PanelSkeleton title="Chapter Summary PALMS (attendance)" toggle="− Minimize" />
+        <PanelSkeleton title="Import Report XLS" toggle="− Minimize" />
       </div>
 
       <div className="cards stat-cards">
