@@ -4,9 +4,9 @@
 -- (the seed relies on the home-chapter column default below).
 --
 -- IMPORTANT: the home-chapter literal below must match your
--- NEXT_PUBLIC_CHAPTER_NAME (the app falls back to 'BNI Influencer'
+-- NEXT_PUBLIC_CHAPTER_NAME (the app falls back to 'BNI Influencers'
 -- when that env var is empty). If your home chapter has a
--- different name, replace 'BNI Influencer' below before running.
+-- different name, replace 'BNI Influencers' below before running.
 -- ============================================================
 
 create table public.chapters (
@@ -21,7 +21,7 @@ create policy "public read chapters" on public.chapters for select using (true);
 
 -- Home chapter row (idempotent; fixed id so it can be the column default).
 insert into public.chapters (id, name)
-values ('c1000000-0000-4000-8000-000000000001', 'BNI Influencer')
+values ('c1000000-0000-4000-8000-000000000001', 'BNI Influencers')
 on conflict (id) do nothing;
 
 -- Every member belongs to exactly one chapter.

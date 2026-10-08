@@ -93,7 +93,7 @@ export default function ReportExportButtons({
     });
     autoTable(doc, {
       head: [["Section", "Count", "Details"]],
-      body: data.summary.rows.map((r) => [r.section, String(r.count), r.info]),
+      body: data.summary.rows.map((r) => [r.section, String(r.count), r.info.replace(/₹/g, "Rs. ")]),
       styles: { fontSize: 8 },
       headStyles: { fillColor: [38, 50, 56], textColor: 255 },
     });
@@ -114,7 +114,8 @@ export default function ReportExportButtons({
       });
       autoTable(doc, {
         head: [headers],
-        body: [...s.rows, ...(s.totalRow ? [s.totalRow] : [])],
+        // The built-in PDF font has no ₹ glyph, so print "Rs." there.
+        body: [...s.rows, ...(s.totalRow ? [s.totalRow] : [])].map((r) => r.map((c) => c.replace(/₹/g, "Rs. "))),
         styles: { fontSize: 7 },
         headStyles: { fillColor: SECTION_FILL[s.title] ?? [193, 60, 48], textColor: 255 },
         // Outsider names (bold in the source file) print bold — every

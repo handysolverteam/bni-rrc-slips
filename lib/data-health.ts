@@ -1,18 +1,17 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { buildWeekLabel } from "@/lib/weeks";
 import { missingWednesdays, todayIso } from "@/lib/missing-weeks";
-import { fetchSlipTotalsByWeek } from "@/lib/palms-compare";
 import { fetchAllRows } from "@/lib/supabase/paged";
 
 export { missingWednesdays, todayIso };
 export type MissingFile = { date: string; label: string };
-/** One week in scope: which of the two files (slips / PALMS) is not imported yet. */
-export type UnimportedEntry = { label: string; slips: boolean; palms: boolean };
+/** One week in scope: its Slips Audit Report is not imported yet. */
+export type UnimportedEntry = { label: string; slips: boolean };
 
 /**
  * Wednesdays between the tenant's first imported meeting and today with no
- * imported slips file — the "missing meeting file" warning on `/report` and
- * `/summary` (date math lives in `lib/missing-weeks.ts`, unit-tested there).
+ * imported slips file — the "missing meeting file" warning on `/report`
+ * (date math lives in `lib/missing-weeks.ts`, unit-tested there).
  */
 export async function fetchMissingMeetingFiles(
   tenantId: string,
@@ -36,12 +35,58 @@ export async function fetchMissingMeetingFiles(
   }));
 }
 
+/** Metrics that prove a week has imported slip rows (owner/home rules). */
+type SlipTotals = { slips: number };
+
+/**
+ * The app's own slip rows per week (raw rows, not page-truncated — every
+ * query is range-paged), using the report's home/bold + owner-count rules.
+ * `weekIds` empty = every week of the tenant.
+ */
+async function fetchSlipTotalsByWeek(
+  tenantId: string,
+  weekIds: string[],
+): Promise<Map<string, SlipTotals>> {
+  const opts = {
+    eq: [["tenant_id", tenantId]] as [string, unknown][],
+    in: weekIds.length > 0 ? ([["bni_week_id", weekIds]] as [string, string[]][]) : [],
+    pageSize: 1000,
+  };
+  const [refs, otos, visitors, tyfcbs, ceus] = await Promise.all([
+    fetchAllRows<{ bni_week_id: string; inside_outside: string | null; from_is_other_chapter: boolean | null; to_is_other_chapter: boolean | null }>(
+      "slip_referrals", "bni_week_id,inside_outside,from_is_other_chapter,to_is_other_chapter", opts),
+    fetchAllRows<{ bni_week_id: string; initiated_by_is_other_chapter: boolean | null; met_with_is_other_chapter: boolean | null }>(
+      "slip_one_to_ones", "bni_week_id,initiated_by_is_other_chapter,met_with_is_other_chapter", opts),
+    fetchAllRows<{ bni_week_id: string; invited_by_name: string | null }>(
+      "slip_visitors", "bni_week_id,invited_by_name", opts),
+    fetchAllRows<{ bni_week_id: string; amount: number | string }>(
+      "slip_tyfcb", "bni_week_id,amount", opts),
+    fetchAllRows<{ bni_week_id: string; credits: number | string }>(
+      "slip_ceus", "bni_week_id,credits", opts),
+  ]);
+
+  const map = new Map<string, SlipTotals>();
+  const ensure = (weekId: string): SlipTotals => {
+    let t = map.get(weekId);
+    if (!t) {
+      t = { slips: 0 };
+      map.set(weekId, t);
+    }
+    return t;
+  };
+  for (const r of refs) ensure(r.bni_week_id).slips++;
+  for (const r of otos) ensure(r.bni_week_id).slips++;
+  for (const r of visitors) if (r.invited_by_name) ensure(r.bni_week_id).slips++;
+  for (const r of tyfcbs) ensure(r.bni_week_id).slips++;
+  for (const r of ceus) ensure(r.bni_week_id).slips++;
+  return map;
+}
+
 /**
  * For the selected week scope: weeks still missing their Slips Audit Report
- * and/or their Chapter Summary PALMS — the red "… not imported yet" banner
- * on `/report` and `/summary`. Explicit scope = exactly those weeks; empty
- * scope (`all`) = every week the tenant imported anything for (a batch of
- * either type). Either file may be imported first, so both sides are checked.
+ * — the red "… not imported yet" banner on `/report`. Explicit scope = exactly
+ * those weeks; empty scope (`all`) = every week the tenant imported slips for.
+ * PALMS never appears here — attendance is reported on `/palms` itself.
  */
 export async function fetchUnimportedData(
   tenantId: string,
@@ -76,20 +121,8 @@ export async function fetchUnimportedData(
   if (candidates.length === 0) return [];
   const ids = candidates.map((c) => c.id);
 
-  const [slipTotals, attendance] = await Promise.all([
-    fetchSlipTotalsByWeek(tenantId, ids),
-    fetchAllRows<{ bni_week_id: string }>("member_attendance", "bni_week_id", {
-      eq: [["tenant_id", tenantId]],
-      in: [["bni_week_id", ids]],
-      pageSize: 1000,
-    }),
-  ]);
-  const palmWeeks = new Set(attendance.map((r) => r.bni_week_id));
+  const slipTotals = await fetchSlipTotalsByWeek(tenantId, ids);
   return candidates
-    .map((c) => ({
-      label: c.label,
-      slips: !slipTotals.has(c.id),
-      palms: !palmWeeks.has(c.id),
-    }))
-    .filter((e) => e.slips || e.palms);
+    .filter((c) => !slipTotals.has(c.id))
+    .map((c) => ({ label: c.label, slips: true }));
 }

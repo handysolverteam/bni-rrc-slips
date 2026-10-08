@@ -87,6 +87,12 @@
   --sec: #d6542c;
   --sec-soft: #fdeee4;
   --sec-ink: var(--accent-ink);
+  /* PALMS matrix letters (/palms). */
+  --plm-p: #1d6b41;
+  --plm-a: #a52a1e;
+  --plm-m: #8a5a00;
+  --plm-s: #23507c;
+  --plm-l: #5b3fa8;
 }
 [data-stat="one-to-one"] { --sec: var(--orange); --sec-soft: var(--orange-soft); --sec-ink: var(--orange-ink); }
 [data-stat="referral"] { --sec: var(--green); --sec-soft: var(--green-soft); --sec-ink: var(--green-ink); }
@@ -168,6 +174,11 @@
   --sec-soft: #3a2317;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.45);
   --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.4), 0 16px 36px rgba(0, 0, 0, 0.55);
+  --plm-p: #7fd9a8;
+  --plm-a: #ff9c8a;
+  --plm-m: #e5c56b;
+  --plm-s: #8fc0ea;
+  --plm-l: #c3a6ff;
 }
 
 * { box-sizing: border-box; }
@@ -235,6 +246,59 @@ a { color: var(--accent-ink); }
   color: var(--accent-hover);
   font-weight: 700;
   box-shadow: inset 0 0 0 1px rgba(214, 84, 44, 0.25);
+}
+
+/* ---------- Slips dropdown (floating menu on desktop, accordion in the drawer) ---------- */
+.nav-drop { position: relative; display: flex; }
+.nav-drop-parent {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: none; border: 0; cursor: pointer;
+  color: var(--muted); font-family: inherit;
+  font-size: 13.5px; font-weight: 500;
+  padding: 8px 12px; border-radius: 999px;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.nav-drop-parent:hover { background: var(--hover); color: var(--ink); }
+.nav-drop-parent.active {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(214, 84, 44, 0.25);
+}
+.nav-drop-caret { font-size: 9px; line-height: 1; transition: transform 0.15s; }
+.nav-drop.open .nav-drop-caret { transform: rotate(180deg); }
+.nav-drop-menu {
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px; padding: 6px;
+  box-shadow: 0 10px 30px rgba(38, 34, 28, 0.18);
+}
+.nav-drop-menu[hidden] { display: none; }
+/* Portaled copy: position is fixed by the component (top/left), escapes the
+   overflow-x:auto pill row that would otherwise clip it. */
+.nav-drop-menu-float { position: fixed; z-index: 200; min-width: 190px; }
+.nav-drop-menu a {
+  text-decoration: none; color: var(--ink);
+  font-size: 14px; font-weight: 600;
+  padding: 9px 12px; border-radius: 8px; white-space: nowrap;
+}
+.nav-drop-menu a:hover { background: var(--hover); }
+.nav-drop-menu a.active {
+  background: var(--accent-soft); color: var(--accent-hover);
+  box-shadow: inset 0 0 0 1px rgba(214, 84, 44, 0.25);
+}
+/* Drawer copy: an inline accordion row, never floating. */
+.nav-drop-in-drawer { display: block; }
+.nav-drop-in-drawer .nav-drop-parent {
+  width: 100%; justify-content: space-between;
+  padding: 12px 14px; border-radius: 10px;
+  font-size: 15px; font-weight: 600; color: var(--ink);
+}
+.nav-drop-in-drawer .nav-drop-menu { display: none; box-shadow: none; }
+.nav-drop-in-drawer.open .nav-drop-menu {
+  display: flex; margin: 2px 0 4px 14px;
+  background: var(--surface-2); border: 1px solid var(--line);
 }
 
 /* ---------- Phone nav drawer (toggle + panel; CSS shows them ≤640px) ---------- */
@@ -522,7 +586,10 @@ table.grid tfoot tr.sum-row td {
 .search-form input { flex: 1; }
 .filter-form { display: flex; gap: 8px; flex: 1; flex-wrap: wrap; align-items: center; }
 .filter-form input[name="q"] { flex: 2; min-width: 180px; }
+.filter-form .filter-field { flex: 1 1 300px; min-width: 280px; max-width: 460px; display: flex; flex-direction: column; gap: 4px; }
+.filter-form .filter-label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .filter-form .combo { flex: 1 1 300px; min-width: 280px; max-width: 460px; }
+.filter-form .filter-field .combo { flex: none; min-width: 0; width: 100%; }
 /* Week combo mirrors the plain Clear-all button look on light surfaces. */
 .filter-form .combo-field {
   border: 1px solid var(--field); border-radius: 10px; background: var(--panel);
@@ -550,6 +617,7 @@ table.grid tfoot tr.sum-row td {
 .filter-form .combo-adorn:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent-hover); }
 
 label.field { display: block; font-size: 13.5px; font-weight: 600; margin-bottom: 14px; }
+label.field > input[type="file"] { margin-top: 10px; }
 label.field .hint { font-weight: 400; color: var(--muted); }
 
 input, select {
@@ -1101,6 +1169,8 @@ button.import-open:hover:not(:disabled) {
 .report-controls-row { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
 .report-controls-row .filter-form { flex: 0 1 auto; margin: 0; }
 .report-controls-row .filter-form .combo { min-width: 340px; }
+.report-controls-row .filter-form .filter-field { min-width: 340px; }
+.report-controls-row .filter-form .filter-field .combo { min-width: 0; }
 .report-controls-row .report-actions {
   margin-top: 0; padding-left: 20px;
   border-left: 1px solid var(--line);
@@ -1215,6 +1285,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   /* Filter rows stack full-width instead of the desktop min-width combos. */
   .search-form { min-width: 0; }
   .filter-form .combo { min-width: 0; }
+  .filter-form .filter-field { min-width: 0; flex: 1 1 100%; max-width: none; }
   .filter-form input[name="q"] { min-width: 0; }
   .report-controls-row { gap: 12px; }
   .report-controls-row .filter-form { width: 100%; }
@@ -1268,3 +1339,71 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* Import panels: space between the Import button/form and its result message. */
 form + .data-alert,
 form + .preview-warn { margin-top: 12px; }
+
+/* ---------- PALMS matrix (/palms) ----------
+   One letter per cell, coloured by letter; a multi-letter cell (legacy
+   rows) follows its first letter. Blank = never imported. */
+.plm { font-weight: 700; text-align: center; }
+.plm-p { color: var(--plm-p); }
+.plm-a { color: var(--plm-a); }
+.plm-m { color: var(--plm-m); }
+.plm-s { color: var(--plm-s); }
+.plm-l { color: var(--plm-l); }
+
+/* ---------- /palms: rolling 26-week attendance breakdown card ----------
+   Title + window line, then three groups (Absent / Medical / Substitute),
+   each with its fixed 3+ / 2 / 1 buckets: count badge + member names. */
+.palms-stats-title { margin: 0 0 4px; font-size: 16px; font-weight: 700; }
+.palms-stats-groups {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px;
+  margin-top: 14px;
+}
+.palms-stats-group { display: flex; flex-direction: column; gap: 12px; }
+.palms-stats-group + .palms-stats-group {
+  border-left: 1px solid var(--line); padding-left: 18px;
+}
+.palms-stats-bucket-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 700; color: var(--ink);
+}
+.palms-stats-names {
+  margin-top: 5px; font-size: 13px; line-height: 1.55; color: var(--muted);
+}
+@media (max-width: 640px) {
+  .palms-stats-groups { grid-template-columns: 1fr; gap: 14px; }
+  .palms-stats-group + .palms-stats-group {
+    border-left: 0; padding-left: 0;
+    border-top: 1px solid var(--line); padding-top: 14px;
+  }
+}
+
+/* ---------- Monthly top 3 (Slip Report) ---------- */
+.top3-card { margin-bottom: 18px; }
+.top3-month { padding-top: 14px; }
+.top3-month + .top3-month { border-top: 1px solid var(--line); margin-top: 14px; }
+.top3-month-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.top3-month-head h3 { margin: 0; font-size: 17px; }
+.top3-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.top3-col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+.top3-col h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.top3-col ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.top3-col li { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.top3-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.top3-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wa-btn { background: #25d366; color: #0b2a17; border: 1px solid #1ea952; font-weight: 700; border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+.wa-btn:hover { filter: brightness(1.06); }
+@media (max-width: 640px) { .top3-grid { grid-template-columns: 1fr; } }
+.collapse-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.palms-stats-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+/* WhatsApp buttons keep green + dark text in every state (beats the generic button:hover rule). */
+button.wa-btn,
+button.wa-btn:hover:not(:disabled),
+button.wa-btn:focus-visible,
+button.wa-btn:active:not(:disabled) { color: #0b2a17; border-color: #1ea952; }
+button.wa-btn { background: #25d366; }
+button.wa-btn:hover:not(:disabled),
+button.wa-btn:focus-visible { background: #3ee07c; box-shadow: 0 2px 8px rgba(30, 169, 82, 0.35); }
+button.wa-btn:active:not(:disabled) { background: #1fbf5b; }
+.num-parts { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; }
+.num-part { display: inline-flex; align-items: baseline; gap: 5px; }
+.num-unit { font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: 0; }

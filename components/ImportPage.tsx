@@ -42,7 +42,7 @@ function localDateKey(iso: string): string {
 }
 
 /**
- * One history table (Slips Audit Reports, or Chapter Summary PALMS): its own
+ * One history table (Slips Audit Reports, or PALMS Reports): its own
  * header filters and expandable skipped-rows detail.
  */
 function HistoryTable({
@@ -142,7 +142,6 @@ function HistoryTable({
                       label="Week"
                       allLabel="All weeks"
                       onApply={setWeekFilter}
-                      multiSelect
                     />
                   </th>
                   <th>Imported</th>
@@ -299,7 +298,7 @@ export default function ImportPage() {
         onAskDelete={askDelete}
       />
       <HistoryTable
-        title="Imported Chapter Summary PALMS"
+        title="Imported PALMS Reports"
         emptyText="No PALMS imports yet."
         batches={batches.filter((b) => b.kind === "palms")}
         onAskDelete={askDelete}
@@ -310,7 +309,7 @@ export default function ImportPage() {
           title="Delete this import?"
           message={`Delete ${confirmBatch.filename}${
             confirmBatch.bni_weeks?.label ? ` (${confirmBatch.bni_weeks.label})` : ""
-          } and every row it imported — its slips, or its PALMS attendance and comparison totals? Other imports of that week stay. This cannot be undone.`}
+          } and every row it imported — its slips, or its PALMS attendance cells? Other imports of that week stay. This cannot be undone.`}
           confirmLabel="Delete"
           danger
           busy={deleting}

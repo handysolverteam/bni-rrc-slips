@@ -1,7 +1,6 @@
 import { defaultWeekId, getCachedWeekOptions } from "@/lib/server-weeks";
 import { distinctValues, mergeDistinct } from "@/lib/distinct";
 import { fetchMissingMeetingFiles, fetchUnimportedData } from "@/lib/data-health";
-import { fetchPalmsComparisons } from "@/lib/palms-compare";
 import {
   detailLabelFor,
   fetchReportSections,
@@ -18,6 +17,7 @@ import ColumnFilter from "@/components/ColumnFilter";
 import Link from "next/link";
 import ReportExportButtons from "@/components/ReportExportButtons";
 import ReportTabs from "@/components/ReportTabs";
+import { redirect } from "next/navigation";
 import FilterBar from "@/components/FilterBar";
 import DataWarnings from "@/components/DataWarnings";
 
@@ -69,7 +69,7 @@ function SectionTable({
       defaultValue={colFilters[key]}
       options={colOptions[key]}
       label={label}
-      multiSelect
+      multiSelect={key !== "detail"}
     />
   );
   return (
@@ -86,7 +86,6 @@ function SectionTable({
                   options={[{ value: "all", label: "All weeks" }, ...weeks.map((w) => ({ value: w.id, label: w.label }))]}
                   label="BNI Week"
                   allLabel="Universal"
-                  multiSelect
                 />
               </th>
               <th>{headFilter("from", fromTo.from)}</th>
@@ -125,7 +124,7 @@ function SectionTable({
                 </td>
                 {amtIdx >= 0 ? (
                   <td className="num">
-                    <strong>{totalAmount.toLocaleString("en-IN")}</strong>
+                    <strong>{sectionKey === "tyfcb" ? "₹" : ""}{totalAmount.toLocaleString("en-IN")}</strong>
                   </td>
                 ) : null}
                 {cols.slice(amtIdx + 1).map((c) => (
@@ -156,6 +155,14 @@ export default async function ReportPage({
     sp.week ? Promise.resolve(null) : defaultWeekId(tenantId),
   ]);
   const weekId = sp.week || defaultId || latest || weeks[0]?.id || "";
+  // The auto-selected latest week goes into the URL so the address always
+  // matches the filter boxes (shareable / refresh-safe).
+  if (!sp.week && weekId) {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(sp)) if (v !== undefined) qs.set(k, v);
+    qs.set("week", weekId);
+    redirect(`/report?${qs.toString()}`);
+  }
   const tab = (sp.tab as ReportSectionKey | "all" | undefined) || "all";
   const q = sp.q || "";
   const colFor = (key: ReportSectionKey) => ({
@@ -191,7 +198,7 @@ export default async function ReportPage({
         ceu: sp["w_ceu"] || "",
       })
     : Promise.resolve([]);
-  const [sections, [fromOptions, toOptions, detailOptions], missing, comparisons, unimported] = await Promise.all([
+  const [sections, [fromOptions, toOptions, detailOptions], missing, unimported] = await Promise.all([
     sectionsPromise,
     Promise.all([
     Promise.all([
@@ -213,7 +220,6 @@ export default async function ReportPage({
     ]).then((lists) => mergeDistinct(...lists)),
     ]),
     fetchMissingMeetingFiles(tenantId),
-    fetchPalmsComparisons(tenantId, weekIds),
     fetchUnimportedData(tenantId, weekIds),
   ]);
   const colOptions = { from: fromOptions, to: toOptions, detail: detailOptions };
@@ -247,7 +253,7 @@ export default async function ReportPage({
         </div>
       </div>
 
-        <DataWarnings missing={missing} comparisons={comparisons} unimported={unimported} />
+        <DataWarnings missing={missing} unimported={unimported} />
 
         <ImportPanel />
 
@@ -255,9 +261,20 @@ export default async function ReportPage({
       <div className="cards stat-cards">
         {sections.map((s) => (
           <div key={s.key} className="section-card" data-stat={s.key}>
-            <div className="num">{s.cardCount ?? s.metricCount}</div>
+            {s.cardParts ? (
+              <div className="num num-parts">
+                {s.cardParts.map((p) => (
+                  <span key={p.unit} className="num-part">
+                    {p.value.toLocaleString("en-IN")}
+                    <span className="num-unit">{p.unit}</span>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="num">{s.cardCount ?? s.metricCount}</div>
+            )}
             <div className="label">{s.title}</div>
-            <div className="go">{s.cardStat ?? s.stat ?? s.totalLabel}</div>
+            <div className="go">{s.cardParts ? s.totalLabel : (s.cardStat ?? s.stat ?? s.totalLabel)}</div>
           </div>
         ))}
       </div>
@@ -273,7 +290,6 @@ export default async function ReportPage({
             hiddenParams={{ tab }}
             includeAllOption
             hideSearch
-            multiSelect
           />
           {hasFilters || !allWeeks ? (
             <span className="clear-right">

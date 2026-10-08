@@ -12,7 +12,7 @@ const APP = "http://localhost:3000";
 const ENV = readFileSync(new URL("../.env.local", import.meta.url), "utf8");
 const kv = (k) => ENV.split(/\r?\n/).find((l) => l.startsWith(k + "="))?.slice(k.length + 1);
 const sb = createClient(kv("NEXT_PUBLIC_SUPABASE_URL"), kv("SUPABASE_SERVICE_ROLE_KEY"));
-const HOME = kv("NEXT_PUBLIC_CHAPTER_NAME") || "BNI Influencer";
+const HOME = kv("NEXT_PUBLIC_CHAPTER_NAME") || "BNI Influencers";
 const TEST_CHAPTER = "BNI Test Chapter";
 const IGNORE_CHAPTER = "BNI Ignore Chapter"; // detail on non-bold rows — must never be created
 const MEETING = "2026-09-30"; // existing week 40
@@ -126,7 +126,7 @@ async function batchId(filename) {
 // ---- 0) pre-clean leftovers + capture baseline ----------------------------
 async function preClean() {
   const { data: oldBatches } = await sb
-    .from("import_batches").select("id,filename").eq("tenant_id", TENANT).or("filename.eq.e2e-seed.csv,filename.eq.e2e-bold.xlsx,filename.eq.e2e-delete.csv");
+    .from("import_batches").select("id,filename").eq("tenant_id", TENANT).or("filename.eq.e2e-seed.csv,filename.eq.e2e-bold.xlsx,filename.eq.e2e-delete.csv,filename.eq.e2e-reimport.csv");
   for (const b of oldBatches ?? []) {
     for (const t of ["slip_referrals", "slip_one_to_ones", "slip_tyfcb", "slip_visitors", "slip_ceus"]) {
       await sb.from(t).delete().eq("import_batch_id", b.id);
@@ -139,7 +139,7 @@ async function preClean() {
 }
 async function cleanup() {
   const { data: batches } = await sb
-    .from("import_batches").select("id,filename").eq("tenant_id", TENANT).or("filename.eq.e2e-seed.csv,filename.eq.e2e-bold.xlsx,filename.eq.e2e-delete.csv");
+    .from("import_batches").select("id,filename").eq("tenant_id", TENANT).or("filename.eq.e2e-seed.csv,filename.eq.e2e-bold.xlsx,filename.eq.e2e-delete.csv,filename.eq.e2e-reimport.csv");
   for (const b of batches ?? []) {
     for (const t of ["slip_referrals", "slip_one_to_ones", "slip_tyfcb", "slip_visitors", "slip_ceus"]) {
       await sb.from(t).delete().eq("import_batch_id", b.id);
@@ -246,6 +246,11 @@ check(
   rowIn(filtered, "E2E Bold Person") && rowIn(filtered, "E2E Seed Person") && !rowIn(filtered, "E2E Home Person"),
   "chapter-filtered SSR rows",
 );
+check(
+  "members subtitle counts follow the chapter filter (2 active · 0 inactive)",
+  filtered.includes("2 active · 0 inactive"),
+  "filtered subtitle",
+);
 const memberPage = await (await fetch(`${APP}/members`, { headers: { ...AUTH } })).text();
 check("Chapter column filter offers the new chapter", memberPage.includes(TEST_CHAPTER), "distinct options refreshed");
 
@@ -327,6 +332,42 @@ const dNoAuth = await fetch(`${APP}/api/import/batches/${delBatch ?? "11111111-2
 check("delete requires auth (401)", dNoAuth.status === 401, String(dNoAuth.status));
 
 // ---- 4d) history kinds (slips vs PALMS) + xlsx prints bold names bold ------
+// The history must carry BOTH kinds. Other suites clean up after themselves,
+// so this test seeds — and then removes — its own PALMS batch (week 40 =
+// 30 Sep 2026, already on the calendar).
+const HIST_PALMS_FILE = "e2e-hist-palms.xls";
+async function removeBatchesNamed(filename) {
+  const { data } = await sb
+    .from("import_batches").select("id").eq("tenant_id", TENANT).eq("filename", filename);
+  for (const b of data ?? []) {
+    const r = await fetch(`${APP}/api/import/batches/${b.id}`, { method: "DELETE", headers: { ...AUTH } });
+    check(`cleanup: leftover ${filename} removed`, r.ok, String(r.status));
+  }
+}
+await removeBatchesNamed(HIST_PALMS_FILE); // crashed-run leftovers
+async function buildHistPalmsXlsx() {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Report");
+  const serial = (iso) =>
+    Math.round((Date.parse(iso + "T00:00:00Z") - Date.parse("1899-12-30T00:00:00Z")) / 86400000);
+  ws.addRow(["PALMS Attendance Report"]);
+  ws.addRow(["Chapter:", "BNI Influencers"]);
+  ws.addRow(["Parameters"]);
+  ws.addRow(["From:", serial("2026-09-01")]);
+  ws.addRow(["To:", serial("2026-09-30")]);
+  ws.addRow([]);
+  ws.addRow([]);
+  ws.addRow(["First Name", "Last Name", "", "Sep 30"]);
+  ws.addRow(["E2E", "Hist", "", "P"]);
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
+const hSeed = await post("/api/import/palms", fd(await buildHistPalmsXlsx(), HIST_PALMS_FILE, "application/vnd.ms-excel"));
+const hSeedJson = hSeed.ok ? await hSeed.json() : {};
+check(
+  "PALMS history seed import",
+  hSeed.ok && hSeedJson.importedCount === 1 && hSeedJson.skippedCount === 0,
+  JSON.stringify({ s: hSeed.status, j: hSeedJson }),
+);
 const hist = await fetch(`${APP}/api/import/batches`, { headers: { ...AUTH } });
 const histJson = hist.ok ? await hist.json() : {};
 const histList = Array.isArray(histJson.batches) ? histJson.batches : [];
@@ -340,6 +381,45 @@ check(
   histList.some((b) => b.kind === "slips") && histList.some((b) => b.kind === "palms"),
   histList.slice(0, 12).map((b) => `${b.kind}:${b.filename}`).join(" | "),
 );
+await removeBatchesNamed(HIST_PALMS_FILE); // the seed's own batch (drops its attendance rows too)
+
+// ---- 4e) re-import of the same file skips every already-imported row ------
+// The seed file's 7 data rows now exist for this week (plus the 1 typing
+// mistake that is always skipped): a re-import must insert 0 and report the
+// duplicates + the mistake as 8 skips — in both migration-003 states.
+const dbBefore = await dbSummary(weekId);
+const rp = await post("/api/import/report", fd(seedCsv, "e2e-reimport.csv"));
+const rpJson = rp.ok ? await rp.json() : {};
+check(
+  "re-import: 0 rows imported (all already in for this week)",
+  rp.ok && rpJson.importedCount === 0,
+  JSON.stringify({ s: rp.status, i: rpJson.importedCount, k: rpJson.skippedCount, errors: rpJson.errors }),
+);
+check(
+  "re-import: skipped = 7 duplicates + 1 typing mistake = 8",
+  rpJson.skippedCount === 8,
+  String(rpJson.skippedCount),
+);
+check(
+  "re-import: error line names the duplicate skip",
+  (rpJson.errors ?? []).some((e) => e.includes("duplicate")),
+  JSON.stringify(rpJson.errors),
+);
+check(
+  "re-import: slip summary unchanged",
+  (await dbSummary(weekId)).total === dbBefore.total,
+  `=${dbBefore.total}`,
+);
+const dupBatch = await batchId("e2e-reimport.csv");
+if (dupBatch) {
+  const d = await fetch(`${APP}/api/import/batches/${dupBatch}`, { method: "DELETE", headers: { ...AUTH } });
+  const dj = await d.json().catch(() => ({}));
+  check(
+    "DELETE works for an all-skipped (0 imported) batch",
+    d.ok && dj.ok === true,
+    `${d.status} ${JSON.stringify(dj)}`,
+  );
+}
 
 const rxB = await fetch(`${APP}/api/report/export?week=${weekId}&tab=referral&format=xlsx`, { headers: { ...AUTH } });
 const xbBuf = Buffer.from(await rxB.arrayBuffer());

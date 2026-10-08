@@ -191,9 +191,10 @@ export async function GET(request: Request) {
           lines.push(totalRowCells(cols, s.totalAmount).map((v) => JSON.stringify(String(v))).join(","));
         }
       }
-      return new Response(lines.join("\n"), {
+      // BOM so Excel reads the ₹ sign as UTF-8.
+      return new Response("﻿" + lines.join("\n"), {
         headers: {
-          "Content-Type": "text/csv",
+          "Content-Type": "text/csv; charset=utf-8",
           "Content-Disposition": `attachment; filename="${base}.csv"`,
         },
       });

@@ -1,4 +1,5 @@
 import { classifySlipType, isCountLikeName, mapInsideOutside, normalizeName, parseAmount } from "@/lib/report-import";
+import { dropDuplicates, rowSignature, SIG_FIELDS, type SlipTable } from "@/lib/import-dedup";
 import { computeDesiredChapters, resolveHomeChapter } from "@/lib/member-chapters";
 import { fetchAllRows } from "@/lib/supabase/paged";
 import { parseUpload } from "@/lib/import-upload";
@@ -124,9 +125,9 @@ export async function POST(request: Request) {
     let skipped = 0;
     let tyfcbBlankAmount = 0;
     const errors: string[] = [...parseErrors];
-    // One entry per skipped row (typing mistakes only — duplicate rows
-    // are imported, never skipped) so the Import history table can show
-    // exactly what was dropped and why.
+    // One entry per skipped row (typing mistakes + already-imported
+    // duplicates, see step 3) so the Import history table can show exactly
+    // what was dropped and why.
     const skipDetails: string[] = [];
     const pushSkip = (msg: string) => {
       if (skipDetails.length < 1000) skipDetails.push(msg);
@@ -347,9 +348,92 @@ export async function POST(request: Request) {
     }
     const midOf = (k: string | null): string | null => (k ? (memberIds.get(k) ?? null) : null);
 
-    // ---- 3) Build payloads and insert EVERY row.
-    // Owner rule: all file entries are correct — identical rows and
-    // re-imports are kept as-is; only typing mistakes are skipped above.
+    // ---- 3) Build payloads, drop rows already imported for this week, insert.
+    // Owner rule: within one file every entry is kept — identical rows all
+    // import (migration 003 drops the dedupe indexes so the database never
+    // rejects a duplicate). A RE-IMPORT of a row already present for this
+    // tenant + week is dropped instead (lib/import-dedup.ts: one signature
+    // over the file-derived identity fields only, ids/batches ignored);
+    // skips are counted and reported, nothing is updated or overwritten.
+    const payloads: Record<SlipTable, Record<string, unknown>[]> = {
+      slip_referrals: referralRows.map((r) => ({
+        tenant_id: tenantId,
+        bni_week_id: weekId,
+        from_member_id: midOf(r.fromKey),
+        to_member_id: midOf(r.toKey),
+        from_name: r.fromName,
+        to_name: r.toName,
+        other_chapter_member: r.other,
+        inside_outside: r.inside,
+        from_is_other_chapter: r.fromOther,
+        to_is_other_chapter: r.toOther,
+        import_batch_id: batchId,
+      })),
+      slip_one_to_ones: otoRows.map((r) => ({
+        tenant_id: tenantId,
+        bni_week_id: weekId,
+        initiated_by_member_id: midOf(r.initKey),
+        met_with_member_id: midOf(r.metKey),
+        initiated_by_name: r.initName,
+        met_with_name: r.metName,
+        other_chapter_member: r.other,
+        initiated_by_is_other_chapter: r.initOther,
+        met_with_is_other_chapter: r.metOther,
+        import_batch_id: batchId,
+      })),
+      slip_tyfcb: tyfcbRows.map((r) => ({
+        tenant_id: tenantId,
+        bni_week_id: weekId,
+        member_id: midOf(r.nameKey),
+        member_name: r.name,
+        amount: r.amount,
+        other_chapter_member: r.other,
+        thanker_name: r.thankerRaw || null,
+        thanker_is_other_chapter: r.thankerOther,
+        import_batch_id: batchId,
+      })),
+      slip_visitors: visitorRows.map((r) => ({
+        tenant_id: tenantId,
+        bni_week_id: weekId,
+        full_name: r.fullName,
+        invited_by_member_id: midOf(r.inviterKey),
+        invited_by_name: r.inviterRaw,
+        import_batch_id: batchId,
+      })),
+      slip_ceus: ceuRows.map((r) => ({
+        tenant_id: tenantId,
+        bni_week_id: weekId,
+        member_id: midOf(r.nameKey),
+        member_name: r.name,
+        credits: r.credits,
+        import_batch_id: batchId,
+      })),
+    };
+
+    let duplicates = 0;
+    for (const table of Object.keys(payloads) as SlipTable[]) {
+      const rows = payloads[table];
+      if (rows.length === 0) continue;
+      const existing = await fetchAllRows<Record<string, unknown>>(table, SIG_FIELDS[table].join(","), {
+        eq: [
+          ["tenant_id", tenantId],
+          ["bni_week_id", weekId],
+        ],
+        pageSize: 1000,
+      });
+      const keys = new Set(existing.map((r) => rowSignature(table, r)));
+      const { fresh, duplicateCount } = dropDuplicates(table, rows, keys);
+      payloads[table] = fresh;
+      if (duplicateCount > 0) {
+        duplicates += duplicateCount;
+        skipped += duplicateCount;
+        pushSkip(`${SLIP_LABELS[table] ?? table}: ${duplicateCount} duplicate row(s) skipped — already imported for this week`);
+      }
+    }
+    if (duplicates > 0) {
+      errors.push(`${duplicates} duplicate row(s) skipped — already imported for this week`);
+    }
+
     async function bulkInsert(table: string, payloads: Record<string, unknown>[]) {
       for (let i = 0; i < payloads.length; i += 1000) {
         const chunk = payloads.slice(i, i + 1000);
@@ -371,77 +455,11 @@ export async function POST(request: Request) {
       }
     }
 
-    await bulkInsert(
-      "slip_referrals",
-      referralRows.map((r) => ({
-        tenant_id: tenantId,
-        bni_week_id: weekId,
-        from_member_id: midOf(r.fromKey),
-        to_member_id: midOf(r.toKey),
-        from_name: r.fromName,
-        to_name: r.toName,
-        other_chapter_member: r.other,
-        inside_outside: r.inside,
-        from_is_other_chapter: r.fromOther,
-        to_is_other_chapter: r.toOther,
-        import_batch_id: batchId,
-      })),
-    );
-
-    await bulkInsert(
-      "slip_one_to_ones",
-      otoRows.map((r) => ({
-        tenant_id: tenantId,
-        bni_week_id: weekId,
-        initiated_by_member_id: midOf(r.initKey),
-        met_with_member_id: midOf(r.metKey),
-        initiated_by_name: r.initName,
-        met_with_name: r.metName,
-        other_chapter_member: r.other,
-        initiated_by_is_other_chapter: r.initOther,
-        met_with_is_other_chapter: r.metOther,
-        import_batch_id: batchId,
-      })),
-    );
-
-    await bulkInsert(
-      "slip_tyfcb",
-      tyfcbRows.map((r) => ({
-        tenant_id: tenantId,
-        bni_week_id: weekId,
-        member_id: midOf(r.nameKey),
-        member_name: r.name,
-        amount: r.amount,
-        other_chapter_member: r.other,
-        thanker_name: r.thankerRaw || null,
-        thanker_is_other_chapter: r.thankerOther,
-        import_batch_id: batchId,
-      })),
-    );
-
-    await bulkInsert(
-      "slip_visitors",
-      visitorRows.map((r) => ({
-        tenant_id: tenantId,
-        bni_week_id: weekId,
-        full_name: r.fullName,
-        invited_by_member_id: midOf(r.inviterKey),
-        invited_by_name: r.inviterRaw,
-        import_batch_id: batchId,
-      })),
-    );
-
-    await bulkInsert(
-      "slip_ceus",
-      ceuRows.map((r) => ({
-        tenant_id: tenantId,
-        bni_week_id: weekId,
-        member_id: midOf(r.nameKey),
-        member_name: r.name,
-        credits: r.credits,
-        import_batch_id: batchId,
-      })),
-    );
+    await bulkInsert("slip_referrals", payloads["slip_referrals"]);
+    await bulkInsert("slip_one_to_ones", payloads["slip_one_to_ones"]);
+    await bulkInsert("slip_tyfcb", payloads["slip_tyfcb"]);
+    await bulkInsert("slip_visitors", payloads["slip_visitors"]);
+    await bulkInsert("slip_ceus", payloads["slip_ceus"]);
 
     const batchLog = JSON.stringify({ errors: errors.slice(0, 50), skips: skipDetails.slice(0, 1000) });
     const { error: batchError } = await supabase
@@ -463,19 +481,6 @@ export async function POST(request: Request) {
     clearLatestImportedWeekCache();
     clearSlipsSnapshotCache();
 
-    // Either file may be imported first: when this week's PALMS attendance is
-    // still missing, tell the uploader (red notice on the Import screen).
-    const { data: attendanceRow } = await supabase
-      .from("member_attendance")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .eq("bni_week_id", week.id)
-      .limit(1)
-      .maybeSingle();
-    const warning = attendanceRow
-      ? undefined
-      : `No PALMS summary imported for ${week.label} — upload the Chapter Summary PALMS Report.`;
-
     return Response.json({
       importedCount: imported,
       skippedCount: skipped,
@@ -483,7 +488,6 @@ export async function POST(request: Request) {
       boldUsed,
       errors,
       bniWeek: bniWeekLabel,
-      ...(warning ? { warning } : {}),
       columns: headers.filter(Boolean),
       columnMap,
     });

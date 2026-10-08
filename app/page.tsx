@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { requirePageTenant } from "@/lib/server-auth";
-import { fetchSlipTrends, type SlipTrends } from "@/lib/trends";
+import { fetchAttendanceTrends, fetchHomeActiveMembers, fetchSlipTrends, type SlipTrends } from "@/lib/trends";
 import NoAccess from "@/components/NoAccess";
 import TrendChart from "@/components/TrendChart";
 
@@ -15,22 +14,29 @@ export default async function Home() {
   } catch {
     trends = { weeks: [], series: [] };
   }
+  // Attendance chart shares the slip chart's weeks so the two graphs align
+  // point-for-point; the badge counts active Home Chapter members only.
+  const [attendance, activeCount] = await Promise.all([
+    fetchAttendanceTrends(guard.tenantId, trends.weeks).catch(() => ({ weeks: [], series: [] }) as SlipTrends),
+    fetchHomeActiveMembers(guard.tenantId).then((r) => r.count).catch(() => 0),
+  ]);
 
   return (
     <div>
-      <div className="card hero">
-        <h1>BNI Week Slips</h1>
-        <p className="muted">
-          Import the weekly Report XLS (From, To, Slip Type, Inside/Outside, TYFCB, CEU Credits,
-          Detail) — then track every slip type as a weekly trend for the last 6 months.
-        </p>
-        <div className="hero-actions">
-          <Link href="/import">
-            <button type="button" className="primary">
-              Import Report XLS
-            </button>
-          </Link>
+      <div className="page-head">
+        <h1>
+          BNI Week Slips
+          <span className="count-badge">{activeCount} active members</span>
+        </h1>
+      </div>
+
+      <div className="card trend-card">
+        <div className="import-head">
+          <h2>
+            Attendance <span className="muted">— last 6 months, weekly (Wednesdays)</span>
+          </h2>
         </div>
+        <TrendChart weeks={attendance.weeks} series={attendance.series} allLabel="All letters" />
       </div>
 
       <div className="card trend-card">

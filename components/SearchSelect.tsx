@@ -54,6 +54,7 @@ export default function SearchSelect({
       )
     : null;
   const optionOf = new Map(options.map(norm).map((o) => [o.value, o.label]));
+  if (allLabel) optionOf.set("all", allLabel);
   const selectedLabels = selectedSet
     ? [...selectedSet].map((v) => optionOf.get(v) ?? v)
     : [];

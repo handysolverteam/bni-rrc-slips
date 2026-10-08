@@ -7,15 +7,19 @@ import type { SlipTrends, TrendSeries, TrendWeek } from "@/lib/trends";
 /** Same section colours as the app's `data-stat` palette — consumed as CSS
     variables, so every view flips with the dark/light theme live (no
     re-render). The `*-ink` vars are the hues tuned to read on app surfaces:
-    identical to the raw hues in light, brightened in dark. The Combined
-    series rides on the text colour so it stays readable on either theme. */
+    identical to the raw hues in light, brightened in dark. */
 const COLORS: Record<string, string> = {
   "one-to-one": "var(--orange-ink)",
   referral: "var(--green-ink)",
   tyfcb: "var(--gold-ink)",
   visitor: "var(--blue-ink)",
   ceu: "var(--purple-ink)",
-  combined: "var(--ink)",
+  // Attendance chart (home): the PALMS letters reuse the same app hues.
+  present: "var(--green-ink)",
+  absent: "var(--orange-ink)",
+  medical: "var(--blue-ink)",
+  substitute: "var(--gold-ink)",
+  leave: "var(--purple-ink)",
 };
 
 const CHARTS = [
@@ -34,6 +38,9 @@ const W = 960;
 const H = 340;
 const PAD = { l: 44, r: 14, t: 16, b: 32 };
 
+/** A series as drawn: `secondary` ones (TYFCB ₹ on the All view) use the right axis. */
+type ViewSeries = TrendSeries & { secondary?: boolean };
+
 type Geom = {
   n: number;
   innerW: number;
@@ -43,6 +50,12 @@ type Geom = {
   y: (v: number) => number;
   ticks: number[];
   labelStep: number;
+  /** Right padding (wider when the ₹ axis is shown). */
+  r: number;
+  /** Right ₹ axis (All view with TYFCB amounts); undefined otherwise. */
+  y2?: (v: number) => number;
+  ticks2?: number[];
+  max2: number;
 };
 
 /** Round the y-axis maximum up to a 4-step "nice" number (ticks stay integers). */
@@ -50,8 +63,23 @@ function niceMax(max: number): number {
   for (const c of [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000]) {
     if (c * 4 >= max) return c * 4;
   }
-  return Math.ceil(max / 4) * 4;
+  // Rupee totals: keep growing 1-2-5 steps so ticks stay round.
+  for (let p = 1000; ; p *= 10) {
+    for (const m of [1, 2, 5]) if (p * m * 4 >= max) return p * m * 4;
+  }
 }
+
+type Fmt = (v: number) => string;
+const plain: Fmt = (v) => String(v);
+/** Compact Indian rupee formatting for the TYFCB amount view (axis + tooltips). */
+const rupees: Fmt = (v) => {
+  const a = Math.abs(v);
+  const f = (n: number) => String(Math.round(n * 100) / 100);
+  if (a >= 1e7) return `₹${f(v / 1e7)} Cr`;
+  if (a >= 1e5) return `₹${f(v / 1e5)} L`;
+  if (a >= 1e3) return `₹${f(v / 1e3)}K`;
+  return `₹${f(v)}`;
+};
 
 function dayLabel(date: string): string {
   return new Date(`${date}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
@@ -74,17 +102,28 @@ function monthlyTotals(weeks: TrendWeek[], counts: number[], months: string[]): 
 
 type Slice = { label: string; value: number; color: string; opacity: number };
 
-function cartesianAxes(g: Geom, weeks: TrendWeek[]): ReactNode {
+/** Right-hand ₹ axis labels (TYFCB on the All view). */
+function rightAxis(g: Geom): ReactNode {
+  if (!g.ticks2) return null;
+  return g.ticks2.map((t, i) => (
+    <text key={`r${t}`} className="trend-axis" x={W - g.r + 8} y={g.y(g.ticks[i]) + 4} textAnchor="start" style={{ fill: COLORS.tyfcb }}>
+      {rupees(t)}
+    </text>
+  ));
+}
+
+function cartesianAxes(g: Geom, weeks: TrendWeek[], f: Fmt): ReactNode {
   return (
     <g>
       {g.ticks.map((t) => (
         <g key={t}>
-          <line className="trend-grid" x1={PAD.l} x2={W - PAD.r} y1={g.y(t)} y2={g.y(t)} />
+          <line className="trend-grid" x1={PAD.l} x2={W - g.r} y1={g.y(t)} y2={g.y(t)} />
           <text className="trend-axis" x={PAD.l - 8} y={g.y(t) + 4} textAnchor="end">
-            {t}
+            {f(t)}
           </text>
         </g>
       ))}
+      {rightAxis(g)}
       {weeks.map((w, i) =>
         i % g.labelStep === 0 || i === g.n - 1 ? (
           <text key={w.id} className="trend-axis" x={g.x(i)} y={H - 10} textAnchor="middle">
@@ -96,18 +135,20 @@ function cartesianAxes(g: Geom, weeks: TrendWeek[]): ReactNode {
   );
 }
 
-function renderLine(g: Geom, weeks: TrendWeek[], view: TrendSeries[], fill: boolean): ReactNode {
+function renderLine(g: Geom, weeks: TrendWeek[], view: ViewSeries[], fill: boolean, f: Fmt): ReactNode {
   return (
     <g>
       {view.map((s) => {
         const color = COLORS[s.key] ?? "var(--muted)";
-        const sw = s.key === "combined" ? 3 : 2;
+        const sw = 2;
+        const yf = s.secondary && g.y2 ? g.y2 : g.y;
+        const sf = s.secondary ? rupees : f;
         return (
           <g key={s.key}>
             {fill && g.n > 1 ? (
               <polygon
                 points={[
-                  ...s.counts.map((v, i) => `${g.x(i)},${g.y(v)}`),
+                  ...s.counts.map((v, i) => `${g.x(i)},${yf(v)}`),
                   `${g.x(g.n - 1)},${g.y(0)}`,
                   `${g.x(0)},${g.y(0)}`,
                 ].join(" ")}
@@ -119,11 +160,11 @@ function renderLine(g: Geom, weeks: TrendWeek[], view: TrendSeries[], fill: bool
               style={{ stroke: color }}
               strokeWidth={sw}
               strokeLinejoin="round"
-              points={s.counts.map((v, i) => `${g.x(i)},${g.y(v)}`).join(" ")}
+              points={s.counts.map((v, i) => `${g.x(i)},${yf(v)}`).join(" ")}
             />
             {s.counts.map((v, i) => (
-              <circle key={i} cx={g.x(i)} cy={g.y(v)} r={3} style={{ fill: color }}>
-                <title>{`${s.label} — ${dayLabel(weeks[i].date)}: ${v}`}</title>
+              <circle key={i} cx={g.x(i)} cy={yf(v)} r={3} style={{ fill: color }}>
+                <title>{`${s.label} — ${dayLabel(weeks[i].date)}: ${sf(v)}`}</title>
               </circle>
             ))}
           </g>
@@ -133,7 +174,7 @@ function renderLine(g: Geom, weeks: TrendWeek[], view: TrendSeries[], fill: bool
   );
 }
 
-function renderBar(g: Geom, weeks: TrendWeek[], view: TrendSeries[]): ReactNode {
+function renderBar(g: Geom, weeks: TrendWeek[], view: ViewSeries[], f: Fmt): ReactNode {
   const slot = g.innerW / g.n;
   const group = slot * 0.72;
   const bw = group / view.length;
@@ -142,24 +183,25 @@ function renderBar(g: Geom, weeks: TrendWeek[], view: TrendSeries[]): ReactNode 
     <g>
       {g.ticks.map((t) => (
         <g key={t}>
-          <line className="trend-grid" x1={PAD.l} x2={W - PAD.r} y1={g.y(t)} y2={g.y(t)} />
+          <line className="trend-grid" x1={PAD.l} x2={W - g.r} y1={g.y(t)} y2={g.y(t)} />
           <text className="trend-axis" x={PAD.l - 8} y={g.y(t) + 4} textAnchor="end">
-            {t}
+            {f(t)}
           </text>
         </g>
       ))}
+      {rightAxis(g)}
       {view.map((s, si) =>
         s.counts.map((v, i) =>
           v > 0 ? (
             <rect
               key={`${s.key}-${i}`}
               x={PAD.l + i * slot + (slot - group) / 2 + si * bw}
-              y={g.y(v)}
+              y={(s.secondary && g.y2 ? g.y2 : g.y)(v)}
               width={Math.max(1, bw - 1)}
-              height={Math.max(1, base - g.y(v))}
+              height={Math.max(1, base - (s.secondary && g.y2 ? g.y2 : g.y)(v))}
               style={{ fill: COLORS[s.key] ?? "var(--muted)" }}
             >
-              <title>{`${s.label} — ${dayLabel(weeks[i].date)}: ${v}`}</title>
+              <title>{`${s.label} — ${dayLabel(weeks[i].date)}: ${(s.secondary ? rupees : f)(v)}`}</title>
             </rect>
           ) : null,
         ),
@@ -187,7 +229,7 @@ function arcPath(cx: number, cy: number, r: number, r0: number, a0: number, a1: 
   return `M${P(a0, r)} A${r},${r} 0 ${large} 1 ${P(a1, r)} L${P(a1, r0)} A${r0},${r0} 0 ${large} 0 ${P(a0, r0)} Z`;
 }
 
-function renderPie(slices: Slice[]): ReactNode {
+function renderPie(slices: Slice[], f: Fmt): ReactNode {
   const total = slices.reduce((a, s) => a + s.value, 0);
   if (total <= 0) {
     return (
@@ -213,7 +255,7 @@ function renderPie(slices: Slice[]): ReactNode {
             <g key={key}>
               <circle cx={cx} cy={cy} r={R} style={{ fill: s.color, fillOpacity: s.opacity }} />
               <circle cx={cx} cy={cy} r={R0} style={{ fill: "var(--card)" }} />
-              <title>{`${s.label}: ${s.value}`}</title>
+              <title>{`${s.label}: ${f(s.value)}`}</title>
             </g>
           );
         }
@@ -225,7 +267,7 @@ function renderPie(slices: Slice[]): ReactNode {
             stroke="var(--card)"
             strokeWidth={1.5}
           >
-            <title>{`${s.label}: ${s.value} (${Math.round((s.value / total) * 100)}%)`}</title>
+            <title>{`${s.label}: ${f(s.value)} (${Math.round((s.value / total) * 100)}%)`}</title>
           </path>
         );
       })}
@@ -233,7 +275,7 @@ function renderPie(slices: Slice[]): ReactNode {
   );
 }
 
-function renderRadar(weeks: TrendWeek[], view: TrendSeries[], months: string[]): ReactNode {
+function renderRadar(weeks: TrendWeek[], view: ViewSeries[], months: string[], f: Fmt): ReactNode {
   const cx = W / 2;
   const cy = PAD.t + (H - PAD.t - PAD.b) / 2;
   const R = Math.min(126, (H - PAD.t - PAD.b) / 2 - 20);
@@ -254,7 +296,7 @@ function renderRadar(weeks: TrendWeek[], view: TrendSeries[], months: string[]):
             points={months.map((_, i) => pt(i, (top * k) / 4).join(",")).join(" ")}
           />
           <text className="trend-axis" x={cx + 6} y={cy - (R * k) / 4 + 12}>
-            {(top * k) / 4}
+            {f((top * k) / 4)}
           </text>
         </g>
       ))}
@@ -289,7 +331,7 @@ function renderRadar(weeks: TrendWeek[], view: TrendSeries[], months: string[]):
               const [px, py] = pt(i, v);
               return (
                 <circle key={i} cx={px} cy={py} r={3} style={{ fill: color }}>
-                  <title>{`${s.label} — ${monthLabel(months[i])}: ${v}`}</title>
+                  <title>{`${s.label} — ${monthLabel(months[i])}: ${f(v)}`}</title>
                 </circle>
               );
             })}
@@ -300,7 +342,7 @@ function renderRadar(weeks: TrendWeek[], view: TrendSeries[], months: string[]):
   );
 }
 
-function renderHeatmap(weeks: TrendWeek[], view: TrendSeries[]): ReactNode {
+function renderHeatmap(weeks: TrendWeek[], view: ViewSeries[], f: Fmt): ReactNode {
   const left = 92;
   const gridW = W - left - PAD.r;
   const cellW = gridW / weeks.length;
@@ -328,7 +370,7 @@ function renderHeatmap(weeks: TrendWeek[], view: TrendSeries[]): ReactNode {
                 fillOpacity: v === 0 ? 0.05 : 0.2 + 0.8 * (v / max),
               }}
             >
-              <title>{`${s.label} — ${dayLabel(weeks[i].date)}: ${v}`}</title>
+              <title>{`${s.label} — ${dayLabel(weeks[i].date)}: ${f(v)}`}</title>
             </rect>
           ))}
         </g>
@@ -350,11 +392,14 @@ function renderHeatmap(weeks: TrendWeek[], view: TrendSeries[]): ReactNode {
   );
 }
 
-function renderBubble(g: Geom, weeks: TrendWeek[], view: TrendSeries[], max: number): ReactNode {
+function renderBubble(g: Geom, weeks: TrendWeek[], view: ViewSeries[], max: number, f: Fmt): ReactNode {
   return (
     <g>
       {view.map((s) => {
         const color = COLORS[s.key] ?? "var(--muted)";
+        const yf = s.secondary && g.y2 ? g.y2 : g.y;
+        const sf = s.secondary ? rupees : f;
+        const mx = s.secondary ? g.max2 : max;
         return (
           <g key={s.key}>
             {s.counts.map((v, i) =>
@@ -362,11 +407,11 @@ function renderBubble(g: Geom, weeks: TrendWeek[], view: TrendSeries[], max: num
                 <circle
                   key={i}
                   cx={g.x(i)}
-                  cy={g.y(v)}
-                  r={4 + 12 * Math.sqrt(v / max)}
+                  cy={yf(v)}
+                  r={4 + 12 * Math.sqrt(v / mx)}
                   style={{ fill: color, fillOpacity: 0.7 }}
                 >
-                  <title>{`${s.label} — ${dayLabel(weeks[i].date)}: ${v}`}</title>
+                  <title>{`${s.label} — ${dayLabel(weeks[i].date)}: ${sf(v)}`}</title>
                 </circle>
               ) : null,
             )}
@@ -377,14 +422,17 @@ function renderBubble(g: Geom, weeks: TrendWeek[], view: TrendSeries[], max: num
   );
 }
 
-/** Home dashboard trends: slip-type tabs (All slips combined + one per type)
-    and a chart-type picker (line/bar/area/pie/bubble/radar/heat map) above
-    the graph. Every view derives from the same `{ weeks, series }` props —
-    switching tabs or chart types never re-fetches. "All slips" adds a
-    Combined series (element-wise sum, drawn last); pie splits by slip type on
-    All and by month on a single type; radar buckets counts per month; the
-    heat map is a weeks × series intensity grid. */
-export default function TrendChart({ weeks, series }: SlipTrends) {
+/** Home dashboard trends: label tabs (All combined + one per series) and a
+    chart-type picker (line/bar/area/pie/bubble/radar/heat map) above the
+    graph. Every view derives from the same `{ weeks, series }` props —
+    switching tabs or chart types never re-fetches. "All" plots the series'
+    slip counts; a series with `amounts` (TYFCB) plots rupee totals on its
+    own tab (₹ axis); pie splits by series on All and
+    by month on a single series; radar buckets counts per month; the heat
+    map is a weeks × series intensity grid. One chart instance serves the
+    slip trends (default tab label "All slips") and the attendance chart
+    (`allLabel = "All letters"`). */
+export default function TrendChart({ weeks, series, allLabel = "All slips" }: SlipTrends & { allLabel?: string }) {
   const [type, setType] = useState("all");
   const [chart, setChart] = useState<ChartKey>("bar");
 
@@ -403,13 +451,19 @@ export default function TrendChart({ weeks, series }: SlipTrends) {
     );
   }
 
-  const combined: TrendSeries = {
-    key: "combined",
-    label: "Combined",
-    counts: weeks.map((_, i) => series.reduce((a, s) => a + (s.counts[i] ?? 0), 0)),
-  };
-  const active = type === "all" ? null : series.find((s) => s.key === type) ?? null;
-  const view: TrendSeries[] = active ? [active] : [...series, combined];
+  const picked = type === "all" ? null : series.find((s) => s.key === type) ?? null;
+  const money = !!picked?.amounts;
+  // A single-series tab with rupee amounts plots those instead of the row count.
+  const active = picked && picked.amounts ? { ...picked, counts: picked.amounts } : picked;
+  const f: Fmt = money ? rupees : plain;
+  // All view, cartesian charts: TYFCB is plotted as ₹ amounts on a right-hand axis
+  // (counts and rupees never share one axis); pie / radar / heat map keep counts.
+  const dual = !active && (chart === "line" || chart === "area" || chart === "bar" || chart === "bubble") && series.some((s) => s.amounts);
+  const view: ViewSeries[] = active
+    ? [active]
+    : dual
+      ? series.map((s) => (s.amounts ? { ...s, counts: s.amounts, secondary: true } : s))
+      : series;
   const months = [...new Set(weeks.map((w) => monthKey(w.date)))];
   const slices: Slice[] = active
     ? monthlyTotals(weeks, active.counts, months).map((v, i) => ({
@@ -426,59 +480,69 @@ export default function TrendChart({ weeks, series }: SlipTrends) {
       }));
 
   const n = weeks.length;
-  const innerW = W - PAD.l - PAD.r;
+  const padR = dual ? 66 : PAD.r;
+  const innerW = W - PAD.l - padR;
   const innerH = H - PAD.t - PAD.b;
   const x = (i: number) => (n === 1 ? PAD.l + innerW / 2 : PAD.l + (i * innerW) / (n - 1));
-  const max = Math.max(1, ...view.flatMap((s) => s.counts));
+  const max = Math.max(1, ...view.filter((s) => !s.secondary).flatMap((s) => s.counts));
+  const max2 = Math.max(1, ...view.filter((s) => s.secondary).flatMap((s) => s.counts));
   const top = niceMax(max);
+  const top2 = niceMax(max2);
   const y = (v: number) => PAD.t + innerH * (1 - v / top);
   const ticks = [0, 1, 2, 3, 4].map((i) => (top * i) / 4);
   const labelStep = Math.max(1, Math.ceil(n / 8));
-  const geom: Geom = { n, innerW, innerH, top, x, y, ticks, labelStep };
+  const geom: Geom = {
+    n, innerW, innerH, top, x, y, ticks, labelStep,
+    r: padR,
+    max2,
+    ...(dual
+      ? { y2: (v: number) => PAD.t + innerH * (1 - v / top2), ticks2: [0, 1, 2, 3, 4].map((i) => (top2 * i) / 4) }
+      : {}),
+  };
 
   const chartLabel = CHARTS.find((c) => c.key === chart)?.label ?? "Line";
-  const viewLabel = active ? active.label : "all slips combined";
+  const viewLabel = active ? active.label : "all slips";
 
   let body: ReactNode;
   switch (chart) {
     case "bar":
-      body = renderBar(geom, weeks, view);
+      body = renderBar(geom, weeks, view, f);
       break;
     case "pie":
-      body = renderPie(slices);
+      body = renderPie(slices, f);
       break;
     case "radar":
-      body = renderRadar(weeks, view, months);
+      body = renderRadar(weeks, view, months, f);
       break;
     case "heatmap":
-      body = renderHeatmap(weeks, view);
+      body = renderHeatmap(weeks, view, f);
       break;
     case "bubble":
       body = (
         <g>
-          {cartesianAxes(geom, weeks)}
-          {renderBubble(geom, weeks, view, max)}
+          {cartesianAxes(geom, weeks, f)}
+          {renderBubble(geom, weeks, view, max, f)}
         </g>
       );
       break;
     case "area":
       body = (
         <g>
-          {cartesianAxes(geom, weeks)}
-          {renderLine(geom, weeks, view, true)}
+          {cartesianAxes(geom, weeks, f)}
+          {renderLine(geom, weeks, view, true, f)}
         </g>
       );
       break;
     default:
       body = (
         <g>
-          {cartesianAxes(geom, weeks)}
-          {renderLine(geom, weeks, view, false)}
+          {cartesianAxes(geom, weeks, f)}
+          {renderLine(geom, weeks, view, false, f)}
         </g>
       );
   }
 
-  const tabs = [{ key: "all", label: "All slips" }, ...series.map((s) => ({ key: s.key, label: s.label }))];
+  const tabs = [{ key: "all", label: allLabel }, ...series.map((s) => ({ key: s.key, label: s.label }))];
 
   return (
     <div className="trend-wrap">
@@ -521,11 +585,12 @@ export default function TrendChart({ weeks, series }: SlipTrends) {
             <span key={s.key} className="trend-legend-item">
               <span className="trend-dot" style={{ background: COLORS[s.key] ?? "var(--muted)" }} />
               {s.label}
-              <span className="trend-total">{total.toLocaleString("en-IN")}</span>
+              <span className="trend-total">{money || s.secondary ? rupees(total) : total.toLocaleString("en-IN")}</span>
             </span>
           );
         })}
       </div>
+      {dual ? <p className="muted trend-axis-note">TYFCB is plotted in ₹ on the right axis; other slips are counts on the left.</p> : null}
       <div className="trend-svg-scroll" id="trend-graph">
         <svg
           className="trend-svg"
@@ -546,7 +611,7 @@ export default function TrendChart({ weeks, series }: SlipTrends) {
                 <span className="trend-dot" style={{ background: s.color, opacity: s.opacity }} />
                 {s.label}
                 <span className="trend-total">
-                  {s.value.toLocaleString("en-IN")} · {pct}%
+                  {money ? rupees(s.value) : s.value.toLocaleString("en-IN")} · {pct}%
                 </span>
               </span>
             );

@@ -20,7 +20,7 @@ create table public.tenants (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   -- Home-chapter rule for this tenant (HOME = bold/Detail split). NULL =
-    -- fall back to NEXT_PUBLIC_CHAPTER_NAME, then 'BNI Influencer'.
+    -- fall back to NEXT_PUBLIC_CHAPTER_NAME, then 'BNI Influencers'.
   home_chapter_name text,
   created_at timestamptz not null default now()
 );

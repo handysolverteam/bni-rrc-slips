@@ -4,41 +4,50 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
-type Mismatch = { label: string; palms: number; slips: number };
+type Preview = {
+  filename: string;
+  from: string | null;
+  to: string | null;
+  memberCount: number;
+  weeksMatched: number;
+  weeksUnknown: string[];
+  cellTotal: number;
+  cellNew: number;
+  cellSkipped: number;
+  skippedSamples: string[];
+  issues: string[];
+};
+
 type State =
   | { kind: "idle" }
+  | { kind: "reading" }
+  | { kind: "preview"; preview: Preview }
   | { kind: "busy" }
-  | { kind: "ok"; text: string; notice?: string }
-  | { kind: "mismatch"; text: string; items: Mismatch[] }
+  | { kind: "ok"; text: string }
   | { kind: "err"; text: string };
 
 export type PalmsRecord = { filename: string; importedAt: string };
 
-const fmt = (v: number): string => (Number.isInteger(v) && Math.abs(v) >= 10000 ? v.toLocaleString("en-IN") : String(v));
-
 /**
- * Upload for BNI's `Chapter Summary PALMS Report` (.xls/.xlsx): the meeting
- * attendance columns P A L M S + T for a single meeting date (From = To).
- * Two-step flow: picking a file only stores it — the explicit **Import**
+ * Upload for BNI's wide `PALMS Attendance Report` (.xls/.xlsx) — one file
+ * covering ~6 months, one cell per member per Wednesday (P A M S L letters).
+ * Two-step flow: picking a file only runs the DRY-RUN preview (new vs
+ * already-imported cells, unknown header dates) — the explicit **Import**
  * button starts the upload (choosing a file never imports by itself).
- * Slips are NOT required first — either file may be imported first; when this
- * meeting's slips are missing, the response's `warning` notice is shown as a
- * red "not imported yet" box (and there is nothing to compare yet). With slips
- * present, the response's `comparison` verdict (PALMS Total row vs this week's
- * slips) is shown at once.
+ * Cells that already exist are skipped, never replaced. Slips are never
+ * involved: PALMS and the Slips Audit Report are independent imports.
  *
- * On `/summary` the page passes `removeWeekId` (single-week scope with
- * attendance) + the current import `record`: the panel then shows which file
- * was imported and offers a **Remove PALMS summary** action (attendance +
- * comparison stats of that week — the slips import stays).
+ * On `/palms` the page passes `hasData` + the current import `record`: the
+ * panel then shows which file was imported and offers **Remove all PALMS
+ * data** (attendance + PALMS batches — the slips import stays).
  */
 export default function PalmsImportPanel({
   onImported,
-  removeWeekId,
+  hasData = false,
   record,
 }: {
   onImported?: () => void;
-  removeWeekId?: string | null;
+  hasData?: boolean;
   record?: PalmsRecord | null;
 }) {
   const [state, setState] = useState<State>({ kind: "idle" });
@@ -49,12 +58,10 @@ export default function PalmsImportPanel({
   const router = useRouter();
 
   async function remove() {
-    if (!removeWeekId || removing) return;
+    if (removing) return;
     setRemoving(true);
     try {
-      const res = await fetch(`/api/import/palms?week=${encodeURIComponent(removeWeekId)}`, {
-        method: "DELETE",
-      });
+      const res = await fetch("/api/import/palms", { method: "DELETE" });
       const data = await res.json().catch(() => null);
       if (!res.ok || data?.error) {
         setState({ kind: "err", text: data?.error ?? "Remove failed." });
@@ -62,7 +69,8 @@ export default function PalmsImportPanel({
         return;
       }
       setConfirming(false);
-      setState({ kind: "ok", text: "PALMS summary removed — the slips import stays." });
+      setPicked(null);
+      setState({ kind: "ok", text: "All PALMS data removed — the slips import stays." });
       onImported?.();
       router.refresh();
     } catch (err) {
@@ -73,59 +81,71 @@ export default function PalmsImportPanel({
     }
   }
 
-  async function upload(file: File) {
-    if (state.kind === "busy") return;
-    setState({ kind: "busy" });
+  async function preview(file: File) {
+    if (state.kind === "reading" || state.kind === "busy") return;
+    setState({ kind: "reading" });
+    setPicked(file);
     try {
       const fd = new FormData();
       fd.append("file", file);
+      const res = await fetch("/api/import/palms/preview", { method: "POST", body: fd });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.error) {
+        setState({ kind: "err", text: data?.error ?? "Could not read the file." });
+        return;
+      }
+      setState({ kind: "preview", preview: { ...data, filename: file.name } as Preview });
+    } catch (err) {
+      setState({ kind: "err", text: err instanceof Error ? err.message : "Network error" });
+    }
+  }
+
+  async function upload() {
+    if (state.kind !== "preview" || !picked || state.preview.cellNew === 0) return;
+    setState({ kind: "busy" });
+    try {
+      const fd = new FormData();
+      fd.append("file", picked);
       const res = await fetch("/api/import/palms", { method: "POST", body: fd });
       const data = await res.json().catch(() => null);
       if (!res.ok || data?.error) {
         setState({ kind: "err", text: data?.error ?? "Import failed." });
         return;
       }
-      const base = `Imported ${data.importedCount} member(s) for ${data.weekLabel}${
-        data.replacedCount ? ` (replaced ${data.replacedCount} existing row(s))` : ""
-      }.`;
-      const cmp = data.comparison as
-        | { rows: { label: string; palms: number; slips: number; match: boolean }[]; allMatch: boolean }
-        | null
-        | undefined;
-      if (cmp && !cmp.allMatch) {
-        setState({
-          kind: "mismatch",
-          text: `${base} The PALMS counts do NOT match this week's imported slips:`,
-          items: cmp.rows
-            .filter((r) => !r.match)
-            .map((r) => ({ label: r.label, palms: r.palms, slips: r.slips })),
-        });
-      } else if (cmp) {
-        setState({ kind: "ok", text: `${base} PALMS counts match the imported slips.` });
-      } else {
-        setState({ kind: "ok", text: base, notice: data.warning });
-      }
-      onImported?.();
+      const bits = [
+        `${data.importedCount} new cell(s)`,
+        data.skippedCount ? `${data.skippedCount} already imported (skipped)` : "",
+        `${data.weekCount} week(s)`,
+      ].filter(Boolean);
+      const unknown =
+        Array.isArray(data.weeksUnknown) && data.weeksUnknown.length > 0
+          ? ` — ${data.weeksUnknown.length} header date(s) not on the calendar were skipped`
+          : "";
+      setState({ kind: "ok", text: `Imported: ${bits.join(" · ")}${unknown}.` });
       setPicked(null);
+      onImported?.();
       router.refresh();
     } catch (err) {
       setState({ kind: "err", text: err instanceof Error ? err.message : "Network error" });
     }
   }
 
+  const previewing = state.kind === "reading" || state.kind === "preview";
+  const pv = state.kind === "preview" ? state.preview : null;
+
   return (
     <div className="card">
       <div className="import-head">
-        <h2>Chapter Summary PALMS (attendance)</h2>
+        <h2>PALMS Report (6 months)</h2>
         <div className="import-head-actions">
-          {removeWeekId ? (
+          {hasData ? (
             <button
               type="button"
               className="danger"
-              disabled={removing || state.kind === "busy"}
+              disabled={removing || state.kind === "busy" || state.kind === "reading"}
               onClick={() => setConfirming(true)}
             >
-              Remove PALMS summary
+              Remove all PALMS data
             </button>
           ) : null}
           <button
@@ -146,61 +166,102 @@ export default function PalmsImportPanel({
               {record.importedAt ? ` on ${new Date(record.importedAt).toLocaleString()}` : ""}
             </p>
           ) : null}
-      <form>
-        <label className="field">
-          Chapter Summary PALMS Report (.xls / .xlsx — single meeting date)
-          <input
-            type="file"
-            accept=".xls,.xlsx"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) setPicked(f);
-              e.target.value = "";
-            }}
-          />
-        </label>
-        <button
-          type="button"
-          className="primary btn-block"
-          disabled={!picked || state.kind === "busy"}
-          onClick={() => picked && upload(picked)}
-        >
-          {state.kind === "busy" ? "Importing…" : "Import"}
-        </button>
-        {picked ? <p className="muted">Selected: {picked.name}</p> : null}
-      </form>
-      {state.kind === "busy" ? <p className="muted">Importing…</p> : null}
-      {state.kind === "ok" ? <div className="data-alert ok">{state.text}</div> : null}
-      {state.kind === "ok" && state.notice ? (
-        <div className="data-alert bad" role="alert">
-          <span className="alert-title">Meeting data not imported yet</span>
-          <span>{state.notice}</span>
-          <p className="alert-sub">
-            Import the missing file from the Import screen — slips and the Chapter Summary PALMS can be
-            uploaded in any order.
-          </p>
-        </div>
-      ) : null}
-      {state.kind === "mismatch" ? (
-        <div className="data-alert bad" role="alert">
-          <span className="alert-title">PALMS vs slips mismatch</span>
-          <span>{state.text}</span>
-          <ul>
-            {state.items.map((m) => (
-              <li key={m.label}>
-                {m.label}: PALMS {fmt(m.palms)} vs slips {fmt(m.slips)}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {state.kind === "err" ? <p className="preview-warn">{state.text}</p> : null}
+          <form>
+            <label className="field">
+              PALMS Attendance Report (.xls / .xlsx — last ~6 months, one column per Wednesday)
+              <input
+                type="file"
+                accept=".xls,.xlsx"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) preview(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+
+            {state.kind === "reading" ? <p className="muted">Reading file…</p> : null}
+
+            {pv ? (
+              <div className={`preview-card ${pv.cellSkipped > 0 || pv.weeksUnknown.length > 0 ? "warn" : "ok"}`}>
+                <div className="preview-head">
+                  <strong>{pv.filename}</strong>
+                  <button
+                    type="button"
+                    className="mini-x"
+                    aria-label={`Remove ${pv.filename}`}
+                    title="Remove this file"
+                    onClick={() => {
+                      setPicked(null);
+                      setState({ kind: "idle" });
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="muted">
+                  {pv.from} → {pv.to} · {pv.memberCount} member(s) · {pv.weeksMatched} week(s)
+                </p>
+                {pv.cellNew > 0 ? (
+                  <p className="preview-ok">
+                    {pv.cellNew} new cell(s) to import
+                    {pv.cellSkipped > 0 ? `, ${pv.cellSkipped} already imported (will be skipped)` : ""}.
+                  </p>
+                ) : (
+                  <p className="preview-note">All cells already imported — nothing new to import.</p>
+                )}
+                {pv.cellSkipped > 0 ? (
+                  <p className="preview-warn">
+                    Already imported ({pv.cellSkipped}): {pv.skippedSamples.join("; ")}
+                    {pv.cellSkipped > pv.skippedSamples.length ? ", …" : ""}
+                  </p>
+                ) : null}
+                {pv.weeksUnknown.length > 0 ? (
+                  <p className="preview-warn">
+                    {pv.weeksUnknown.length} header date(s) not on the Wednesday calendar will be skipped:{" "}
+                    {pv.weeksUnknown.join(", ")}.
+                  </p>
+                ) : null}
+                {pv.issues.length > 0 ? (
+                  <details>
+                    <summary>Cells with unknown values ({pv.issues.length})</summary>
+                    <ul>
+                      {pv.issues.map((i) => (
+                        <li key={i}>{i}</li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </div>
+            ) : null}
+
+            {pv ? (
+              <button
+                type="button"
+                className="primary btn-block"
+                disabled={state.kind === "busy" || pv.cellNew === 0}
+                onClick={upload}
+              >
+                {state.kind === "busy" ? "Importing…" : `Import ${pv.cellNew} new cell(s)`}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="primary btn-block"
+                disabled
+              >
+                {state.kind === "busy" ? "Importing…" : state.kind === "reading" ? "Reading file…" : "Choose a file to preview"}
+              </button>
+            )}
+          </form>
+          {state.kind === "ok" ? <div className="data-alert ok">{state.text}</div> : null}
+          {state.kind === "err" ? <p className="preview-warn">{state.text}</p> : null}
         </>
       ) : null}
-      {confirming && removeWeekId ? (
+      {confirming && hasData ? (
         <ConfirmDialog
-          title="Remove PALMS summary?"
-          message="Delete this week's imported PALMS attendance and its comparison totals? The slips import and every other import stay."
+          title="Remove all PALMS data?"
+          message="Delete every imported PALMS attendance cell for this chapter plus the batches those cells reference? The slips import and every other import stay."
           confirmLabel="Remove"
           danger
           busy={removing}

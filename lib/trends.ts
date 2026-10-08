@@ -1,8 +1,11 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paged";
+import { resolveHomeChapter } from "@/lib/member-chapters";
 
 export type TrendWeek = { id: string; date: string; label: string };
-export type TrendSeries = { key: string; label: string; counts: number[] };
+/** `amounts` (TYFCB only): weekly rupee totals — plotted on the series' own tab,
+ *  while `counts` keeps the slip-row count used by the All view. */
+export type TrendSeries = { key: string; label: string; counts: number[]; amounts?: number[] };
 export type SlipTrends = { weeks: TrendWeek[]; series: TrendSeries[] };
 
 /** The 5 slip types shown on the home dashboard, in display order. */
@@ -42,17 +45,123 @@ export async function fetchSlipTrends(tenantId: string, months = 6): Promise<Sli
   const weekIds = weeks.map((w) => w.id);
   const series = await Promise.all(
     SERIES.map(async (s) => {
-      const rows = await fetchAllRows<{ bni_week_id: string | null }>(s.table, "bni_week_id", {
-        eq: [["tenant_id", tenantId]],
-        in: [["bni_week_id", weekIds]],
-        pageSize: 1000,
-      });
+      const money = s.key === "tyfcb";
+      const rows = await fetchAllRows<{ bni_week_id: string | null; amount?: number | null }>(
+        s.table,
+        money ? "bni_week_id,amount" : "bni_week_id",
+        {
+          eq: [["tenant_id", tenantId]],
+          in: [["bni_week_id", weekIds]],
+          pageSize: 1000,
+        },
+      );
       const tally = new Map<string, number>();
+      const sums = new Map<string, number>();
       for (const r of rows) {
-        if (r.bni_week_id) tally.set(r.bni_week_id, (tally.get(r.bni_week_id) ?? 0) + 1);
+        if (!r.bni_week_id) continue;
+        tally.set(r.bni_week_id, (tally.get(r.bni_week_id) ?? 0) + 1);
+        if (money) sums.set(r.bni_week_id, (sums.get(r.bni_week_id) ?? 0) + Number(r.amount ?? 0));
       }
-      return { key: s.key, label: s.label, counts: weeks.map((w) => tally.get(w.id) ?? 0) };
+      return {
+        key: s.key,
+        label: s.label,
+        counts: weeks.map((w) => tally.get(w.id) ?? 0),
+        ...(money ? { amounts: weeks.map((w) => sums.get(w.id) ?? 0) } : {}),
+      };
     }),
   );
   return { weeks, series };
+}
+
+/** The 5 attendance letters shown on the home dashboard's upper chart. */
+const ATTENDANCE_SERIES = [
+  { key: "present", label: "Present", flag: "present" },
+  { key: "absent", label: "Absent", flag: "absent" },
+  { key: "medical", label: "Medical", flag: "m" },
+  { key: "substitute", label: "Substitute", flag: "s" },
+  { key: "leave", label: "Leave", flag: "l" },
+] as const;
+
+export type AttendanceRow = {
+  member_name: string;
+  bni_week_id: string | null;
+  present: number | null;
+  absent: number | null;
+  m: number | null;
+  s: number | null;
+  l: number | null;
+};
+
+/**
+ * Weekly attendance sums for the home dashboard: the same `weeks` array as
+ * the slip chart and one `counts` array per PALMS letter (Present/Absent/
+ * Medical/Substitute/Leave), each the sum of that flag over the tenant's
+ * `member_attendance` rows per week (0 = no attendance imported that week).
+ */
+export async function fetchAttendanceTrends(tenantId: string, weeks: TrendWeek[]): Promise<SlipTrends> {
+  if (weeks.length === 0) return { weeks: [], series: [] };
+  const { activeKeys } = await fetchHomeActiveMembers(tenantId);
+  const rows = await fetchAllRows<AttendanceRow>("member_attendance", "member_name,bni_week_id,present,absent,m,s,l", {
+    eq: [["tenant_id", tenantId]],
+    in: [["bni_week_id", weeks.map((w) => w.id)]],
+    pageSize: 1000,
+  });
+  const tally = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    if (!r.bni_week_id || !activeKeys.has(nameKey(r.member_name))) continue;
+    for (const s of ATTENDANCE_SERIES) {
+      const v = Number(r[s.flag] ?? 0);
+      if (v === 0) continue;
+      const byWeek = tally.get(s.key) ?? new Map<string, number>();
+      byWeek.set(r.bni_week_id, (byWeek.get(r.bni_week_id) ?? 0) + v);
+      tally.set(s.key, byWeek);
+    }
+  }
+  return {
+    weeks,
+    series: ATTENDANCE_SERIES.map((s) => ({
+      key: s.key,
+      label: s.label,
+      counts: weeks.map((w) => tally.get(s.key)?.get(w.id) ?? 0),
+    })),
+  };
+}
+
+const nameKey = (n: string): string => n.replace(/s+/g, " ").trim().toLowerCase();
+
+/**
+ * Active members of the tenant's HOME chapter only (members the import filed
+ * under another chapter are excluded). `activeKeys` are the lower-cased names
+ * the attendance chart filters on.
+ */
+export async function fetchHomeActiveMembers(
+  tenantId: string,
+): Promise<{ count: number; activeKeys: Set<string> }> {
+  const sb = getSupabaseServer();
+  const { data: tenant } = await sb
+    .from("tenants")
+    .select("id,name,home_chapter_name")
+    .eq("id", tenantId)
+    .maybeSingle();
+  const home = resolveHomeChapter(tenant ?? { id: tenantId });
+  // Configured home chapter first, then the tenant's own name, then the env name.
+  let chapter: { id: string } | null = null;
+  for (const name of [tenant?.home_chapter_name ?? "", tenant?.name ?? "", home]) {
+    if (!name) continue;
+    const { data } = await sb.from("chapters").select("id").ilike("name", name).maybeSingle();
+    if (data) {
+      chapter = data;
+      break;
+    }
+  }
+  if (!chapter) return { count: 0, activeKeys: new Set() };
+  const rows = await fetchAllRows<{ name: string }>("members", "name", {
+    eq: [
+      ["tenant_id", tenantId],
+      ["chapter_id", chapter.id],
+      ["is_inactive", false],
+    ],
+    pageSize: 1000,
+  });
+  return { count: rows.length, activeKeys: new Set(rows.map((r) => nameKey(r.name))) };
 }

@@ -82,9 +82,9 @@ INSERT INTO public.members (id, name, category) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Home chapter for seed members (must match NEXT_PUBLIC_CHAPTER_NAME,
--- or the 'BNI Influencer' fallback; keep in sync with 002 migration).
+-- or the 'BNI Influencers' fallback; keep in sync with 002 migration).
 INSERT INTO public.chapters (id, name)
-VALUES ('c1000000-0000-4000-8000-000000000001', 'BNI Influencer')
+VALUES ('c1000000-0000-4000-8000-000000000001', 'BNI Influencers')
 ON CONFLICT (id) DO NOTHING;
 
 UPDATE public.members

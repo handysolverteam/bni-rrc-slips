@@ -27,7 +27,7 @@ function Cell({ columnKey, value, row }: { columnKey: string; value: unknown; ro
     return <span className={`pill ${String(value).toLowerCase()}`}>{String(value)}</span>;
   }
   if (columnKey === "amount" && typeof value === "number") {
-    return <>{value.toLocaleString("en-IN")}</>;
+    return <>₹{value.toLocaleString("en-IN")}</>;
   }
   const flagKey = OTHER_CHAPTER_FLAG[columnKey];
   if (flagKey && row[flagKey] === true && value != null && String(value) !== "") {
@@ -91,7 +91,7 @@ export default function SlipsTable({
                       label={c.label}
                       allLabel={c.key === "bni_week" ? "All weeks" : undefined}
                       clearValue={c.key === "bni_week" ? "all" : undefined}
-                      multiSelect
+                      multiSelect={c.key !== "bni_week" && c.key !== "chapter" && c.key !== "other_chapter_member"}
                     />
                   ) : (
                     <span className="th-label">{c.label}</span>

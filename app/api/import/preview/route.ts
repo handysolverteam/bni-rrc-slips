@@ -5,8 +5,9 @@ import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 /**
  * Inspect an uploaded Report file WITHOUT importing it: resolves the week
  * from the file title and reports row problems so the UI can pause and ask
- * for permission when typing mistakes are found. Duplicates are NOT
- * flagged — every entry is kept on import (owner rule).
+ * for permission when typing mistakes are found. In-file duplicates are NOT
+ * new rows but the import route still keeps them (owner rule); a re-import
+ * is skipped at import time (lib/import-dedup.ts), not here.
  * Requires a signed-in member of the active chapter (roles were removed).
  */
 export async function POST(request: Request) {

@@ -4,7 +4,7 @@ import { useState } from "react";
 
 const FORMATS = ["xlsx", "csv", "pdf"] as const;
 
-type SummaryExportJson = {
+type PalmsExportJson = {
   filename: string;
   weekLabel: string;
   memberCount: number;
@@ -13,7 +13,7 @@ type SummaryExportJson = {
   totalRow: string[] | null;
 };
 
-export default function SummaryExportButtons({
+export default function PalmsExportButtons({
   weekId,
   scopeLabel,
 }: {
@@ -28,7 +28,7 @@ export default function SummaryExportButtons({
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
   const fallbackName = (format: string) =>
-    `chapter-summary-${scopePart || "summary"}.${format}`;
+    `palms-report-${scopePart || "report"}.${format}`;
 
   function downloadViaNavigation(endpoint: string, filename: string) {
     // Fallback path: top-level navigation download (bypasses fetch hooks).
@@ -51,12 +51,12 @@ export default function SummaryExportButtons({
       const data = await res.json().catch(() => ({}));
       throw new Error(data.error ?? `server returned ${res.status}`);
     }
-    const data = (await res.json()) as SummaryExportJson;
+    const data = (await res.json()) as PalmsExportJson;
     const { jsPDF } = await import("jspdf");
     const { default: autoTable } = await import("jspdf-autotable");
     const doc = new jsPDF({ orientation: "landscape", unit: "pt" });
     doc.setFontSize(14);
-    doc.text(`Chapter Summary — ${data.weekLabel}`, 40, 40);
+    doc.text(`PALMS Report — ${data.weekLabel}`, 40, 40);
     doc.setFontSize(8);
     doc.setTextColor(110, 105, 95);
     doc.text(`Members: ${data.memberCount}`, 40, 54);
@@ -64,14 +64,9 @@ export default function SummaryExportButtons({
     autoTable(doc, {
       startY: 58,
       head: [data.headers],
-      body: data.totalRow && data.rows.length > 0 ? [...data.rows, data.totalRow] : data.rows,
+      body: data.rows,
       styles: { fontSize: 7 },
       headStyles: { fillColor: [214, 84, 44], textColor: 255 },
-      didParseCell: (d) => {
-        if (d.section === "body" && data.totalRow && d.row.index === data.rows.length) {
-          d.cell.styles.fontStyle = "bold";
-        }
-      },
     });
     doc.save(data.filename);
   }
@@ -84,7 +79,7 @@ export default function SummaryExportButtons({
       if (v) params.set(k, v);
     }
     if (!params.get("week") && weekId) params.set("week", weekId);
-    return `/api/summary/export?${params.toString()}&format=${format}`;
+    return `/api/palms/export?${params.toString()}&format=${format}`;
   }
 
   async function download(format: string) {
@@ -109,7 +104,7 @@ export default function SummaryExportButtons({
       }
       const disposition = res.headers.get("Content-Disposition") ?? "";
       const nameMatch = disposition.match(/filename="([^"]+)"/);
-      const filename = nameMatch ? nameMatch[1] : `chapter-summary.${format}`;
+      const filename = nameMatch ? nameMatch[1] : `palms-report.${format}`;
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;

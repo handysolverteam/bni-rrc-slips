@@ -37,6 +37,8 @@ export type SectionData = {
   cardCount: number | null;
   /** Extra line shown only on the stat card (badges/exports keep `stat`). */
   cardStat: string | null;
+  /** Big stat-card figures (value + small unit), e.g. CEU: members + credits. */
+  cardParts?: { value: number; unit: string }[] | null;
 };
 
 export const REPORT_HEADERS = [
@@ -56,7 +58,7 @@ const tierLabel = (v: string | null): string =>
 const money = (v: number | string | null): string =>
   v === null || v === undefined || v === ""
     ? ""
-    : Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    : `₹${Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** Slip rows mapped into the Report's table shape. weekId "all" = every week,
  * or a comma-separated list of week ids for multi-meeting scope;
@@ -263,7 +265,7 @@ export async function fetchReportSections(
       key: "tyfcb",
       title: "TYFCB",
       totalLabel: "Slips",
-      stat: fTyfcb.length > 0 ? `${Math.round(fTyfcbSum).toLocaleString("en-IN")} total` : null,
+      stat: fTyfcb.length > 0 ? `₹${Math.round(fTyfcbSum).toLocaleString("en-IN")} total` : null,
       totalAmount: fTyfcb.length > 0 ? Math.round(fTyfcbSum) : null,
       rows: fTyfcb,
       metricCount: fTyfcb.length,
@@ -281,17 +283,24 @@ export async function fetchReportSections(
       metricCount: fCeu.length,
       cardCount: null,
       cardStat: ceuStat ? `${ceuMembers} ${ceuMembers === 1 ? "Member" : "Members"} · ${ceuStat}` : null,
+      cardParts: fCeu.length > 0
+        ? [
+            { value: ceuMembers, unit: ceuMembers === 1 ? "Member" : "Members" },
+            { value: Math.round(fCeuSum), unit: "CEU credits" },
+          ]
+        : null,
     },
   ];
 }
 
-/** Latest week this tenant actually imported (drives the default view). */
+/** Latest week this tenant actually imported (drives the default view). Null-week batches (multi-week PALMS files) never count. */
 async function fetchLatestImportedWeekId(tenantId: string): Promise<string | null> {
   const sb = getSupabaseServer();
   const { data } = await sb
     .from("import_batches")
     .select("bni_week_id")
     .eq("tenant_id", tenantId)
+    .not("bni_week_id", "is", null)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -413,5 +422,7 @@ export function rowCells(r: ReportRow, cols: ReportColumn[]): string[] {
 /** Total footer row for screens and exports ("Total" under From, sum under TYFCB/CEU). */
 export function totalRowCells(cols: ReportColumn[], totalAmount: number): string[] {
   const amt = totalAmount.toLocaleString("en-IN");
-  return cols.map((c) => (c.key === "from" ? "Total" : c.key === "tyfcb" || c.key === "ceu" ? amt : ""));
+  return cols.map((c) =>
+    c.key === "from" ? "Total" : c.key === "tyfcb" ? `₹${amt}` : c.key === "ceu" ? amt : "",
+  );
 }

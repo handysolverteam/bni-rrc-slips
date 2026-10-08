@@ -60,7 +60,7 @@ export default async function TyfcbPage({
         .map(Number)
         .filter(Number.isFinite)
         .sort((a, b) => a - b)
-        .map((n) => ({ value: String(n), label: n.toLocaleString("en-IN") })),
+        .map((n) => ({ value: String(n), label: `₹${n.toLocaleString("en-IN")}` })),
     })),
   ]);
   const rows = (data ?? []).map((r: Record<string, unknown>) => ({

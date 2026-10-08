@@ -8,7 +8,9 @@ import type { WeekOption } from "@/lib/weeks";
 /**
  * Search also uses Apply-on-navigate; the week dropdown is a searchable
  * select that applies instantly on change (same pattern as table filters).
- * Cleared/All selection is sent as `week=all`.
+ * Two week pickers share the `week` param: a SINGLE select for quick
+ * filtering and a MULTI select (click toggles, list stays open; comma list
+ * that exports accept) for multi-week views/exports. Cleared/All = `week=all`.
  */
 export default function FilterBar({
   basePath,
@@ -19,7 +21,7 @@ export default function FilterBar({
   hiddenParams,
   includeAllOption,
   hideSearch,
-  multiSelect,
+  showMulti = true,
   onNavigate,
 }: {
   basePath: string;
@@ -30,8 +32,8 @@ export default function FilterBar({
   hiddenParams?: Record<string, string>;
   includeAllOption?: boolean;
   hideSearch?: boolean;
-  /** Week box accepts a comma-separated multi-selection (report screen). */
-  multiSelect?: boolean;
+  /** Also render the multi-week box (comma list in `week`); default on. */
+  showMulti?: boolean;
   onNavigate?: (url: string) => void;
 }) {
   const router = useRouter();
@@ -87,15 +89,31 @@ export default function FilterBar({
         />
       ) : null}
       {weeks.length > 0 ? (
-        <SearchSelect
-          value={weekId}
+        <div className="filter-field">
+          <span className="filter-label">Week</span>
+          <SearchSelect
+          value={weekId.includes(",") ? "" : weekId}
           options={weeks.map((w) => ({ value: w.id, label: w.label }))}
           placeholder="All weeks"
           allLabel="All weeks"
-          showClear={!!weekId && weekId !== "all"}
-          multiple={multiSelect}
+          showClear={!!weekId && weekId !== "all" && !weekId.includes(",")}
           onChange={(v) => go(v || "all")}
-        />
+          />
+        </div>
+      ) : null}
+      {weeks.length > 0 && showMulti ? (
+        <div className="filter-field">
+          <span className="filter-label">Multiple weeks</span>
+          <SearchSelect
+          value={weekId}
+          options={weeks.map((w) => ({ value: w.id, label: w.label }))}
+          placeholder="Select weeks"
+          allLabel="All weeks"
+          multiple
+          showClear={!!weekId && weekId !== "all"}
+          onChange={(v) => go(v || "all")}
+          />
+        </div>
       ) : null}
       {isPending ? (
         <span className="toolbar-loading" role="status">

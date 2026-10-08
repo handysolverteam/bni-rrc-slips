@@ -31,24 +31,36 @@ export default async function MembersPage({
   const columnFilters: Record<string, string> = {};
   for (const k of ["name", "category", "company", "phone"]) {
     const v = (sp[`c_${k}`] || "").trim();
-    if (v) {
-      query = applyColumnFilter(query, k, v);
-      columnFilters[k] = v;
-    }
+    if (v) columnFilters[k] = v;
   }
   const chapterV = (sp.c_chapter || "").trim();
+  let chapterIds: string[] = [];
   if (chapterV) {
     const { data: chapters } = await sb
       .from("chapters")
       .select("id, name")
       .eq("tenant_id", tenantId);
     const names = multiParts(chapterV).map((s) => s.toLowerCase());
-    const ids = (chapters ?? [])
+    chapterIds = (chapters ?? [])
       .filter((c) => names.includes(String(c.name ?? "").trim().toLowerCase()))
       .map((c) => c.id);
-    query = query.in("chapter_id", ids.length > 0 ? ids : ["00000000-0000-0000-0000-000000000000"]);
     columnFilters.chapter = chapterV;
   }
+  // Rows AND the header counts below must reflect the same filters, so the
+  // chain lives here once: q, then the column filters (chapter resolves to
+  // ids, the rest pass through applyColumnFilter).
+  const applyFilters = (b: any): any => {
+    let out = b;
+    if (q) out = out.ilike("name", `%${q}%`);
+    for (const [k, v] of Object.entries(columnFilters)) {
+      if (k === "chapter") continue;
+      out = applyColumnFilter(out, k, v);
+    }
+    if (chapterV) out = out.in("chapter_id", chapterIds.length > 0 ? chapterIds : ["00000000-0000-0000-0000-000000000000"]);
+    return out;
+  };
+  query = applyFilters(query);
+  if (activeOnly) query = query.eq("is_inactive", false);
 // Everyone sees active and inactive members, so dropdowns list both.
 const memberEq: [string, unknown][] = [];
   const [{ data, count }, filterOptions, counts] = await Promise.all([
@@ -66,10 +78,11 @@ const memberEq: [string, unknown][] = [];
       company,
       phone,
     })),
-    // Unfiltered header counts: "N active · M inactive".
+    // Header counts follow the current filters; the Active toggle only
+    // swaps the wording to "N active".
     Promise.all([
-      sb.from("members").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId),
-      sb.from("members").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("is_inactive", false),
+      applyFilters(sb.from("members").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId)),
+      applyFilters(sb.from("members").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId)).eq("is_inactive", false),
     ]).then(([all, act]) => ({ all: all.count ?? 0, active: act.count ?? 0 })),
   ]);
   const rows = ((data ?? []) as Record<string, unknown>[]).map((m) => {
@@ -91,7 +104,11 @@ const memberEq: [string, unknown][] = [];
       q={q}
       weekId=""
       weeks={[]}
-      sub={`${counts.active.toLocaleString("en-IN")} active · ${(counts.all - counts.active).toLocaleString("en-IN")} inactive`}
+      sub={
+        activeOnly
+          ? `${counts.active.toLocaleString("en-IN")} active`
+          : `${counts.active.toLocaleString("en-IN")} active · ${(counts.all - counts.active).toLocaleString("en-IN")} inactive`
+      }
       activeToggle={{ param: "active", label: "Active", checked: activeOnly }}
       columns={[
         ...[{ key: "active", label: "Active" }],

@@ -29,7 +29,7 @@ export default function ColumnFilter({
   onApply?: (value: string) => void;
   /** Sent instead of removing the param when cleared (e.g. week -> "all"). */
   clearValue?: string;
-  /** Comma-separated multi-selection (report BNI Week cells, import Week). */
+  /** Single pick for scope columns (week/chapter); names etc. stay multi. */
   multiSelect?: boolean;
 }) {
   const router = useRouter();

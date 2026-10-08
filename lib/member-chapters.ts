@@ -24,9 +24,9 @@ export function resolveHomeChapter(tenant?: HomeTenant | null): string {
   const configured = normalizeName(tenant?.home_chapter_name || "");
   if (configured) return configured;
   if (!tenant || tenant.id === DEFAULT_TENANT_ID) {
-    return normalizeName(process.env.NEXT_PUBLIC_CHAPTER_NAME || "") || "BNI Influencer";
+    return normalizeName(process.env.NEXT_PUBLIC_CHAPTER_NAME || "") || "BNI Influencers";
   }
-  return normalizeName(tenant.name || "") || "BNI Influencer";
+  return normalizeName(tenant.name || "") || "BNI Influencers";
 }
 
 const detailChapter = (detail: string | null, home: string): string =>

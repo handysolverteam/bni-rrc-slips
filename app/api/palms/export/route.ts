@@ -1,8 +1,7 @@
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { getCachedWeekOptions } from "@/lib/server-weeks";
-import { SUMMARY_COLS, fetchChapterSummary, summaryCell } from "@/lib/summary-view";
+import { fetchPalmsMatrix, fetchPalmsWeekOptions, palmsWeekScope } from "@/lib/palms-view";
 import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
@@ -10,10 +9,10 @@ export const dynamic = "force-dynamic";
 const FORMATS = ["xlsx", "csv", "pdf", "json"];
 
 function safeFilePart(label: string): string {
-  return label.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "summary";
+  return label.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "report";
 }
 
-/** Chapter Summary export: the /summary member table as xlsx / csv / pdf (json feeds the in-browser PDF). The PALMS-vs-slips comparison table is screen-only. */
+/** PALMS Report export: the /palms member × week matrix as xlsx / csv / pdf (json feeds the in-browser PDF). Cells identical to the screen. */
 export async function GET(request: Request) {
   try {
     const ctx = await getTenantContext(request);
@@ -28,14 +27,14 @@ export async function GET(request: Request) {
       return Response.json({ error: "format must be xlsx, csv, pdf or json" }, { status: 400 });
     }
     const allWeeks = weekId === "all";
-    const weekIds = allWeeks ? [] : weekId.split(",").map((s) => s.trim()).filter(Boolean);
+    const weekIds = palmsWeekScope(weekId);
     if (!allWeeks && weekIds.length === 0) {
       return Response.json({ error: "week is required" }, { status: 400 });
     }
 
-    const [weeks, summary] = await Promise.all([
-      getCachedWeekOptions(ctx.tenantId),
-      fetchChapterSummary(ctx.tenantId, weekIds),
+    const [weeks, matrix] = await Promise.all([
+      fetchPalmsWeekOptions(ctx.tenantId),
+      fetchPalmsMatrix(ctx.tenantId, weekIds),
     ]);
     // Same scope label the screen shows under the title.
     const active = weekIds
@@ -49,26 +48,19 @@ export async function GET(request: Request) {
           ? active.map((w) => w.label).join(" + ")
           : "week";
 
-    const headers = ["Member", ...SUMMARY_COLS.map((c) => c.label)];
-    const rows = summary.rows.map((r) => [
-      r.name,
-      ...SUMMARY_COLS.map((c) => summaryCell(c.get(r), c.money)),
-    ]);
-    const totalRow =
-      summary.rows.length > 0
-        ? ["Total", ...SUMMARY_COLS.map((c) => summaryCell(c.total(summary.totals), c.money))]
-        : null;
+    const headers = ["Member", ...matrix.weeks.map((w) => w.header)];
+    const rows = matrix.rows.map((r) => [r.name, ...r.cells]);
 
-    const base = `chapter-summary-${safeFilePart(weekLabel)}`;
+    const base = `palms-report-${safeFilePart(weekLabel)}`;
 
     if (format === "json") {
       return Response.json({
         filename: `${base}.pdf`,
         weekLabel,
-        memberCount: summary.rows.length,
+        memberCount: matrix.rows.length,
         headers,
         rows,
-        totalRow,
+        totalRow: null,
       });
     }
 
@@ -76,12 +68,11 @@ export async function GET(request: Request) {
       const cell = (v: string) => JSON.stringify(v);
       const lines = [
         `Week,${JSON.stringify(weekLabel)}`,
-        `Members,${String(summary.rows.length)}`,
+        `Members,${String(matrix.rows.length)}`,
         "",
         headers.map(cell).join(","),
       ];
       for (const r of rows) lines.push(r.map(cell).join(","));
-      if (totalRow) lines.push(totalRow.map(cell).join(","));
       return new Response(lines.join("\n"), {
         headers: {
           "Content-Type": "text/csv",
@@ -93,14 +84,13 @@ export async function GET(request: Request) {
     if (format === "xlsx") {
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet([
-        [`Chapter Summary — ${weekLabel}`],
-        [`Members: ${summary.rows.length}`],
+        [`PALMS Report — ${weekLabel}`],
+        [`Members: ${matrix.rows.length}`],
         headers,
         ...rows,
-        ...(totalRow ? [totalRow] : []),
       ]);
-      ws["!cols"] = [{ wch: 26 }, ...SUMMARY_COLS.map((c) => ({ wch: c.money ? 12 : 7 }))];
-      XLSX.utils.book_append_sheet(wb, ws, "Chapter Summary");
+      ws["!cols"] = [{ wch: 26 }, ...matrix.weeks.map(() => ({ wch: 8 }))];
+      XLSX.utils.book_append_sheet(wb, ws, "PALMS Report");
       const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
       return new Response(new Uint8Array(buf), {
         headers: {
@@ -113,23 +103,17 @@ export async function GET(request: Request) {
     // pdf — server path for API/tests; the browser builds its own from json.
     const doc = new jsPDF({ orientation: "landscape", unit: "pt" });
     doc.setFontSize(14);
-    doc.text(`Chapter Summary — ${weekLabel}`, 40, 40);
+    doc.text(`PALMS Report — ${weekLabel}`, 40, 40);
     doc.setFontSize(8);
     doc.setTextColor(110, 105, 95);
-    doc.text(`Members: ${summary.rows.length}`, 40, 54);
+    doc.text(`Members: ${matrix.rows.length}`, 40, 54);
     doc.setTextColor(0, 0, 0);
     autoTable(doc, {
       startY: 58,
       head: [headers],
-      body: totalRow && rows.length > 0 ? [...rows, totalRow] : rows,
+      body: rows,
       styles: { fontSize: 7 },
       headStyles: { fillColor: [214, 84, 44], textColor: 255 },
-      didParseCell: (d) => {
-        // Total row prints bold (same as the screen's tfoot).
-        if (d.section === "body" && totalRow && d.row.index === rows.length) {
-          d.cell.styles.fontStyle = "bold";
-        }
-      },
     });
     const pdf = Buffer.from(doc.output("arraybuffer"));
     return new Response(new Uint8Array(pdf), {

@@ -1,7 +1,6 @@
-import Link from "next/link";
 import ColumnFilter from "@/components/ColumnFilter";
 import ReportExportButtons from "@/components/ReportExportButtons";
-import SummaryExportButtons from "@/components/SummaryExportButtons";
+import PalmsExportButtons from "@/components/PalmsExportButtons";
 import ReportTabs from "@/components/ReportTabs";
 import SectionCollapse from "@/components/SectionCollapse";
 import { detailLabelFor, fromToLabelsFor, type ReportSectionKey } from "@/lib/report-view";
@@ -165,63 +164,63 @@ export function ListSkeleton({
 }
 
 const HOME_LEGEND = ["Slip 121", "Referrals", "TYFCB", "Visitors", "CEU", "Combined"];
+const ATT_LEGEND = ["Present", "Absent", "Medical", "Substitute", "Leave", "Combined"];
 
 export function HomeSkeleton() {
   return (
     <div>
-      <div className="card hero">
-        <h1>BNI Week Slips</h1>
-        <p className="muted">
-          Import the weekly Report XLS (From, To, Slip Type, Inside/Outside, TYFCB,
-          CEU Credits, Detail) — pick a BNI Week on import, then browse everything
-          below.
-        </p>
-        <div className="hero-actions">
-          <Link href="/import">
-            <button type="button" className="primary">
-              Import Report XLS
-            </button>
-          </Link>
-        </div>
+      <div className="page-head">
+        <h1>
+          BNI Week Slips
+          <span className="count-badge">
+            <span className="skel" style={{ display: "inline-block", width: 96, height: 22, borderRadius: 8 }} />
+          </span>
+        </h1>
       </div>
+      <TrendCardSkeleton legend={ATT_LEGEND} />
+      <TrendCardSkeleton legend={HOME_LEGEND} />
+    </div>
+  );
+}
 
-      <div className="card trend-card">
-        <div className="import-head">
-          <Bar w={330} h={20} />
-        </div>
-        <div className="trend-wrap">
-          <div className="trend-controls">
-            <div className="tabs trend-type-tabs">
-              {["All slips", ...HOME_LEGEND].map((l) => (
-                <span
-                  key={l}
-                  className="skel"
-                  style={{ display: "block", width: l.length * 7 + 22, height: 33, borderRadius: 999 }}
-                />
-              ))}
-            </div>
-            <div className="tabs trend-chart-tabs">
-              <span className="skel" style={{ display: "block", width: 330, height: 27, borderRadius: 999 }} />
-            </div>
-          </div>
-          <div className="trend-legend">
-            {HOME_LEGEND.map((l) => (
-              <span key={l} className="trend-legend-item">
-                <span className="trend-dot" />
-                <span className="skel" style={{ display: "block", width: l.length * 7, height: 12, borderRadius: 5 }} />
-                <span className="skel" style={{ display: "block", width: 26, height: 12, borderRadius: 5 }} />
-              </span>
+function TrendCardSkeleton({ legend }: { legend: string[] }) {
+  return (
+    <div className="card trend-card">
+      <div className="import-head">
+        <Bar w={330} h={20} />
+      </div>
+      <div className="trend-wrap">
+        <div className="trend-controls">
+          <div className="tabs trend-type-tabs">
+            {legend.map((l) => (
+              <span
+                key={l}
+                className="skel"
+                style={{ display: "block", width: l.length * 7 + 22, height: 33, borderRadius: 999 }}
+              />
             ))}
           </div>
-          <div className="trend-svg-scroll">
-            <div className="trend-skel">
-              {[0, 1, 2, 3, 4].map((i) => (
-                <div key={i} className="trend-skel-row">
-                  <span className="skel" style={{ display: "block", width: 26, height: 11, borderRadius: 5 }} />
-                  <Bar h={16} />
-                </div>
-              ))}
-            </div>
+          <div className="tabs trend-chart-tabs">
+            <span className="skel" style={{ display: "block", width: 330, height: 27, borderRadius: 999 }} />
+          </div>
+        </div>
+        <div className="trend-legend">
+          {legend.map((l) => (
+            <span key={l} className="trend-legend-item">
+              <span className="trend-dot" />
+              <span className="skel" style={{ display: "block", width: l.length * 7, height: 12, borderRadius: 5 }} />
+              <span className="skel" style={{ display: "block", width: 26, height: 12, borderRadius: 5 }} />
+            </span>
+          ))}
+        </div>
+        <div className="trend-svg-scroll">
+          <div className="trend-skel">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} className="trend-skel-row">
+                <span className="skel" style={{ display: "block", width: 26, height: 11, borderRadius: 5 }} />
+                <Bar h={16} />
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -582,25 +581,25 @@ export function ImportSkeleton() {
       </div>
 
       <div className="card">
-        <PanelSkeleton title="Chapter Summary PALMS (attendance)" toggle="− Minimize" />
+        <PanelSkeleton title="PALMS Report (6 months)" toggle="− Minimize" />
       </div>
 
       <ImportHistorySkeleton heading="Imported Slips Audit Reports" rows={6} />
-      <ImportHistorySkeleton heading="Imported Chapter Summary PALMS" rows={3} />
+      <ImportHistorySkeleton heading="Imported PALMS Reports" rows={3} />
     </div>
   );
 }
 
-const SUMMARY_LABELS = ["Member", "P", "A", "L", "M", "S", "RGI", "RGO", "RRI", "RRO", "V", "1-2-1", "TYFCB", "CEU", "T"];
+const PALMS_LABELS = ["Member", "01 Apr", "08 Apr", "15 Apr", "22 Apr", "29 Apr", "06 May", "13 May", "20 May", "27 May"];
 
-/** /summary — page head, PALMS upload panel, week filter, member-wise table. */
-export function SummarySkeleton() {
+/** /palms — page head, PALMS upload panel, week filter, member × week matrix. */
+export function PalmsSkeleton() {
   return (
     <div>
       <div className="report-top">
         <div className="page-head">
           <h1>
-            Chapter Summary
+            PALMS Report
             <span className="count-badge" style={{ height: 24 }}>
               <Bar w={96} h={16} r={4} />
             </span>
@@ -610,12 +609,12 @@ export function SummarySkeleton() {
           </p>
         </div>
         <div className="report-head-actions">
-          <SummaryExportButtons weekId="" scopeLabel="chapter-summary" />
+          <PalmsExportButtons weekId="" scopeLabel="palms" />
         </div>
       </div>
 
       <div className="card">
-        <PanelSkeleton title="Chapter Summary PALMS (attendance)" toggle="− Minimize" />
+        <PanelSkeleton title="PALMS Report (6 months)" toggle="− Minimize" />
       </div>
 
       <div className="card report-controls">
@@ -627,11 +626,7 @@ export function SummarySkeleton() {
               </span>
             </span>
           </form>
-          <span className="clear-right">
-            <button type="button" disabled>
-              Clear all
-            </button>
-          </span>
+          <span className="muted">P Present · A Absent · M Medical · S Substitute · L Leave</span>
         </div>
       </div>
 
@@ -641,7 +636,7 @@ export function SummarySkeleton() {
             <table className="grid">
               <thead>
                 <tr>
-                  {SUMMARY_LABELS.map((c) => (
+                  {PALMS_LABELS.map((c) => (
                     <th key={c}>
                       <span className="th-label">{c}</span>
                     </th>
@@ -651,7 +646,7 @@ export function SummarySkeleton() {
               <tbody>
                 {Array.from({ length: 12 }, (_, i) => (
                   <tr key={i}>
-                    {SUMMARY_LABELS.map((c, j) => (
+                    {PALMS_LABELS.map((c, j) => (
                       <td key={c}>
                         <Bar h={18} w={`${CELL_W[(i + j) % CELL_W.length]}%`} r={4} />
                       </td>
@@ -659,22 +654,31 @@ export function SummarySkeleton() {
                   </tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr>
-                  <td>
-                    <strong>Total</strong>
-                  </td>
-                  {SUMMARY_LABELS.slice(1).map((c, j) => (
-                    <td key={c}>
-                      <strong>
-                        <Bar h={16} w={`${CELL_W[(j + 2) % CELL_W.length]}%`} r={4} />
-                      </strong>
-                    </td>
-                  ))}
-                </tr>
-              </tfoot>
             </table>
           </div>
+        </div>
+      </div>
+
+      {/* Rolling 26-week breakdown card below the matrix. */}
+      <div className="card">
+        <div className="palms-stats-title">
+          <Bar w={340} h={18} r={4} />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <Bar w={220} h={13} r={4} />
+        </div>
+        <div className="palms-stats-groups">
+          {[0, 1, 2].map((g) => (
+            <div className="palms-stats-group" key={g}>
+              {[0, 1, 2].map((b) => (
+                <div key={b}>
+                  <Bar w={150} h={14} r={4} />
+                  <div style={{ height: 6 }} />
+                  <Bar w={210} h={12} r={4} />
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
       </div>
     </div>

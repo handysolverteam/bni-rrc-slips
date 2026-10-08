@@ -137,8 +137,41 @@ check(
   navSrc.includes("setMounted(true)") && navSrc.includes("mounted ? createPortal"),
 );
 
+// 9c) Slips dropdown (desktop pill + portaled menu + drawer accordion)
+check(
+  "Report pill renamed to Slip Report",
+  navSrc.includes('label: "Slip Report"') && !navSrc.includes('label: "Report"'),
+);
+check(
+  "Slips group carries the five list pages",
+  ['href: "/one-to-ones"', 'href: "/referrals"', 'href: "/visitors"', 'href: "/tyfcb"', 'href: "/ceus"']
+    .every((h) => navSrc.includes(h)) && navSrc.includes('label: "Slips"'),
+);
+check(
+  "flat slip pills removed",
+  !navSrc.includes('label: "Slip Referrals"') && !navSrc.includes('label: "Slip Visitors"') &&
+  !navSrc.includes('label: "Slip TYFCB"'),
+);
+check(
+  "desktop menu portals past the pill row's overflow",
+  navSrc.includes('aria-haspopup="menu"') && navSrc.includes('aria-controls="nav-slips-menu"') &&
+  navSrc.includes("nav-drop-menu-float"),
+);
+check(
+  "drawer accordion for the Slips group",
+  navSrc.includes('aria-controls="nav-slips-drawer-menu"') && navSrc.includes("nav-drop-in-drawer"),
+);
+for (const [name, needle] of [
+  ["dropdown menu styled", ".nav-drop-menu {"],
+  ["portaled menu fixed + above the topbar", ".nav-drop-menu-float { position: fixed; z-index: 200;"],
+  ["hidden menu collapses", ".nav-drop-menu[hidden] { display: none; }"],
+  ["drawer accordion styled", ".nav-drop-in-drawer {"],
+  ["breakdown card styled", ".palms-stats-groups {"],
+  ["breakdown groups stack on phone", ".palms-stats-groups { grid-template-columns: 1fr; gap: 14px; }"],
+]) check(name, css.includes(needle), needle);
+
 // 10) every table source sits inside a table-scroll wrapper
-for (const f of ["../components/SlipsTable.tsx", "../components/ImportPage.tsx", "../components/PalmsComparisonTable.tsx"]) {
+for (const f of ["../components/SlipsTable.tsx", "../components/ImportPage.tsx", "../app/palms/page.tsx"]) {
   const src = read(f);
   const tags = [...src.matchAll(/<table[\s>]/g)].map((m) => m.index);
   const ok = tags.length > 0 && tags.every((i) => src.lastIndexOf("table-scroll", i) !== -1);
@@ -163,6 +196,8 @@ for (const f of ["../components/SlipsTable.tsx", "../components/ImportPage.tsx",
   check("built CSS ships the 1024px block", flat.includes("@media(max-width:1024px)"));
   check("built CSS ships the trend scroll wrapper + 960px pin", flat.includes(".trend-svg-scroll") && flat.includes("width:960px"));
   check("built CSS ships the card-grid gap", flat.includes(".card+.cards") && flat.includes("margin-top:18px"));
+  check("built CSS ships the slips dropdown", flat.includes(".nav-drop-menu") && flat.includes(".nav-drop-menu-float"));
+  check("built CSS ships the breakdown card", flat.includes(".palms-stats-groups"));
 }
 
 // 12) stacked cards never touch + the week box can deselect all weeks
@@ -172,6 +207,29 @@ check(
   "week box shows its clear (✕) button only for a real selection",
   filterSrc.includes('showClear={!!weekId && weekId !== "all"}'),
 );
+
+// 13) week + chapter dropdowns are single-select (report, palms, import, tables)
+{
+  const countOcc = (src, needle) => src.split(needle).length - 1;
+  const reportSrc = read("../app/report/page.tsx");
+  const palmsSrc = read("../app/palms/page.tsx");
+  const impSrc = read("../components/ImportPage.tsx");
+  const slipsSrc = read("../components/SlipsTable.tsx");
+  check(
+    "report: only the From/To/Detail header filter keeps multiSelect (Detail single)",
+    countOcc(reportSrc, "multiSelect") === 1 && reportSrc.includes("multiSelect={key !== \"detail\"}"),
+    `${countOcc(reportSrc, "multiSelect")} occurrence(s)`,
+  );
+  check("report: BNI Week cell present and single-select (the one conditional above)", reportSrc.includes('label="BNI Week"') && reportSrc.includes('allLabel="Universal"'));
+  check("report: the week FilterBar no longer passes multiSelect", !reportSrc.includes("includeAllOption\n            hideSearch\n            multiSelect"));
+  check("palms: week box is single-select", !palmsSrc.includes("multiSelect"));
+  check("import history: Week column filter is single-select", !impSrc.includes("multiSelect"));
+  check(
+    "slips tables: week + chapter columns single, names still multi",
+    slipsSrc.includes('multiSelect={c.key !== "bni_week" && c.key !== "chapter" && c.key !== "other_chapter_member"}'),
+  );
+  check("FilterBar week box is single-select (no multiple prop at all)", !filterSrc.includes("multiSelect"));
+}
 
 console.log(results.join("\n"));
 const failed = results.filter((x) => x.startsWith("FAIL")).length;
