@@ -1466,3 +1466,14 @@ button.wa-btn:active:not(:disabled) { background: #1fbf5b; }
 .multi-check input { width: auto; margin: 0; }
 @media (max-width: 640px) { .week-row { flex-wrap: wrap; } .week-row .combo { flex: 1 1 100%; } }
 .filter-form .filter-field:has(.week-row) { max-width: 640px; }
+
+/* Week box + Multi-select checkbox: size the field to its content so the checkbox can never spill over the Loading… indicator. */
+.filter-form .filter-field:has(.week-row) { flex: 0 1 auto; max-width: none; min-width: 0; }
+.week-row { flex-wrap: nowrap; }
+.week-row .combo { flex: 0 1 340px; width: 340px; min-width: 0; }
+.table-multi-toggle { margin: 0 0 8px; }
+@media (max-width: 640px) {
+  .filter-form .filter-field:has(.week-row) { flex: 1 1 100%; }
+  .week-row { flex-wrap: wrap; }
+  .week-row .combo { flex: 1 1 100%; width: 100%; }
+}

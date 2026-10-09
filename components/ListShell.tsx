@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import SlipsTable from "@/components/SlipsTable";
 import FilterBar from "@/components/FilterBar";
+import MultiSelectToggle from "@/components/MultiSelectToggle";
 import type { ComboOption } from "@/components/SearchSelect";
 import type { WeekOption } from "@/lib/weeks";
 
@@ -111,6 +112,8 @@ export default function ListShell({
           </Link>
         ) : null}
       </div>
+
+      {filterable.length > 0 ? <MultiSelectToggle /> : null}
 
       <div className="table-overlay-wrap">
         <SlipsTable

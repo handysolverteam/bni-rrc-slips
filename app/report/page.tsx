@@ -14,6 +14,7 @@ import NoAccess from "@/components/NoAccess";
 import ImportPanel from "@/components/ImportPanel";
 import SectionCollapse from "@/components/SectionCollapse";
 import ColumnFilter from "@/components/ColumnFilter";
+import MultiSelectToggle from "@/components/MultiSelectToggle";
 import Link from "next/link";
 import ReportExportButtons from "@/components/ReportExportButtons";
 import ReportTabs from "@/components/ReportTabs";
@@ -300,6 +301,8 @@ export default async function ReportPage({
           ) : null}
         </div>
       </div>
+
+      <MultiSelectToggle />
 
       <ReportTabs weekId={weekId} activeTab={tab} />
 

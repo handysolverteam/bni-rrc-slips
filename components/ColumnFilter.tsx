@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
+import { useMultiSelect } from "@/components/MultiSelectToggle";
 import SearchSelect, { type ComboOption } from "@/components/SearchSelect";
 
 /**
@@ -29,16 +30,21 @@ export default function ColumnFilter({
   onApply?: (value: string) => void;
   /** Sent instead of removing the param when cleared (e.g. week -> "all"). */
   clearValue?: string;
-  /** Single pick for scope columns (week/chapter); names etc. stay multi. */
+  /** Legacy: every column is multi-select-capable now; kept so existing call sites compile. */
   multiSelect?: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  // Single select by default; the "Multi-select filters" checkbox above the table
+  // turns EVERY column filter multi-select. A value that already holds several
+  // picks (shared link) stays multi so it is never shown as one raw string.
+  const msOn = useMultiSelect();
+  const multi = msOn || defaultValue.includes(",");
   // Keep the current value visible even when it is missing from the options
   // (multi: one entry per missing part, never the raw comma string).
   const optionValues = options.map((o) => (typeof o === "string" ? o : o.value));
   const parts = defaultValue
-    ? multiSelect
+    ? multi
       ? defaultValue.split(",").map((s) => s.trim()).filter(Boolean)
       : [defaultValue]
     : [];
@@ -71,7 +77,7 @@ export default function ColumnFilter({
         options={list}
         placeholder={label}
         allLabel={allLabel}
-        multiple={multiSelect}
+        multiple={multi}
         onChange={apply}
       />
       {isPending ? <span className="spinner small col-filter-busy" /> : null}
