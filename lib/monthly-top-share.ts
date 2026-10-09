@@ -51,7 +51,7 @@ export function buildMonthShare(m: MonthTop): string {
     `★ *Top 3 · ${m.label}*`,
     block("₹", "TYFCB — amount received", m.tyfcb, rupees),
     block("➜", "Referrals given", m.referral, (v) => String(v)),
-    block("➕", "Visitors brought", m.visitor, (v) => String(v)),
+    block("◆", "Visitors brought", m.visitor, (v) => String(v)),
   ].join("\n\n");
 }
 

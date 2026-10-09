@@ -21,7 +21,8 @@ check("share text: bold title, numbered rows, rupee amount", text.includes("*Top
 check("empty list says No data", text.includes("*Visitors brought*\nNo data"));
 check("share url is wa.me with encoded text", m.monthShareUrl(month).startsWith("https://wa.me/?text=") && m.allShareUrl([month, month]).includes(encodeURIComponent("――――")));
 // WhatsApp on Windows shows characters outside the basic plane (emoji) as "�" via wa.me links.
-const astral = /[\u{10000}-\u{10FFFF}]/u;
+// ...and characters WhatsApp treats as emoji even inside the basic plane (➕ ❌ ✅ ⭐ …) fail the same way.
+const astral = /[\u{10000}-\u{10FFFF}]|\p{Emoji_Presentation}/u;
 check("month share has no emoji (basic-plane symbols only)", !astral.test(text) && !astral.test(m.buildAllShare([month, month])));
 
 // the attendance (rolling period) share follows the same rules
@@ -37,7 +38,7 @@ const groups = [
 ];
 const pt = pm.buildPalmsStatsShare("10 Apr 2026", "8 Oct 2026", 26, groups);
 check("attendance share: bold heading + date line", pt.includes("*Attendance — last 6 months (26 weeks)*") && pt.includes("10 Apr 2026 – 8 Oct 2026 · 26 meetings"), pt);
-check("attendance share: one block per letter, bullets per bucket", pt.includes("❌ *Absent*\n• *3+ times* (2): Neha Goel, Rajiv Gupta\n• *1 time* (1): Viraj Bansal") && pt.includes("✚ *Medical*\n• *3+ times* (1): Abhay Goenka"), pt);
+check("attendance share: one block per letter, bullets per bucket", pt.includes("✗ *Absent*\n• *3+ times* (2): Neha Goel, Rajiv Gupta\n• *1 time* (1): Viraj Bansal") && pt.includes("✚ *Medical*\n• *3+ times* (1): Abhay Goenka"), pt);
 check("attendance share: empty buckets and empty groups are left out", !pt.includes("2 times") && !pt.includes("Substitute"), pt);
 check("attendance share has no emoji", !astral.test(pt));
 console.log(`TOTAL: ${pass} passed, ${fail} failed`);

@@ -3,7 +3,7 @@ import { whatsappShareUrl } from "@/lib/whatsapp";
 
 /** Heading symbol per group — basic-plane characters only (emoji arrive as "�" in WhatsApp on Windows). */
 const GROUP: Record<PalmsBucketGroup["key"], { icon: string; title: string }> = {
-  absent: { icon: "❌", title: "Absent" },
+  absent: { icon: "✗", title: "Absent" },
   medical: { icon: "✚", title: "Medical" },
   substitute: { icon: "⇄", title: "Substitute" },
 };
