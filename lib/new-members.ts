@@ -1,3 +1,4 @@
+import { cachedSwr } from "@/lib/cache";
 import { resolveHomeChapter } from "@/lib/member-chapters";
 import { fetchAllRows } from "@/lib/supabase/paged";
 import { getSupabaseServer } from "@/lib/supabase/server";
@@ -7,7 +8,11 @@ export const memberKey = (n: string): string => n.replace(/\s+/g, " ").trim().to
 
 /** The tenant's Home Chapter name — configured name, else the tenant's own name
  *  (the .env chapter name is no longer consulted). */
-export async function homeChapterNameOf(tenantId: string): Promise<string> {
+export function homeChapterNameOf(tenantId: string): Promise<string> {
+  return cachedSwr(`homename:${tenantId}`, 60_000, () => lookupHomeChapterName(tenantId));
+}
+
+async function lookupHomeChapterName(tenantId: string): Promise<string> {
   const { data } = await getSupabaseServer()
     .from("tenants")
     .select("id,name,home_chapter_name")

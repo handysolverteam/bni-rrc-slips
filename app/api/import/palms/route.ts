@@ -148,6 +148,7 @@ export async function POST(request: Request) {
         .eq("id", batch.id);
     }
 
+    clearDistinctCache(); // also drops the cached Attendance / dashboard data
     clearSlipsSnapshotCache();
     return Response.json({ ...summary, importedCount: imported, skippedCount: skipped });
   } catch (e) {
@@ -204,6 +205,8 @@ export async function DELETE(request: Request) {
     // legacy PALMS batches may carry a week id, so those caches are dropped.
     clearWeekOptionsCache();
     clearLatestImportedWeekCache();
+    clearDistinctCache();
+    clearSlipsSnapshotCache();
     return Response.json({ ok: true, removed: { attendance: count ?? 0, batches: batchIds.size } });
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 500 });

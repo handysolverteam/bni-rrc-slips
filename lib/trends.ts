@@ -1,5 +1,6 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paged";
+import { cachedSwr } from "@/lib/cache";
 import { resolveHomeChapter } from "@/lib/member-chapters";
 
 export type TrendWeek = { id: string; date: string; label: string };
@@ -24,7 +25,10 @@ const SERIES = [
  * for that week). Counts are raw slip rows — no owner weighting — so the
  * five series stay comparable.
  */
-export async function fetchSlipTrends(tenantId: string, months = 6): Promise<SlipTrends> {
+/** The Wednesday meetings of the last `months` months (global calendar, cached 5 min). */
+export async function fetchTrendWeeks(months = 6): Promise<TrendWeek[]> {
+  const day = new Date().toISOString().slice(0, 10);
+  return cachedSwr(`trendweeks:${months}:${day}`, 5 * 60_000, async () => {
   const sb = getSupabaseServer();
   const today = new Date();
   const from = new Date();
@@ -41,6 +45,16 @@ export async function fetchSlipTrends(tenantId: string, months = 6): Promise<Sli
   const weeks = ((data ?? []) as { id: string; label: string; meeting_date: string | null }[])
     .filter((w) => w.meeting_date && new Date(`${w.meeting_date}T12:00:00Z`).getUTCDay() === 3)
     .map((w) => ({ id: w.id, date: w.meeting_date as string, label: w.label }));
+  return weeks;
+  });
+}
+
+export function fetchSlipTrends(tenantId: string, months = 6): Promise<SlipTrends> {
+  return cachedSwr(`trends:${tenantId}:${months}`, 60_000, () => computeSlipTrends(tenantId, months));
+}
+
+async function computeSlipTrends(tenantId: string, months: number): Promise<SlipTrends> {
+  const weeks = await fetchTrendWeeks(months);
   if (weeks.length === 0) return { weeks: [], series: [] };
   const weekIds = weeks.map((w) => w.id);
   const series = await Promise.all(
@@ -98,8 +112,15 @@ export type AttendanceRow = {
  * Medical/Substitute/Leave), each the sum of that flag over the tenant's
  * `member_attendance` rows per week (0 = no attendance imported that week).
  */
-export async function fetchAttendanceTrends(tenantId: string, weeks: TrendWeek[]): Promise<SlipTrends> {
+export async function fetchAttendanceTrends(tenantId: string, weeksIn?: TrendWeek[]): Promise<SlipTrends> {
+  const weeks = weeksIn ?? (await fetchTrendWeeks());
   if (weeks.length === 0) return { weeks: [], series: [] };
+  return cachedSwr(`att:${tenantId}:${weeks.length}:${weeks[weeks.length - 1].id}`, 60_000, () =>
+    computeAttendanceTrends(tenantId, weeks),
+  );
+}
+
+async function computeAttendanceTrends(tenantId: string, weeks: TrendWeek[]): Promise<SlipTrends> {
   const { activeKeys } = await fetchHomeActiveMembers(tenantId);
   const rows = await fetchAllRows<AttendanceRow>("member_attendance", "member_name,bni_week_id,present,absent,m,s,l", {
     eq: [["tenant_id", tenantId]],
@@ -132,7 +153,11 @@ const nameKey = (n: string): string => n.replace(/\s+/g, " ").trim().toLowerCase
 /** Id of the tenant's HOME chapter row: configured home chapter first, then
  *  the tenant's own name, then the env name (a stray "BNI Influencer" row once
  *  made the env name unreliable). null when none of them exists. */
-export async function fetchHomeChapterId(tenantId: string): Promise<string | null> {
+export function fetchHomeChapterId(tenantId: string): Promise<string | null> {
+  return cachedSwr(`homechapter:${tenantId}`, 60_000, () => lookupHomeChapterId(tenantId));
+}
+
+async function lookupHomeChapterId(tenantId: string): Promise<string | null> {
   const sb = getSupabaseServer();
   const { data: tenant } = await sb
     .from("tenants")
@@ -159,7 +184,13 @@ export async function fetchHomeChapterId(tenantId: string): Promise<string | nul
  * under another chapter are excluded). `activeKeys` are the lower-cased names
  * the attendance chart filters on.
  */
-export async function fetchHomeActiveMembers(
+export function fetchHomeActiveMembers(
+  tenantId: string,
+): Promise<{ count: number; activeKeys: Set<string> }> {
+  return cachedSwr(`homemembers:${tenantId}`, 60_000, () => computeHomeActiveMembers(tenantId));
+}
+
+async function computeHomeActiveMembers(
   tenantId: string,
 ): Promise<{ count: number; activeKeys: Set<string> }> {
   const chapterId = await fetchHomeChapterId(tenantId);

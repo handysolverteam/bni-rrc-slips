@@ -1,3 +1,4 @@
+import { clearCached } from "@/lib/cache";
 import { chapterKey, normalizeChapterName } from "@/lib/file-chapter";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
@@ -88,6 +89,7 @@ export async function createChapterTenant(
   if (chapterError) return { error: chapterError.message };
   const { error: memberError } = await sb.from("tenant_members").insert({ tenant_id: tid, uid });
   if (memberError) return { error: memberError.message };
+  clearCached("memb:"); // memberships are cached per user for 30s
   return tenant as ChapterOption;
 }
 

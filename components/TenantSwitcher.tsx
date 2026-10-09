@@ -24,6 +24,9 @@ export default function TenantSwitcher({
       body: JSON.stringify({ tenantId }),
     });
     if (res.ok) {
+      try {
+        sessionStorage.removeItem("bni-shell-v1"); // cached shell names the old chapter
+      } catch {}
       window.location.reload();
       return;
     }

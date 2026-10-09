@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { verifyFirebaseIdToken } from "@/lib/firebase/admin";
-import { SESSION_COOKIE, TENANT_COOKIE } from "@/lib/server-auth";
+import { SESSION_COOKIE, TENANT_COOKIE, tenantInfoForUid } from "@/lib/server-auth";
 
 /**
  * Keeps the browser's HttpOnly session cookie in sync with the Firebase
@@ -15,8 +15,9 @@ export async function POST(request: Request) {
   if (!idToken) {
     return Response.json({ error: "Missing idToken." }, { status: 400 });
   }
+  let uid: string;
   try {
-    await verifyFirebaseIdToken(idToken);
+    ({ uid } = await verifyFirebaseIdToken(idToken));
   } catch {
     return Response.json({ error: "Invalid or expired token." }, { status: 401 });
   }
@@ -30,7 +31,9 @@ export async function POST(request: Request) {
     // Firebase ID tokens live 1 hour; jwtVerify enforces exp anyway.
     maxAge: 60 * 60,
   });
-  return Response.json({ ok: true });
+  // The shell also needs the user's chapters: answer in this same request.
+  const info = await tenantInfoForUid(uid, jar.get(TENANT_COOKIE)?.value).catch(() => null);
+  return Response.json({ ok: true, ...(info ?? {}) });
 }
 
 export async function DELETE() {

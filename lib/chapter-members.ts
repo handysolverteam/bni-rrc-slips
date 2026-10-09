@@ -1,3 +1,4 @@
+import { cachedSwr } from "@/lib/cache";
 import { fetchAllRows } from "@/lib/supabase/paged";
 import { fetchHomeChapterId } from "@/lib/trends";
 
@@ -18,9 +19,13 @@ export type OtherChapter = {
  * name). Member names are sorted A–Z; inactive members are included and
  * flagged so the screen can show both counts.
  */
-export async function fetchOtherChapters(tenantId: string): Promise<OtherChapter[]> {
-  const homeId = await fetchHomeChapterId(tenantId);
-  const [chapters, members] = await Promise.all([
+export function fetchOtherChapters(tenantId: string): Promise<OtherChapter[]> {
+  return cachedSwr(`otherchapters:${tenantId}`, 60_000, () => computeOtherChapters(tenantId));
+}
+
+async function computeOtherChapters(tenantId: string): Promise<OtherChapter[]> {
+  const [homeId, chapters, members] = await Promise.all([
+    fetchHomeChapterId(tenantId),
     fetchAllRows<{ id: string; name: string }>("chapters", "id,name", {
       eq: [["tenant_id", tenantId]],
       pageSize: 1000,

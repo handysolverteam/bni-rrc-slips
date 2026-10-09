@@ -1,3 +1,4 @@
+import { cachedSwr } from "@/lib/cache";
 import { fetchAllRows } from "@/lib/supabase/paged";
 import { rankTop, type MonthTop } from "@/lib/monthly-top-share";
 
@@ -14,7 +15,11 @@ const dateOf = (j: Joined | undefined): string | null =>
  * week of the tenant (the screen filters the months). Referral givers from
  * another chapter (bold outsiders) are skipped. Newest month first.
  */
-export async function fetchMonthlyTop(tenantId: string): Promise<MonthTop[]> {
+export function fetchMonthlyTop(tenantId: string): Promise<MonthTop[]> {
+  return cachedSwr(`top3:${tenantId}`, 60_000, () => computeMonthlyTop(tenantId));
+}
+
+async function computeMonthlyTop(tenantId: string): Promise<MonthTop[]> {
   const filters = { eq: [["tenant_id", tenantId]] as [string, string][] };
   const [tyfcb, ref, vis] = await Promise.all([
     fetchAllRows<{ member_name: string; amount: number | string | null; bni_weeks: Joined }>(

@@ -1,23 +1,12 @@
-import { createTtlCache, sharedState } from "./cache";
+import { cachedSwr, clearCached } from "./cache";
 import { fetchAllRows } from "@/lib/supabase/paged";
 
-type ListCache = ReturnType<typeof createTtlCache<string[]>>;
-
 // Distinct values power the column-filter dropdowns. They change only on
-// import, and computing one downloads the whole column — cache per process
-// for 5 minutes (import clears explicitly). Keyed by `table.column`.
-// sharedState: the import ROUTE and the page RENDER are separate module
-// graphs — without it, clearing from the route would miss the page's copy.
-const caches = sharedState("distinct.caches", () => new Map<string, ListCache>());
-
-function cacheFor(key: string): ListCache {
-  let c = caches.get(key);
-  if (!c) {
-    c = createTtlCache<string[]>(5 * 60 * 1000);
-    caches.set(key, c);
-  }
-  return c;
-}
+// import, and computing one downloads the whole column — so each list is cached
+// per tenant + column, fresh for 5 minutes and then served stale while it
+// refreshes in the background (a dropdown never waits for the database after
+// the first load). Every write path calls clearDistinctCache(); the shared
+// cache lives in lib/cache.ts (one copy across page and route-handler bundles).
 
 /** Distinct non-empty values of one text column, sorted for dropdowns.
  *  Scoped to the tenant (cache key includes the tenant id). Extra `eq`
@@ -31,7 +20,7 @@ export async function distinctValues(
   const extra = extraEq.length
     ? `|${extraEq.map(([k, v]) => `${k}=${String(v)}`).join("|")}`
     : "";
-  return cacheFor(`${tenantId}:${table}.${column}${extra}`).get(async () => {
+  return cachedSwr(`distinct:${tenantId}:${table}.${column}${extra}`, 5 * 60_000, async () => {
     const data = await fetchAllRows<Record<string, unknown>>(table, column, {
       eq: [["tenant_id", tenantId], ...extraEq],
     });
@@ -51,7 +40,8 @@ export function mergeDistinct(...lists: string[][]): string[] {
   return [...new Set(lists.flat())].sort((a, b) => a.localeCompare(b));
 }
 
-/** Drop all cached dropdown option lists (call on import). */
+/** Drop every cached list — dropdown options AND the dashboard / Attendance / Top 3
+ *  data caches (call on every write: import, merge, member toggle, settings). */
 export function clearDistinctCache(): void {
-  for (const c of caches.values()) c.clear();
+  clearCached();
 }

@@ -37,6 +37,9 @@ export default function SettingsPanel({
     if (err) setMsg({ ok: false, text: err });
     else {
       setMsg({ ok: true, text: done });
+      try {
+        sessionStorage.removeItem("bni-shell-v1"); // cached shell lists the old chapters
+      } catch {}
       window.location.reload();
     }
   }

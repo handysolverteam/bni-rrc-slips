@@ -1,6 +1,7 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { verifyFirebaseIdToken } from "@/lib/firebase/admin";
+import { cached, clearCached } from "@/lib/cache";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { DEFAULT_TENANT_ID, grantHomeChapter } from "@/lib/tenant-grant";
 
@@ -94,14 +95,17 @@ export async function getTenantContext(req?: Request): Promise<TenantContext> {
   }
 
   const sb = getSupabaseServer();
-  const { data: memberships } = await sb
-    .from("tenant_members")
-    .select("tenant_id")
-    .eq("uid", uid);
+  // Memberships change rarely (grant / add chapter clear this); caching saves one
+  // database round trip (~0.4s) on every page and API request.
+  const memberships = await cached(`memb:${uid}`, 30_000, async () => {
+    const { data } = await sb.from("tenant_members").select("tenant_id").eq("uid", uid);
+    return data ?? [];
+  });
   if (!memberships || memberships.length === 0) {
     // Open sign-in: grant the Home Chapter on first visit instead of
     // sending the user to the manual-provisioning screen.
     const granted = await grantHomeChapter(sb, uid);
+    clearCached("memb:"); // the cached (empty) membership list is stale now
     if (!granted) return { uid, noAccess: true };
     return { uid, tenantId: granted };
   }
@@ -109,6 +113,34 @@ export async function getTenantContext(req?: Request): Promise<TenantContext> {
   const active = jar.get(TENANT_COOKIE)?.value;
   const match = memberships.find((m) => m.tenant_id === active) ?? memberships[0];
   return { uid, tenantId: match.tenant_id };
+}
+
+/**
+ * The caller's chapters + the active one, for the app shell. One cached lookup
+ * (memberships change rarely; add-chapter / grant clear it). A uid with no
+ * membership is auto-granted the Home Chapter exactly like the page path.
+ */
+export async function tenantInfoForUid(
+  uid: string,
+  activeId?: string | null,
+): Promise<{ uid: string; tenant: { id: string; name: string } | null; tenants: { id: string; name: string }[]; noAccess: boolean }> {
+  const sb = getSupabaseServer();
+  const load = () =>
+    cached(`memb:t:${uid}`, 30_000, async () => {
+      const { data } = await sb.from("tenant_members").select("tenant_id, tenants(id, name)").eq("uid", uid);
+      return (data ?? [])
+        .map((r) => r.tenants as { id: string; name: string } | { id: string; name: string }[] | null)
+        .flatMap((t) => (Array.isArray(t) ? t : t ? [t] : []));
+    });
+  let tenants = await load();
+  if (tenants.length === 0) {
+    const granted = await grantHomeChapter(sb, uid);
+    clearCached("memb:"); // the cached (empty) membership list is stale now
+    if (!granted) return { uid, tenant: null, tenants: [], noAccess: true };
+    tenants = await load();
+  }
+  const tenant = tenants.find((t) => t.id === activeId) ?? tenants[0] ?? null;
+  return { uid, tenant, tenants, noAccess: tenants.length === 0 };
 }
 
 /** Standard 401 body for API routes. */

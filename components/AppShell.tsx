@@ -15,6 +15,27 @@ import { isSafeInternalPath, isSafeSsoReturnUrl } from "@/lib/sso-guard";
 
 const PUBLIC_PATHS = ["/login"];
 
+/** The last bootstrap result, kept for the browser session so a page load paints the
+ *  shell at once and re-checks in the background (instead of waiting on 3-4 requests). */
+const SHELL_KEY = "bni-shell-v1";
+type ShellCache = { uid: string; tenants: { id: string; name: string }[]; tenant: { id: string; name: string } | null };
+function readShell(uid: string): ShellCache | null {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(SHELL_KEY) ?? "null") as ShellCache | null;
+    return v && v.uid === uid && Array.isArray(v.tenants) ? v : null;
+  } catch {
+    return null;
+  }
+}
+function writeShell(v: ShellCache | null) {
+  try {
+    if (v) sessionStorage.setItem(SHELL_KEY, JSON.stringify(v));
+    else sessionStorage.removeItem(SHELL_KEY);
+  } catch {
+    // storage unavailable — just no caching
+  }
+}
+
 function Spinner() {
   return (
     <div style={{ display: "flex", minHeight: "60vh", alignItems: "center", justifyContent: "center" }}>
@@ -72,29 +93,40 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
     if (tenantBootstrapped.current) return;
     tenantBootstrapped.current = true;
 
+    // Paint from the cached shell immediately; the request below refreshes it.
+    const cachedShell = readShell(user.uid);
+    if (cachedShell) {
+      setTenants(cachedShell.tenants);
+      setActiveTenant(cachedShell.tenant);
+      setTenantState("ready");
+    }
+
     (async () => {
       try {
         const idToken = await firebaseAuth.currentUser?.getIdToken();
         if (!idToken) return;
+        // ONE request: sets the session cookie AND returns this user's chapters.
         const sessionRes = await fetch("/api/auth/session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ idToken }),
         });
         if (!sessionRes.ok) return;
-        const info = (await (await fetch("/api/tenant")).json()) as {
+        const info = (await sessionRes.json()) as {
           uid?: string | null;
           tenant?: { id: string; name: string } | null;
           tenants?: { id: string; name: string }[];
           noAccess?: boolean;
         };
         if (info.noAccess) {
+          writeShell(null);
           setNoAccessUid(info.uid ?? user.uid);
           setTenantState("noaccess");
         } else {
           setTenants(info.tenants ?? []);
           setActiveTenant(info.tenant ?? null);
           setTenantState("ready");
+          writeShell({ uid: user.uid, tenants: info.tenants ?? [], tenant: info.tenant ?? null });
         }
       } catch {
         // Cookie may already exist from an earlier load; render children and
@@ -243,8 +275,13 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
 
     (async () => {
       try {
-        const result = await firebaseAuth.currentUser?.getIdTokenResult(true);
-        setAccessState(result?.claims.slips === true ? "granted" : "denied");
+        // Fast path: the claims already on the cached token (no network). A
+        // forced refresh follows in the background so a revoked grant still
+        // takes effect within seconds — it just no longer blocks the first paint.
+        const quick = await firebaseAuth.currentUser?.getIdTokenResult();
+        if (quick?.claims.slips === true) setAccessState("granted");
+        const fresh = await firebaseAuth.currentUser?.getIdTokenResult(true);
+        setAccessState(fresh?.claims.slips === true ? "granted" : "denied");
       } catch {
         setAccessState("denied");
       }

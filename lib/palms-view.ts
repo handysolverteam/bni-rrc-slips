@@ -1,3 +1,4 @@
+import { cachedSwr } from "@/lib/cache";
 import { fetchAllRows } from "@/lib/supabase/paged";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import type { ParsedPalmsWide } from "@/lib/palms-import";
@@ -62,7 +63,11 @@ const nameKey = (n: string): string => n.replace(/\s+/g, " ").trim().toLowerCase
  * multi-week PALMS batch stores no week id, so slips-derived options would
  * miss every attendance-only week.
  */
-export async function fetchPalmsWeekOptions(tenantId: string): Promise<WeekOption[]> {
+export function fetchPalmsWeekOptions(tenantId: string): Promise<WeekOption[]> {
+  return cachedSwr(`palms:weeks:${tenantId}`, 60_000, () => computePalmsWeekOptions(tenantId));
+}
+
+async function computePalmsWeekOptions(tenantId: string): Promise<WeekOption[]> {
   const sb = getSupabaseServer();
   const rows = await fetchAllRows<{ bni_week_id: string }>("member_attendance", "bni_week_id", {
     eq: [["tenant_id", tenantId]],
@@ -85,7 +90,11 @@ export async function fetchPalmsWeekOptions(tenantId: string): Promise<WeekOptio
  * and the PALMS export share this exact function (screen/file parity).
  * `weekIds` empty = every week with attendance.
  */
-export async function fetchPalmsMatrix(tenantId: string, weekIds: string[]): Promise<PalmsMatrix> {
+export function fetchPalmsMatrix(tenantId: string, weekIds: string[]): Promise<PalmsMatrix> {
+  return cachedSwr(`palms:matrix:${tenantId}:${weekIds.join(",")}`, 60_000, () => computePalmsMatrix(tenantId, weekIds));
+}
+
+async function computePalmsMatrix(tenantId: string, weekIds: string[]): Promise<PalmsMatrix> {
   const allWeeks = await fetchPalmsWeekOptions(tenantId);
   const weeks = (weekIds.length > 0
     ? allWeeks.filter((w) => weekIds.includes(w.id))
@@ -143,7 +152,13 @@ export function palmsScopeLabel(weeks: WeekOption[], weekIds: string[], allLabel
  * batch that is either referenced by an attendance row or named like a PALMS
  * file (covers a zero-new-cell import that created no rows).
  */
-export async function fetchPalmsImportRecord(
+export function fetchPalmsImportRecord(
+  tenantId: string,
+): Promise<{ filename: string; importedAt: string } | null> {
+  return cachedSwr(`palms:record:${tenantId}`, 60_000, () => computePalmsImportRecord(tenantId));
+}
+
+async function computePalmsImportRecord(
   tenantId: string,
 ): Promise<{ filename: string; importedAt: string } | null> {
   const sb = getSupabaseServer();
@@ -318,9 +333,16 @@ export type PalmsAttendanceStats = {
  * names without a member row count as active. `null` when the window has no
  * meetings at all.
  */
-export async function fetchPalmsAttendanceStats(
+export function fetchPalmsAttendanceStats(
   tenantId: string,
   today: string = todayIso(),
+): Promise<PalmsAttendanceStats | null> {
+  return cachedSwr(`palms:stats:${tenantId}:${today}`, 60_000, () => computePalmsAttendanceStats(tenantId, today));
+}
+
+async function computePalmsAttendanceStats(
+  tenantId: string,
+  today: string,
 ): Promise<PalmsAttendanceStats | null> {
   const { from, to } = rollingWindow(today);
   const sb = getSupabaseServer();
