@@ -533,7 +533,7 @@ try {
       `file=${f} btn=${b}`);
   }
   check("panel: Import disabled while a preview has nothing new",
-    panelSrc.includes("disabled={state.kind === \"busy\" || pv.cellNew === 0}"));
+    panelSrc.includes("disabled={state.kind === \"busy\" || refreshing || pv.cellNew === 0}"));
   check("panel: minimize / import-files toggle",
     panelSrc.includes('className="import-toggle"') && panelSrc.includes("aria-expanded={open}") &&
       panelSrc.includes('{open ? "− Minimize" : "+ Import files"}'));
