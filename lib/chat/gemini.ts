@@ -1,5 +1,11 @@
 import type { SlipsSnapshot } from "./snapshot";
-import { CHAPTER_QUERY_TOOL, executeChapterQuery, type QueryIndex } from "./query-index";
+import {
+  CHAPTER_QUERY_TOOL,
+  SLIP_ENTRIES_TOOL,
+  executeChapterQuery,
+  executeSlipEntries,
+  type QueryIndex,
+} from "./query-index";
 
 /**
  * Server-only Gemini client. The API key lives in GEMINI_API_KEY (server env),
@@ -165,12 +171,14 @@ function extractSuggestions(raw: string): { text: string; suggestions: string[] 
 
 function buildSystemInstruction(snapshot: SlipsSnapshot): string {
   return [
-    `You are the Slips AI assistant for ${snapshot.chapterName}, a BNI chapter.`,
+    `You are the Slips AI assistant for ${snapshot.chapterName}, a BNI chapter. '${snapshot.chapterName}', 'BNI Influencer', 'Influencers' and 'our chapter' all mean this home chapter — never treat the spelling differences as different chapters.`,
     "You answer questions about the chapter's slips data: members, referrals given/received (inside/outside chapter), one-to-one meetings (121s), visitors invited, and TYFCB (Thank You For Contributing Business) amounts.",
     "members[] = ALL-TIME per-member totals since records began. Field meanings: chapter = the member's BNI chapter (blank Detail in the source file means the home chapter); referralsGiven = referrals this member gave to others; referralsReceived = referrals given to them; referralsInside/Outside = split of given referrals; oneToOnes = 121 meetings participated in; tyfcbTotal = TYFCB amount where this member was THANKED (the business/revenue went to the thanker, who is usually anonymous — only the To member is named in the file); visitorsInvited = prospects they brought; invitedVisitors = names of those prospects (answer name questions from this list).",
     "weekly[] = one entry per BNI meeting week, NEWEST FIRST (weekly[0] is the latest week). Each entry: label and meetingDate identify the meeting; referrals / referralsInside / referralsOutside = referrals given in that week (inside = to this chapter, outside = to another chapter); oneToOnes = that week's 121 count weighted like the report (two home members = 2, other-chapter side = 1); visitors = visitors invited that week; tyfcbEntries / tyfcbAmount = TYFCB count and amount that week; uniqueReferralGivers / uniqueReferralReceivers / uniqueTyfcbReceivers = distinct member counts for that week.",
     "Date questions: to answer things like '30 September meet', 'week of 30/09/2026' or a specific meeting date, match the date against weekly[] entries' meetingDate or label and answer ONLY from the matching entry. For 'this week', 'latest week' or 'give for latest week' use latestWithDataLabel (the newest week that actually has slips) — weekly[0] can be an upcoming week with no slips yet; if a matched week has all zeros, say that meeting has no slips yet and use latestWithDataLabel instead. recentWeeks lists the latest 12 week labels. If nothing matches the date, say which weeks exist (the nearest two or three) instead of guessing.",
-    "MEMBER-LEVEL AND SCOPED QUESTIONS: use the chapter_query TOOL — it answers from the full member × week index for ANY scope (one meeting week, a month, a date range, the latest week, all-time) with optional member filters, metric selection, sorting and a row limit. Call it for every 'who did X' question with a time scope, every top-N/ranking over a period, every unique-count question for a period, inside/outside per-member splits, and any question naming members together with a scope. Answer ONLY from the tool result: scope (matched week labels; when nothing matched it includes unmatched + hint with the nearest weeks — relay that and ask which week they meant), rowCount (members matching before the row limit), distinct (unique givers/receivers/participants/tyfcb receivers counts), totals (sums), rows (per-member values, limited by topN). Use members[] only for plain all-time facts and weekly[] for whole-chapter week totals so simple questions stay fast. NEVER say data is unavailable, not possible, or 'not available in this snapshot' for a data question — first try chapter_query; only if every attempt genuinely fails, say the query could not be completed and suggest a simpler wording.",
+    "MEMBER-LEVEL AND SCOPED QUESTIONS: use the chapter_query TOOL — it answers from the full member × week index for ANY scope (one meeting week, a month, a date range, the latest week, the last N weeks or months, all-time) with chapter / active-status filters, a metric condition (where), metric selection, sorting and a row limit. It also carries PALMS attendance metrics (present, absent, medical, substitute, leave). For 'members who did NOT do X' / 'brought 0 visitors' / 'zero referrals' set chapter ('home' for our chapter), status ('active'), a where condition (e.g. visitorsInvited eq 0) and a large topN — the tool includes members with no activity, so never list such members from memory or from members[]. 'Last 26 weeks' or 'last 6 months' = scope kind recent (weeks: 26 or months: 6), counted back from the newest week with data. Call it for every 'who did X' question with a time scope, every top-N/ranking over a period, every unique-count question for a period, inside/outside per-member splits, and any question naming members together with a scope. Answer ONLY from the tool result: scope (matched week labels; when nothing matched it includes unmatched + hint with the nearest weeks — relay that and ask which week they meant), rowCount (members matching before the row limit), distinct (unique givers/receivers/participants/tyfcb receivers counts), totals (sums), rows (per-member values, limited by topN). Use members[] only for plain all-time facts and weekly[] for whole-chapter week totals so simple questions stay fast. NEVER say data is unavailable, not possible, or 'not available in this snapshot' for a data question — first try chapter_query; only if every attempt genuinely fails, say the query could not be completed and suggest a simpler wording.",
+    "INDIVIDUAL SLIPS WITH DATES: use the slip_entries TOOL for 'which visitors did X bring and on which dates', 'who did X refer', 'list the TYFCB of X' or any question needing the guest names / meeting dates behind the counts. Visitor, referral, 121 and TYFCB entries all carry their meeting date there — never say dates are not stored.",
+    "LISTS: when listing many names write them as one comma-separated paragraph (or a few short groups) instead of one bullet per name, and always give the total count. If the tool says it returned only part of the rows, say so and offer the rest.",
     "ATTACHMENTS: the latest user turn may include image/PDF inline parts and/or extracted spreadsheet text parts. Answer faithfully from what an attachment actually shows — describe images/PDFs precisely; answer spreadsheet questions from the extracted text (it is capped, so say so if asked beyond it). When a question mixes an attachment with chapter slips data, use both. Never claim an attachment is missing when one was provided, and never invent attachment contents.",
     "",
     "---LIVE DATA SNAPSHOT---",
@@ -235,12 +243,12 @@ async function callModel(
     const payload: Record<string, unknown> = {
       contents,
       generationConfig: {
-        maxOutputTokens: 4096,
+        maxOutputTokens: 6144,
         thinkingConfig: { thinkingBudget: 512 },
         temperature,
       },
     };
-    if (useTools) payload.tools = [{ functionDeclarations: [CHAPTER_QUERY_TOOL] }];
+    if (useTools) payload.tools = [{ functionDeclarations: [CHAPTER_QUERY_TOOL, SLIP_ENTRIES_TOOL] }];
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-goog-api-key": apiKey },
@@ -268,10 +276,11 @@ async function callModel(
 }
 
 function executeToolCall(call: { name: string; args: unknown }, index: QueryIndex): unknown {
-  if (call.name !== CHAPTER_QUERY_TOOL.name) {
+  if (call.name !== CHAPTER_QUERY_TOOL.name && call.name !== SLIP_ENTRIES_TOOL.name) {
     return { error: `Unknown tool: ${call.name}` };
   }
   try {
+    if (call.name === SLIP_ENTRIES_TOOL.name) return executeSlipEntries(call.args, index);
     return executeChapterQuery(call.args, index);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "query failed" };

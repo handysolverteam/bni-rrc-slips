@@ -14,9 +14,10 @@ type NavItem = NavLeaf | NavGroup;
 const links: NavItem[] = [
   { href: "/", label: "Home", exact: true },
   { href: "/import", label: "Import", exact: false },
-  // Opens on the active Home Chapter members by default.
+  // Opens on the active Home Chapter members by default (the page redirects to
+  // /members?active=1&c_chapter=<this chapter's home chapter>).
   {
-    href: `/members?active=1&c_chapter=${encodeURIComponent(process.env.NEXT_PUBLIC_CHAPTER_NAME || "BNI Influencers").replace(/%20/g, "+")}`,
+    href: "/members?home=1",
     path: "/members",
     label: "Bni Member",
     exact: false,
@@ -34,8 +35,9 @@ const links: NavItem[] = [
   },
   { href: "/report", label: "Slip Report", exact: false },
   { href: "/top3", label: "Top 3", exact: false },
-  { href: "/palms", label: "PALMS Report", exact: false },
+  { href: "/palms", label: "Attendance", exact: false },
   { href: "/chat", label: "Chat", exact: false },
+  { href: "/settings", label: "Settings", exact: false },
 ];
 
 const isLeaf = (l: NavItem): l is NavLeaf => "href" in l;

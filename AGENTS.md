@@ -17,8 +17,14 @@
 ## Repo facts
 
 - Default/home tenant: `d1000000-0000-4000-8000-000000000001`, name
-  `BNI Influencers`, `home_chapter_name` NULL → home falls back to
-  `NEXT_PUBLIC_CHAPTER_NAME`.
+  `BNI Influencers`. **The home chapter never comes from `.env`** (the
+  `NEXT_PUBLIC_CHAPTER_NAME` variable is gone): it is `tenants.home_chapter_name`
+  (Settings) else the tenant's own name. Slip and PALMS files name their chapter in a
+  `Chapter` header cell (`Influencers` = `BNI Influencers`); a file for another/unclear
+  chapter makes the import offer an existing-chapter dropdown + a new-chapter box
+  (`lib/chapter-target.ts`). Each import preview lists the NEW home-chapter members as
+  checkboxes (ticked by default); un-ticked ones are not added (PALMS: their attendance
+  is skipped too). Settings (`/settings`): switch chapter, add chapter, pick home chapter.
 - **No roles.** Roles (admin/member) were removed on 2026-10-05: every member
   of a tenant can import, browse, export, toggle members and chat. Only sign-in
   and membership are enforced, in `lib/server-auth.ts`. `tenant_members.role`
@@ -27,7 +33,7 @@
 - **Open sign-in**: the first sign-in auto-grants the **Home Chapter**
   (`lib/tenant-grant.ts`, idempotent upsert) — no SQL per user. Membership in
   any *other* chapter stays a manual SQL insert.
-- Migrations `001`–`007` are applied (006 = `member_attendance` for the PALMS
+- Migrations `001`–`007` are applied (**`008_member_aliases.sql` is NEW — the user runs it**: remembered member merges) (006 = `member_attendance` for the PALMS
   Chapter Summary import, 007 = `palms_stats` for the PALMS-vs-slips
   comparison). No `DATABASE_URL` in `.env.local`, so the
   user runs any new DDL in the Supabase SQL editor.

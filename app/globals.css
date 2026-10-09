@@ -1430,3 +1430,39 @@ button.wa-btn:active:not(:disabled) { background: #1fbf5b; }
   .chapter-members { padding-left: 34px; columns: 1; }
   .chapter-name { flex-wrap: wrap; }
 }
+
+/* ---------- Import: chapter chooser + new-member checkboxes ---------- */
+.chapter-chooser p { margin: 0 0 8px; }
+.chapter-chooser-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chapter-chooser-row select, .chapter-chooser-row input { min-width: 220px; flex: 1 1 220px; }
+.new-members { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--panel); }
+.new-members-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; font-size: 14px; }
+.new-members-actions { display: inline-flex; gap: 8px; }
+.mini-link { background: none; border: 0; padding: 2px 4px; color: var(--accent-ink); font-weight: 600; cursor: pointer; box-shadow: none; }
+.mini-link:hover:not(:disabled) { background: none; text-decoration: underline; box-shadow: none; }
+.new-members-list { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; columns: 3 200px; column-gap: 18px; font-size: 14px; }
+.new-members-list li { break-inside: avoid; padding: 2px 0; }
+.new-members-list label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.new-members-list input[type="checkbox"] { width: auto; margin: 0; }
+
+/* ---------- Settings ---------- */
+.settings-grid { display: grid; gap: 16px; max-width: 760px; }
+.settings-grid h2 { margin: 0 0 4px; font-size: 18px; }
+.settings-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.settings-row select, .settings-row input { flex: 1 1 260px; min-width: 0; }
+
+/* ---------- Member merge ---------- */
+.new-members-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.merge-select { font-size: 13px; padding: 3px 6px; max-width: 100%; }
+.new-members-hint { margin: 8px 0 0; }
+.merge-card { margin-bottom: 16px; }
+.merge-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-top: 10px; }
+.merge-row .filter-field { flex: 1 1 260px; min-width: 240px; }
+
+/* ---------- One week box + Multi-select checkbox ---------- */
+.week-row { display: flex; align-items: center; gap: 12px; }
+.week-row .combo { flex: 1 1 auto; min-width: 0; width: auto; }
+.multi-check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.multi-check input { width: auto; margin: 0; }
+@media (max-width: 640px) { .week-row { flex-wrap: wrap; } .week-row .combo { flex: 1 1 100%; } }
+.filter-form .filter-field:has(.week-row) { max-width: 640px; }

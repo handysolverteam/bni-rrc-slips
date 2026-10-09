@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import ChapterChooser, { initialChapterField, type ChapterCheckInfo } from "@/components/ChapterChooser";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import NewMembersPicker from "@/components/NewMembersPicker";
 
 type Preview = {
   filename: string;
@@ -16,6 +18,10 @@ type Preview = {
   cellSkipped: number;
   skippedSamples: string[];
   issues: string[];
+  chapter?: ChapterCheckInfo;
+  homeChapter?: string;
+  newMembers?: string[];
+  similar?: Record<string, string[]>;
 };
 
 type State =
@@ -55,6 +61,12 @@ export default function PalmsImportPanel({
   const [confirming, setConfirming] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [open, setOpen] = useState(true);
+  // The chapter chosen in the chooser ("" = active) and the new members un-ticked.
+  const [chapterVal, setChapterVal] = useState("");
+  const [skipped, setSkipped] = useState<string[]>([]);
+  // { new name: existing member it is the same person as } — remembered by the server.
+  const [merges, setMerges] = useState<Record<string, string>>({});
+  const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
 
   async function remove() {
@@ -81,22 +93,38 @@ export default function PalmsImportPanel({
     }
   }
 
-  async function preview(file: File) {
+  // `chapter` re-runs the counts for a chosen chapter; `silent` keeps the card on
+  // screen (no "Reading file…") so the chooser keeps its state.
+  async function preview(file: File, chapter = "", silent = false) {
     if (state.kind === "reading" || state.kind === "busy") return;
-    setState({ kind: "reading" });
+    if (silent) setRefreshing(true);
+    else setState({ kind: "reading" });
     setPicked(file);
     try {
       const fd = new FormData();
       fd.append("file", file);
+      if (chapter) fd.append("chapter", chapter);
       const res = await fetch("/api/import/palms/preview", { method: "POST", body: fd });
       const data = await res.json().catch(() => null);
       if (!res.ok || data?.error) {
         setState({ kind: "err", text: data?.error ?? "Could not read the file." });
         return;
       }
+      // First look at a file whose chapter needs choosing: start from the best
+      // guess and recount against it.
+      const init = chapter || initialChapterField((data as Preview).chapter);
+      if (!chapter && init) {
+        setRefreshing(false);
+        return preview(file, init, true);
+      }
+      setChapterVal(chapter);
+      setSkipped([]);
+      setMerges({});
       setState({ kind: "preview", preview: { ...data, filename: file.name } as Preview });
     } catch (err) {
       setState({ kind: "err", text: err instanceof Error ? err.message : "Network error" });
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -106,6 +134,9 @@ export default function PalmsImportPanel({
     try {
       const fd = new FormData();
       fd.append("file", picked);
+      if (chapterVal) fd.append("chapter", chapterVal);
+      fd.append("skipMembers", JSON.stringify(skipped));
+      if (Object.keys(merges).length > 0) fd.append("mergeMembers", JSON.stringify(merges));
       const res = await fetch("/api/import/palms", { method: "POST", body: fd });
       const data = await res.json().catch(() => null);
       if (!res.ok || data?.error) {
@@ -116,13 +147,26 @@ export default function PalmsImportPanel({
         `${data.importedCount} new cell(s)`,
         data.skippedCount ? `${data.skippedCount} already imported (skipped)` : "",
         `${data.weekCount} week(s)`,
+        data.membersAdded ? `${data.membersAdded} member(s) added` : "",
+        data.aliasesSaved ? `${data.aliasesSaved} merge(s) remembered` : "",
       ].filter(Boolean);
       const unknown =
         Array.isArray(data.weeksUnknown) && data.weeksUnknown.length > 0
           ? ` — ${data.weeksUnknown.length} header date(s) not on the calendar were skipped`
           : "";
-      setState({ kind: "ok", text: `Imported: ${bits.join(" · ")}${unknown}.` });
+      setState({ kind: "ok", text: `Imported: ${bits.join(" · ")}${unknown}.${data.warning ? ` ${data.warning}` : ""}` });
       setPicked(null);
+      // Imported into another / a new chapter: make it the active one.
+      const activeId = state.preview.chapter?.active.id;
+      if (data.tenantId && activeId && data.tenantId !== activeId) {
+        await fetch("/api/tenant", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tenantId: data.tenantId }),
+        });
+        window.location.reload();
+        return;
+      }
       onImported?.();
       router.refresh();
     } catch (err) {
@@ -202,6 +246,31 @@ export default function PalmsImportPanel({
                 <p className="muted">
                   {pv.from} → {pv.to} · {pv.memberCount} member(s) · {pv.weeksMatched} week(s)
                 </p>
+                {pv.chapter ? (
+                  <ChapterChooser
+                    key={pv.filename}
+                    check={pv.chapter}
+                    disabled={refreshing}
+                    onChange={(f) => picked && preview(picked, f, true)}
+                  />
+                ) : null}
+                <NewMembersPicker
+                  names={pv.newMembers ?? []}
+                  homeChapter={pv.homeChapter ?? "the home chapter"}
+                  skipped={skipped}
+                  merges={merges}
+                  similar={pv.similar}
+                  disabled={refreshing}
+                  onChange={setSkipped}
+                  onMerge={(n, into) =>
+                    setMerges((m) => {
+                      const next = { ...m };
+                      if (into) next[n] = into;
+                      else delete next[n];
+                      return next;
+                    })
+                  }
+                />
                 {pv.cellNew > 0 ? (
                   <p className="preview-ok">
                     {pv.cellNew} new cell(s) to import

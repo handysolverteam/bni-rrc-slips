@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import SearchSelect from "@/components/SearchSelect";
 import type { WeekOption } from "@/lib/weeks";
 
@@ -32,7 +32,7 @@ export default function FilterBar({
   hiddenParams?: Record<string, string>;
   includeAllOption?: boolean;
   hideSearch?: boolean;
-  /** Also render the multi-week box (comma list in `week`); default on. */
+  /** Show the "Multi-select" checkbox next to the week box (comma list in `week`); default on. */
   showMulti?: boolean;
   onNavigate?: (url: string) => void;
 }) {
@@ -40,6 +40,12 @@ export default function FilterBar({
   const inputRef = useRef<HTMLInputElement>(null);
   const [isPending, startTransition] = useTransition();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // One week box; the checkbox beside it turns multi-select on/off. A URL that
+  // already carries several weeks opens in multi mode.
+  const [multi, setMulti] = useState(weekId.includes(","));
+  useEffect(() => {
+    if (weekId.includes(",")) setMulti(true);
+  }, [weekId]);
 
   function buildUrl(week: string): string {
     const params = new URLSearchParams();
@@ -91,28 +97,32 @@ export default function FilterBar({
       {weeks.length > 0 ? (
         <div className="filter-field">
           <span className="filter-label">Week</span>
-          <SearchSelect
-          value={weekId.includes(",") ? "" : weekId}
-          options={weeks.map((w) => ({ value: w.id, label: w.label }))}
-          placeholder="All weeks"
-          allLabel="All weeks"
-          showClear={!!weekId && weekId !== "all" && !weekId.includes(",")}
-          onChange={(v) => go(v || "all")}
-          />
-        </div>
-      ) : null}
-      {weeks.length > 0 && showMulti ? (
-        <div className="filter-field">
-          <span className="filter-label">Multiple weeks</span>
-          <SearchSelect
-          value={weekId}
-          options={weeks.map((w) => ({ value: w.id, label: w.label }))}
-          placeholder="Select weeks"
-          allLabel="All weeks"
-          multiple
-          showClear={!!weekId && weekId !== "all"}
-          onChange={(v) => go(v || "all")}
-          />
+          <div className="week-row">
+            <SearchSelect
+              value={multi ? weekId : weekId.includes(",") ? "" : weekId}
+              options={weeks.map((w) => ({ value: w.id, label: w.label }))}
+              placeholder={multi ? "Select weeks" : "All weeks"}
+              allLabel="All weeks"
+              multiple={multi}
+              showClear={!!weekId && weekId !== "all"}
+              onChange={(v) => go(v || "all")}
+            />
+            {showMulti ? (
+              <label className="multi-check">
+                <input
+                  type="checkbox"
+                  checked={multi}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setMulti(on);
+                    // Back to single select: keep the first picked week.
+                    if (!on && weekId.includes(",")) go(weekId.split(",")[0]);
+                  }}
+                />
+                Multi-select
+              </label>
+            ) : null}
+          </div>
         </div>
       ) : null}
       {isPending ? (

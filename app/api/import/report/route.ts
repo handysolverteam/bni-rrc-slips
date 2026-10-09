@@ -9,6 +9,10 @@ import { clearDistinctCache } from "@/lib/distinct";
 import { clearLatestImportedWeekCache } from "@/lib/report-view";
 import { clearSlipsSnapshotCache } from "@/lib/chat/snapshot-cache";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { resolveImportTarget } from "@/lib/chapter-target";
+import { findNewHomeNames, memberKey, parseSkipMembers } from "@/lib/new-members";
+import { aliasReportRows, nameKey, parseMergePicks } from "@/lib/alias-map";
+import { loadAliasMap, saveAliases } from "@/lib/member-aliases";
 import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 /** Bulk import can exceed the default serverless timeout on file uploads. */
@@ -20,7 +24,7 @@ export async function POST(request: Request) {
     const ctx = await getTenantContext(request);
     if (!ctx) return unauthorized();
     if ("noAccess" in ctx) return forbidden();
-    const tenantId = ctx.tenantId;
+    let tenantId = ctx.tenantId;
 
     const form = await request.formData();
     const file = form.get("file");
@@ -29,6 +33,10 @@ export async function POST(request: Request) {
     if (!file.name.match(/\.(xls|xlsx|csv)$/i)) {
       return Response.json({ error: "Only .xls/.xlsx/.csv supported" }, { status: 400 });
     }
+    // Another existing chapter, or a typed new one (see lib/chapter-target.ts).
+    const target = await resolveImportTarget({ uid: ctx.uid, tenantId: ctx.tenantId }, form.get("chapter"));
+    if ("error" in target) return Response.json({ error: target.error }, { status: target.status });
+    tenantId = target.tenantId;
 
     // The week always comes from the file itself (snapped to Wednesday) —
     // there is no week picker on the import screen.
@@ -41,7 +49,14 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    const { rows, errors: parseErrors, headers, columnMap, meetingDate, weekLabel: bniWeekLabel, boldUsed } = upload;
+    const { rows: rawRows, errors: parseErrors, headers, columnMap, meetingDate, weekLabel: bniWeekLabel, boldUsed } = upload;
+    // Merges picked in the preview are remembered; every remembered merge is
+    // applied to the names BEFORE members and slips are created.
+    const picks = parseMergePicks(form.get("mergeMembers"));
+    const savedAliases = await saveAliases(tenantId, picks);
+    const aliasMap = await loadAliasMap(tenantId);
+    for (const [a, c] of Object.entries(picks)) if (!aliasMap.has(nameKey(a))) aliasMap.set(nameKey(a), c);
+    const rows = aliasReportRows(rawRows, aliasMap);
     const supabase = getSupabaseServer();
 
     // Find-or-create week. New weeks take the next serial week_no and the
@@ -169,6 +184,15 @@ export async function POST(request: Request) {
     );
     // Pure pass: desired chapter per name, identical logic to preview.
     const desired = computeDesiredChapters(rows, HOME_CHAPTER);
+    // New Home Chapter members the user un-ticked in the preview are not added
+    // (their slips still import, just without a member link).
+    const homeNew = await findNewHomeNames(
+      tenantId,
+      HOME_CHAPTER,
+      [...desired.values()].filter((v) => v.chapter.toLowerCase() === HOME_CHAPTER.toLowerCase()).map((v) => v.name),
+    );
+    const skipPicked = parseSkipMembers(form.get("skipMembers"));
+    const skipKeys = new Set(homeNew.map(memberKey).filter((k) => skipPicked.has(k)));
     const keyOf = (raw: string): string | null => {
       const clean = normalizeName(raw);
       if (!clean || isCountLikeName(clean)) return null;
@@ -309,6 +333,7 @@ export async function POST(request: Request) {
           memberIds.set(k, same.id);
           continue;
         }
+        if (skipKeys.has(k)) continue;
         toCreate.push({ key: k, name: w.name, chapter_id: cid });
       }
       if (toCreate.length > 0) {
@@ -488,6 +513,10 @@ export async function POST(request: Request) {
       boldUsed,
       errors,
       bniWeek: bniWeekLabel,
+      tenantId,
+      membersSkipped: skipKeys.size,
+      aliasesSaved: savedAliases.saved,
+      ...(savedAliases.error ? { warning: `Merges applied for this import but not remembered (${savedAliases.error}). Run supabase/migrations/008_member_aliases.sql.` } : {}),
       columns: headers.filter(Boolean),
       columnMap,
     });

@@ -220,6 +220,8 @@ function flagsFor(letter: string): Omit<PalmsNewCell, "bni_week_id" | "member_na
 export async function planPalmsImport(
   tenantId: string,
   parsed: ParsedPalmsWide,
+  /** Lower-cased names the user un-ticked ("do not add"): their cells are left out. */
+  skipKeys: Set<string> = new Set(),
 ): Promise<PalmsImportPlan> {
   const sb = getSupabaseServer();
   const isos = [...new Set(parsed.columns.map((c) => c.iso))];
@@ -262,7 +264,8 @@ export async function planPalmsImport(
   let cellTotal = 0;
   let cellSkipped = 0;
   let cellNew = 0;
-  for (const m of parsed.members) {
+  const kept = parsed.members.filter((m) => !skipKeys.has(m.name.replace(/\s+/g, " ").trim().toLowerCase()));
+  for (const m of kept) {
     for (let ci = 0; ci < parsed.columns.length; ci++) {
       const letter = m.cells[ci];
       if (!letter) continue;
@@ -286,7 +289,7 @@ export async function planPalmsImport(
   return {
     matchedColumns,
     weeksUnknown,
-    memberCount: parsed.members.length,
+    memberCount: kept.length,
     cellTotal,
     cellNew,
     cellSkipped,

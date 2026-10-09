@@ -84,13 +84,13 @@ export async function GET(request: Request) {
     if (format === "xlsx") {
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet([
-        [`PALMS Report — ${weekLabel}`],
+        [`Attendance — ${weekLabel}`],
         [`Members: ${matrix.rows.length}`],
         headers,
         ...rows,
       ]);
       ws["!cols"] = [{ wch: 26 }, ...matrix.weeks.map(() => ({ wch: 8 }))];
-      XLSX.utils.book_append_sheet(wb, ws, "PALMS Report");
+      XLSX.utils.book_append_sheet(wb, ws, "Attendance");
       const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
       return new Response(new Uint8Array(buf), {
         headers: {
@@ -103,7 +103,7 @@ export async function GET(request: Request) {
     // pdf — server path for API/tests; the browser builds its own from json.
     const doc = new jsPDF({ orientation: "landscape", unit: "pt" });
     doc.setFontSize(14);
-    doc.text(`PALMS Report — ${weekLabel}`, 40, 40);
+    doc.text(`Attendance — ${weekLabel}`, 40, 40);
     doc.setFontSize(8);
     doc.setTextColor(110, 105, 95);
     doc.text(`Members: ${matrix.rows.length}`, 40, 54);

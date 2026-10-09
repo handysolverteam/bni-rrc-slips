@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import ChapterChooser, { initialChapterField, type ChapterCheckInfo } from "@/components/ChapterChooser";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import NewMembersPicker from "@/components/NewMembersPicker";
 
 type Result = {
   kind: "success" | "error";
@@ -32,6 +34,10 @@ type Preview = {
   /** Valid rows not yet in the database / already imported (skipped). */
   newCount?: number;
   duplicateCount?: number;
+  chapter?: ChapterCheckInfo;
+  homeChapter?: string;
+  newMembers?: string[];
+  similar?: Record<string, string[]>;
   columns: string[];
   boldUsed: boolean;
   errors: string[];
@@ -68,6 +74,12 @@ export default function ImportPanel({
   const [reading, setReading] = useState(false);
   const [results, setResults] = useState<Result[]>([]);
   const [previews, setPreviews] = useState<Preview[]>([]);
+  // Per file: the chapter picked in the chooser ("" = active) and the new
+  // members un-ticked (not added to the home chapter).
+  const [chapters, setChapters] = useState<Record<string, string>>({});
+  const [skips, setSkips] = useState<Record<string, string[]>>({});
+  // Per file: { new name: existing member it is the same person as }.
+  const [mergePicks, setMergePicks] = useState<Record<string, Record<string, string>>>({});
   const [confirming, setConfirming] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -87,9 +99,10 @@ export default function ImportPanel({
     return () => clearTimeout(timer);
   }, [results]);
 
-  async function previewOne(f: File): Promise<Preview | null> {
+  async function previewOne(f: File, chapter = ""): Promise<Preview | null> {
     const fd = new FormData();
     fd.append("file", f);
+    if (chapter) fd.append("chapter", chapter);
     try {
       const res = await fetch("/api/import/preview", { method: "POST", body: fd });
       const data = await res.json();
@@ -116,10 +129,24 @@ export default function ImportPanel({
     if (list.length === 0) return;
     setReading(true);
     const out: Preview[] = [];
+    const chosen: Record<string, string> = {};
     for (const f of list) {
-      const p = await previewOne(f);
+      let p = await previewOne(f);
+      // A file for another/unclear chapter starts from the best guess and is
+      // recounted against it (the chooser lets the user change it).
+      const init = p ? initialChapterField(p.chapter) : "";
+      if (p && init) {
+        const again = await previewOne(f, init);
+        if (again) {
+          p = again;
+          chosen[f.name] = init;
+        }
+      }
       if (p) out.push(p);
     }
+    setChapters(chosen);
+    setSkips({});
+    setMergePicks({});
     setPreviews(out);
     setReading(false);
   }
@@ -132,7 +159,37 @@ export default function ImportPanel({
   const done = results.filter((r) => r.kind === "success");
   const failed = results.filter((r) => r.kind === "error");
 
+  async function chooseChapter(name: string, field: string) {
+    const file = files.find((x) => x.name === name);
+    if (!file) return;
+    const again = await previewOne(file, field);
+    if (!again) return;
+    setChapters((c) => ({ ...c, [name]: field }));
+    setSkips((s) => ({ ...s, [name]: [] }));
+    setMergePicks((m) => ({ ...m, [name]: {} }));
+    setPreviews((prev) => prev.map((x) => (x.filename === name ? again : x)));
+  }
+
+  // A new member is asked about ONCE: in the first file of the queue that lists
+  // it (the import of that file creates it, so later files find it existing).
+  function namesFor(p: Preview): string[] {
+    const earlier = new Set<string>();
+    for (const q of previews) {
+      if (q.filename === p.filename) break;
+      for (const n of q.newMembers ?? []) earlier.add(n);
+    }
+    return (p.newMembers ?? []).filter((n) => !earlier.has(n));
+  }
+
   function removeFile(name: string) {
+    setSkips((s) => {
+      const { [name]: _drop, ...rest } = s;
+      return rest;
+    });
+    setMergePicks((m) => {
+      const { [name]: _drop, ...rest } = m;
+      return rest;
+    });
     setFiles((f) => f.filter((x) => x.name !== name));
     setPreviews((p) => p.filter((x) => x.filename !== name));
   }
@@ -156,6 +213,7 @@ export default function ImportPanel({
     setResults([]);
 
     const byName = new Map(files.map((f) => [f.name, f]));
+    let switchTo: string | null = null;
     for (const p of previews) {
       const file = byName.get(p.filename);
       if (!file) continue;
@@ -170,16 +228,23 @@ export default function ImportPanel({
       try {
         const fd = new FormData();
         fd.append("file", file);
+        if (chapters[p.filename]) fd.append("chapter", chapters[p.filename]);
+        // Choices made on a name apply to every file that contains it.
+        fd.append("skipMembers", JSON.stringify(Object.values(skips).flat()));
+        const allMerges = Object.assign({}, ...Object.values(mergePicks));
+        if (Object.keys(allMerges).length > 0) fd.append("mergeMembers", JSON.stringify(allMerges));
         const res = await fetch("/api/import/report", { method: "POST", body: fd });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           setResults((r) => [...r, { kind: "error", title: `${p.filename}: import failed`, detail: data.error ?? `Server returned status ${res.status}` }]);
         } else {
           ok = true;
+          if (data.tenantId && p.chapter && data.tenantId !== p.chapter.active.id) switchTo = data.tenantId;
           const bits = [
             `+${data.importedCount ?? 0} into ${data.bniWeek ?? p.weekLabel}`,
             data.skippedCount ? `${data.skippedCount} skipped` : "",
             data.boldUsed ? "bold applied" : "",
+            data.aliasesSaved ? `${data.aliasesSaved} merge(s) remembered` : "",
           ].filter(Boolean);
           setResults((r) => [...r, {
             kind: "success",
@@ -201,6 +266,16 @@ export default function ImportPanel({
       }
     }
     setBusy(false);
+    if (switchTo) {
+      // Imported into another / a new chapter: make it the active one.
+      await fetch("/api/tenant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId: switchTo }),
+      });
+      window.location.reload();
+      return;
+    }
     onImported?.();
     router.refresh();
     onImported?.();
@@ -250,6 +325,31 @@ export default function ImportPanel({
               {p.weekLabel} · {p.rowCount} row(s)
               {p.boldUsed ? " · bold chapter info found" : ""}
             </p>
+              {p.chapter ? (
+                <ChapterChooser
+                  key={p.filename}
+                  check={p.chapter}
+                  disabled={busy}
+                  onChange={(f) => void chooseChapter(p.filename, f)}
+                />
+              ) : null}
+              <NewMembersPicker
+                names={namesFor(p)}
+                homeChapter={p.homeChapter ?? "the home chapter"}
+                skipped={skips[p.filename] ?? []}
+                merges={mergePicks[p.filename] ?? {}}
+                similar={p.similar}
+                disabled={busy}
+                onChange={(s) => setSkips((prev) => ({ ...prev, [p.filename]: s }))}
+                onMerge={(n, into) =>
+                  setMergePicks((prev) => {
+                    const cur = { ...(prev[p.filename] ?? {}) };
+                    if (into) cur[n] = into;
+                    else delete cur[n];
+                    return { ...prev, [p.filename]: cur };
+                  })
+                }
+              />
               {p.weekExists && p.slipCount > 0 ? (
                 <p className="preview-note">
                   Week already holds {p.slipCount} slip(s) —{" "}

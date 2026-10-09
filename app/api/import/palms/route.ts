@@ -1,3 +1,9 @@
+import { clearSlipsSnapshotCache } from "@/lib/chat/snapshot-cache";
+import { resolveImportTarget } from "@/lib/chapter-target";
+import { aliasPalmsMembers, nameKey, parseMergePicks } from "@/lib/alias-map";
+import { clearDistinctCache } from "@/lib/distinct";
+import { loadAliasMap, saveAliases } from "@/lib/member-aliases";
+import { createHomeMembers, findNewHomeNames, homeChapterNameOf, memberKey, parseSkipMembers } from "@/lib/new-members";
 import { parsePalmsWideFile } from "@/lib/palms-import";
 import { planPalmsImport } from "@/lib/palms-view";
 import { clearLatestImportedWeekCache } from "@/lib/report-view";
@@ -20,6 +26,10 @@ export const maxDuration = 60;
  * many weeks); `imported_count` = inserted cells, `skipped_count` = cells that
  * already existed. Unknown header dates are skipped with a warning, never a
  * hard error. Slips are never touched — the two imports are independent.
+ * New members: names not yet in the Home Chapter are ADDED to it (the `skipMembers`
+ * form field lists the ones the user un-ticked — they are not added and their
+ * attendance is not stored). The optional `chapter` field picks another existing
+ * chapter or creates a new one (see lib/chapter-target.ts).
  * Requires tenant only — same write surface as the slips import.
  */
 export async function POST(request: Request) {
@@ -27,7 +37,7 @@ export async function POST(request: Request) {
     const ctx = await getTenantContext(request);
     if (!ctx) return unauthorized();
     if ("noAccess" in ctx) return forbidden();
-    const tenantId = ctx.tenantId;
+    let tenantId = ctx.tenantId;
 
     const form = await request.formData();
     const file = form.get("file");
@@ -40,7 +50,28 @@ export async function POST(request: Request) {
     if (parsed.errors.length > 0) {
       return Response.json({ error: parsed.errors[0], errors: parsed.errors }, { status: 400 });
     }
-    const plan = await planPalmsImport(tenantId, parsed);
+    const target = await resolveImportTarget({ uid: ctx.uid, tenantId: ctx.tenantId }, form.get("chapter"));
+    if ("error" in target) return Response.json({ error: target.error }, { status: target.status });
+    tenantId = target.tenantId;
+
+    // Add the new home-chapter members the user left ticked; un-ticked ones are
+    // skipped together with their attendance.
+    const homeName = await homeChapterNameOf(tenantId);
+    // Merges picked in the preview are remembered, then every remembered merge is applied.
+    const picks = parseMergePicks(form.get("mergeMembers"));
+    const savedAliases = await saveAliases(tenantId, picks);
+    const aliasMap = await loadAliasMap(tenantId);
+    for (const [a, c] of Object.entries(picks)) if (!aliasMap.has(nameKey(a))) aliasMap.set(nameKey(a), c);
+    const mapped = { ...parsed, members: aliasPalmsMembers(parsed.members, aliasMap) };
+    const newNames = await findNewHomeNames(tenantId, homeName, mapped.members.map((m) => m.name));
+    const skip = parseSkipMembers(form.get("skipMembers"));
+    const skipKeys = new Set(newNames.map(memberKey).filter((k) => skip.has(k)));
+    const membersAdded = await createHomeMembers(
+      tenantId,
+      homeName,
+      newNames.filter((n) => !skipKeys.has(memberKey(n))),
+    );
+    const plan = await planPalmsImport(tenantId, mapped, skipKeys);
     const weekCount = new Set(plan.matchedColumns.map((c) => c.weekId)).size;
     const summary = {
       importedCount: 0,
@@ -50,9 +81,17 @@ export async function POST(request: Request) {
       weeksUnknown: plan.weeksUnknown,
       issues: plan.issues,
       errors: [],
+      tenantId,
+      membersAdded,
+      membersSkipped: skipKeys.size,
+      aliasesSaved: savedAliases.saved,
+      ...(savedAliases.error ? { warning: `Merges applied for this import but not remembered (${savedAliases.error}). Run supabase/migrations/008_member_aliases.sql.` } : {}),
     };
     // Every cell already imported — nothing to create (the panel hides the
     // Import button in this state anyway).
+    // New members change the member lists; new attendance changes the chat data.
+    clearDistinctCache();
+    clearSlipsSnapshotCache();
     if (plan.rows.length === 0) return Response.json(summary);
 
     const supabase = getSupabaseServer();
@@ -109,6 +148,7 @@ export async function POST(request: Request) {
         .eq("id", batch.id);
     }
 
+    clearSlipsSnapshotCache();
     return Response.json({ ...summary, importedCount: imported, skippedCount: skipped });
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 500 });

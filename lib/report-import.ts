@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { findChapterName } from "./file-chapter";
 import type { InsideOutside, ReportRow, SlipKind } from "./types";
 
 export function mapInsideOutside(raw: string): InsideOutside | null {
@@ -39,6 +40,8 @@ export type ParsedReport = {
   columnMap: ReportColumnMap;
   /** Meeting date (YYYY-MM-DD) read from the title row, e.g. "Slips Audit Report for 01/04/2026". */
   reportDate: string | null;
+  /** Chapter named in the header block above the table (raw, e.g. "Influencers"), if any. */
+  chapterName?: string | null;
 };
 
 /**
@@ -193,7 +196,14 @@ export function parseReportFile(buffer: Buffer): ParsedReport {
   if (map.tyfcb < 0) {
     errors.push("No TYFCB/amount column detected — TYFCB amounts will import as 0.");
   }
-  return { rows, errors, headers: rawHeaders, columnMap: map, reportDate };
+  return {
+    rows,
+    errors,
+    headers: rawHeaders,
+    columnMap: map,
+    reportDate,
+    chapterName: findChapterName(matrix.slice(0, headerIdx)),
+  };
 }
 
 export function parseAmount(raw: string): number {

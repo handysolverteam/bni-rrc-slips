@@ -142,7 +142,13 @@ export async function fetchHomeChapterId(tenantId: string): Promise<string | nul
   const home = resolveHomeChapter(tenant ?? { id: tenantId });
   for (const name of [tenant?.home_chapter_name ?? "", tenant?.name ?? "", home]) {
     if (!name) continue;
-    const { data } = await sb.from("chapters").select("id").ilike("name", name).maybeSingle();
+    const { data } = await sb
+      .from("chapters")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .ilike("name", name)
+      .limit(1)
+      .maybeSingle();
     if (data) return (data as { id: string }).id;
   }
   return null;

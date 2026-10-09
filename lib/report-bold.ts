@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { findChapterName } from "./file-chapter";
 import { detectColumns, findHeaderRow, findReportDate, type ParsedReport } from "./report-import";
 import type { ReportRow } from "./types";
 
@@ -130,5 +131,13 @@ export async function parseReportXlsxBold(buffer: Buffer): Promise<BoldParsedRep
     errors.push("No TYFCB/amount column detected — TYFCB amounts will import as 0.");
   }
   const boldFound = rows.some((r) => r.fromBold || r.toBold);
-  return { rows, errors, headers, columnMap: map, reportDate, boldFound };
+  return {
+    rows,
+    errors,
+    headers,
+    columnMap: map,
+    reportDate,
+    boldFound,
+    chapterName: findChapterName(texts.slice(0, start)),
+  };
 }

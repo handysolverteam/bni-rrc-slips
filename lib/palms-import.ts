@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { findChapterName } from "./file-chapter";
 import { normalizeName } from "./report-import";
 
 /** Known attendance letters in the wide report's cells (case-insensitive). */
@@ -29,6 +30,8 @@ export type ParsedPalmsWide = {
   /** Cells whose value is not a known letter (skipped, listed for the UI). */
   issues: string[];
   errors: string[];
+  /** Chapter named in the file's header block (raw, e.g. "Influencers"), or null. */
+  chapterName: string | null;
 };
 
 const norm = (v: unknown): string => String(v ?? "").trim();
@@ -118,6 +121,7 @@ export function parsePalmsWideFile(buffer: Buffer): ParsedPalmsWide {
     columnsSkipped: [],
     issues: [],
     errors: [],
+    chapterName: null,
   };
   if (!ws) {
     return { ...base, errors: ["The file has no readable sheet."] };
@@ -140,6 +144,7 @@ export function parsePalmsWideFile(buffer: Buffer): ParsedPalmsWide {
   }
 
   const rawHeader = (matrix[headerIdx] ?? []).map((c) => norm(c));
+  const chapterName = findChapterName(matrix.slice(0, headerIdx));
 
   // From:/To: parameter rows — take the first non-empty cell after the label.
   const dateAfter = (label: string): string | null => {
@@ -186,6 +191,7 @@ export function parsePalmsWideFile(buffer: Buffer): ParsedPalmsWide {
       members: [],
       columnsSkipped,
       issues: [],
+      chapterName,
       errors: [
         "No date columns found — this looks like the old single-meeting PALMS file. Export the wide PALMS Attendance Report (6 months, one column per Wednesday).",
       ],
@@ -223,5 +229,5 @@ export function parsePalmsWideFile(buffer: Buffer): ParsedPalmsWide {
     errors.push("No member rows found below the header row.");
   }
 
-  return { from, to, columns, members, columnsSkipped, issues, errors };
+  return { from, to, columns, members, columnsSkipped, issues, errors, chapterName };
 }

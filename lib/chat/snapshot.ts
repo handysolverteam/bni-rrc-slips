@@ -1,6 +1,7 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paged";
-import type { QueryIndex, QueryRow } from "./query-index";
+import { homeChapterNameOf } from "@/lib/new-members";
+import type { QueryIndex, QueryRow, RosterMember, SlipEntry } from "./query-index";
 
 export type MemberStat = {
   name: string;
@@ -78,9 +79,8 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
     .eq("id", tenantId)
     .maybeSingle();
   const chapterName =
-    (tenantRow as { name?: string | null } | null)?.name ||
-    process.env.NEXT_PUBLIC_CHAPTER_NAME ||
-    "BNI Chapter";
+    (tenantRow as { name?: string | null } | null)?.name || "BNI Chapter";
+  const homeName = await homeChapterNameOf(tenantId);
 
   // This tenant's imported weeks: buckets + the week list in the index.
   const { data: batchWeeks } = await sb
@@ -88,15 +88,40 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
     .select("bni_week_id")
     .eq("tenant_id", tenantId)
     .not("bni_week_id", "is", null);
-  const weekIds = [...new Set((batchWeeks ?? []).map((b) => b.bni_week_id as string))];
+  // PALMS attendance is fetched first: a week that only has attendance (no slips
+  // import yet) must still be in the week list.
+  const attRes = await fetchAllRows<{
+    bni_week_id: string | null;
+    member_name: string;
+    present: number | null;
+    absent: number | null;
+    m: number | null;
+    s: number | null;
+    l: number | null;
+  }>("member_attendance", "bni_week_id,member_name,present,absent,m,s,l", {
+    eq: [["tenant_id", tenantId]],
+    order: { column: "id" },
+    pageSize: 1000,
+  });
+  const weekIds = [
+    ...new Set([
+      ...(batchWeeks ?? []).map((b) => b.bni_week_id as string),
+      ...attRes.map((r) => r.bni_week_id).filter((id): id is string => !!id),
+    ]),
+  ];
 
   // NOTE: fetchAllRows, never .limit() — Supabase returns at most 1000 rows
   // per request, and the DB is already past the old hand-picked caps
   // (500 members / 60 weeks), which silently hid data from the AI.
   const [membersRows, weeksRows, refRes, otoRes, tyfcbRes, visRes] = await Promise.all([
-    fetchAllRows<{ name: string; category: string | null; chapters: { name: string } | { name: string }[] | null }>(
+    fetchAllRows<{
+      name: string;
+      category: string | null;
+      is_inactive: boolean | null;
+      chapters: { name: string } | { name: string }[] | null;
+    }>(
       "members",
-      "name,category,chapters(name)",
+      "name,category,is_inactive,chapters(name)",
       {
         eq: [["tenant_id", tenantId]],
         // Order by a unique column: a non-unique sort key can repeat/skip rows
@@ -130,9 +155,9 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
       "bni_week_id,initiated_by_name,met_with_name,initiated_by_is_other_chapter,met_with_is_other_chapter",
       { eq: [["tenant_id", tenantId]], order: { column: "id" }, pageSize: 1000 },
     ),
-    fetchAllRows<{ bni_week_id: string | null; member_name: string; amount: number | string | null }>(
+    fetchAllRows<{ bni_week_id: string | null; member_name: string; amount: number | string | null; thanker_name: string | null }>(
       "slip_tyfcb",
-      "bni_week_id,member_name,amount",
+      "bni_week_id,member_name,amount,thanker_name",
       { eq: [["tenant_id", tenantId]], order: { column: "id" }, pageSize: 1000 },
     ),
     fetchAllRows<{ bni_week_id: string | null; full_name: string; invited_by_name: string | null }>(
@@ -167,8 +192,17 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
     return s;
   };
 
+  const roster: RosterMember[] = [];
   for (const m of membersRows) {
     const rel = Array.isArray(m.chapters) ? m.chapters[0] : m.chapters;
+    roster.push({
+      key: key(m.name),
+      name: m.name.replace(/\s+/g, " ").trim(),
+      chapter: rel?.name ?? null,
+      home: !!rel?.name && rel.name.trim().toLowerCase() === homeName.trim().toLowerCase(),
+      active: m.is_inactive !== true,
+      category: m.category,
+    });
     const s = ensure(m.name, rel?.name ?? null);
     if (s) {
       s.category = m.category;
@@ -204,13 +238,15 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
     const id = `${weekId}|${memberKey}`;
     let row = qrows.get(id);
     if (!row) {
-      row = { w: weekId, m: memberKey, n: name, rg: 0, ri: 0, ro: 0, rr: 0, oto: 0, vis: 0, te: 0, ta: 0 };
+      row = { w: weekId, m: memberKey, n: name, rg: 0, ri: 0, ro: 0, rr: 0, oto: 0, vis: 0, te: 0, ta: 0, pr: 0, ab: 0, md: 0, su: 0, lv: 0 };
       qrows.set(id, row);
     }
     return row;
   };
 
+  const entries: SlipEntry[] = [];
   for (const r of refRes) {
+    if (r.bni_week_id) entries.push({ t: "referral", w: r.bni_week_id, a: r.from_name, b: r.to_name, io: r.inside_outside });
     const from = ensure(r.from_name);
     const to = ensure(r.to_name);
     if (from) {
@@ -240,6 +276,7 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
   }
 
   for (const r of otoRes) {
+    if (r.bni_week_id) entries.push({ t: "oneToOne", w: r.bni_week_id, a: r.initiated_by_name, b: r.met_with_name });
     // A 121 counts as participation for both sides (once if same person).
     const init = ensure(r.initiated_by_name);
     if (init) init.oneToOnes += 1;
@@ -259,6 +296,7 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
   let tyfcbAmount = 0;
   for (const r of tyfcbRes) {
     const amt = amount(r.amount);
+    if (r.bni_week_id) entries.push({ t: "tyfcb", w: r.bni_week_id, a: r.member_name, b: r.thanker_name ?? "", amt });
     tyfcbAmount += amt;
     const s = ensure(r.member_name);
     if (s) s.tyfcbTotal += amt;
@@ -277,6 +315,7 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
   }
 
   for (const r of visRes) {
+    if (r.bni_week_id) entries.push({ t: "visitor", w: r.bni_week_id, a: r.invited_by_name ?? "", b: r.full_name });
     if (r.invited_by_name) {
       const s = ensure(r.invited_by_name);
       if (s) {
@@ -291,6 +330,17 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
     }
     const b = bucketOf(r.bni_week_id);
     if (b) b.stat.visitors += 1;
+  }
+
+  // PALMS attendance per member and week (legacy rows carry counts in present/absent).
+  for (const r of attRes) {
+    const q = qrowOf(r.bni_week_id, key(r.member_name), r.member_name.replace(/\s+/g, " ").trim());
+    if (!q) continue;
+    q.pr += Number(r.present ?? 0);
+    q.ab += Number(r.absent ?? 0);
+    q.md += Number(r.m ?? 0);
+    q.su += Number(r.s ?? 0);
+    q.lv += Number(r.l ?? 0);
   }
 
   const members = [...stats.values()].sort((a, b) =>
@@ -342,6 +392,9 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
     index: {
       weeks: weeksRows.map((w) => ({ id: w.id, label: w.label, date: w.meeting_date })),
       rows: [...qrows.values()],
+      roster,
+      entries,
+      homeChapter: homeName,
     },
   };
 }

@@ -12,7 +12,7 @@ const APP = "http://localhost:3000";
 const ENV = readFileSync(new URL("../.env.local", import.meta.url), "utf8");
 const kv = (k) => ENV.split(/\r?\n/).find((l) => l.startsWith(k + "="))?.slice(k.length + 1);
 const sb = createClient(kv("NEXT_PUBLIC_SUPABASE_URL"), kv("SUPABASE_SERVICE_ROLE_KEY"));
-const HOME = kv("NEXT_PUBLIC_CHAPTER_NAME") || "BNI Influencers";
+const HOME = "BNI Influencers"; // the default tenant's own name (the .env chapter name is no longer used)
 const TEST_CHAPTER = "BNI Test Chapter";
 const IGNORE_CHAPTER = "BNI Ignore Chapter"; // detail on non-bold rows — must never be created
 const MEETING = "2026-09-30"; // existing week 40

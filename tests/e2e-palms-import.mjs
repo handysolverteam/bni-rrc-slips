@@ -340,7 +340,7 @@ try {
   // 5) /palms screen ---------------------------------------------------------
   const pal = await fetchPage("/palms");
   check("/palms renders200", pal.status === 200, String(pal.status));
-  check("/palms shows the PALMS Report h1", pal.dec.includes('"PALMS Report"'));
+  check("/palms shows the Attendance h1", pal.dec.includes('"Attendance"'));
   check("/palms count badge = 2 members", pal.dec.includes('[2," member(s)"]'));
   check("/palms default scope = All weeks", pal.dec.includes('"children":"All weeks"'));
   check("/palms matrix headers 02..30 Sep",
@@ -390,8 +390,8 @@ try {
   const rSumExp = await fetch(`${APP}/api/summary/export?week=all&format=xlsx`, { headers: { ...AUTH } });
   check("/api/summary/export is gone (404)", rSumExp.status === 404, String(rSumExp.status));
   const navSrc = readSrc("components/Nav.tsx");
-  check("nav: PALMS Report links to /palms, no /summary entry",
-    navSrc.includes('{ href: "/palms", label: "PALMS Report"') && !navSrc.includes('"/summary"'));
+  check("nav: Attendance links to /palms, no /summary entry",
+    navSrc.includes('{ href: "/palms", label: "Attendance"') && !navSrc.includes('"/summary"'));
 
   // 8) exports ---------------------------------------------------------------
   const normRow = (row) => Array.from({ length: 6 }, (_, i) => row?.[i] ?? "");
@@ -401,12 +401,12 @@ try {
     rx.ok && (rx.headers.get("content-disposition") ?? "").includes("palms-report-All-weeks.xlsx"),
     rx.headers.get("content-disposition") ?? "");
   const wbk = XLSX.read(xbuf, { type: "buffer" });
-  check("xlsx: exactly one PALMS Report sheet",
-    wbk.SheetNames.length === 1 && wbk.SheetNames[0] === "PALMS Report",
+  check("xlsx: exactly one Attendance sheet",
+    wbk.SheetNames.length === 1 && wbk.SheetNames[0] === "Attendance",
     JSON.stringify(wbk.SheetNames));
-  const aoa = XLSX.utils.sheet_to_json(wbk.Sheets["PALMS Report"], { header: 1 });
+  const aoa = XLSX.utils.sheet_to_json(wbk.Sheets["Attendance"], { header: 1 });
   check("xlsx: title + member count row",
-    aoa[0]?.[0] === "PALMS Report — All weeks" && aoa[1]?.[0] === "Members: 2",
+    aoa[0]?.[0] === "Attendance — All weeks" && aoa[1]?.[0] === "Members: 2",
     JSON.stringify(aoa.slice(0, 2)));
   check("xlsx: headers = Member + the 5 week columns",
     JSON.stringify(normRow(aoa[2])) ===
@@ -423,9 +423,9 @@ try {
 
   const rw = await fetch(`${APP}/api/palms/export?week=${w("2026-09-30")}&format=xlsx`, { headers: { ...AUTH } });
   const wbk2 = XLSX.read(Buffer.from(await rw.arrayBuffer()), { type: "buffer" });
-  const aoa2 = XLSX.utils.sheet_to_json(wbk2.Sheets["PALMS Report"], { header: 1 });
+  const aoa2 = XLSX.utils.sheet_to_json(wbk2.Sheets["Attendance"], { header: 1 });
   check("xlsx week scope: title uses the week's label, one date column",
-    aoa2[0]?.[0] === `PALMS Report — ${weekByIso.get("2026-09-30").label}` &&
+    aoa2[0]?.[0] === `Attendance — ${weekByIso.get("2026-09-30").label}` &&
       JSON.stringify(normRow(aoa2[2]).slice(0, 2)) === JSON.stringify(["Member", "30 Sep"]),
     JSON.stringify(aoa2[0]) + " " + JSON.stringify(aoa2[2]));
 
@@ -451,8 +451,8 @@ try {
   const rpdf = await fetch(`${APP}/api/palms/export?week=all&format=pdf`, { headers: { ...AUTH } });
   const pbuf = Buffer.from(await rpdf.arrayBuffer());
   const ptxt = pbuf.toString("latin1");
-  check("pdf: %PDF- header + PALMS Report title",
-    rpdf.ok && pbuf.slice(0, 5).toString() === "%PDF-" && ptxt.includes("PALMS Report"),
+  check("pdf: %PDF- header + Attendance title",
+    rpdf.ok && pbuf.slice(0, 5).toString() === "%PDF-" && ptxt.includes("Attendance"),
     pbuf.slice(0, 5).toString());
   check("pdf: no comparison leftovers", !ptxt.includes("PALMS vs slips") && !ptxt.includes("MISMATCH"));
 

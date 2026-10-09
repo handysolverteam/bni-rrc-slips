@@ -51,7 +51,7 @@ export default async function PalmsPage({
       <div className="report-top">
         <div className="page-head">
           <h1>
-            PALMS Report
+            Attendance
             <span className="count-badge">{matrix.rows.length} member(s)</span>
           </h1>
           <p className="sub muted">{scopeLabel}</p>

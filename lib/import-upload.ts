@@ -39,6 +39,8 @@ export async function parseUpload(file: File): Promise<{
   reportDate: string;
   meetingDate: string;
   weekLabel: string;
+  /** Chapter named in the file header (raw), or null. */
+  chapterName: string | null;
 }> {
   const buf = Buffer.from(await file.arrayBuffer());
   let parsed: ParsedReport;
@@ -80,6 +82,7 @@ export async function parseUpload(file: File): Promise<{
     reportDate: parsed.reportDate,
     meetingDate,
     weekLabel: buildWeekLabel(meetingDate),
+    chapterName: parsed.chapterName ?? null,
   };
 }
 

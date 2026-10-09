@@ -56,7 +56,7 @@ export default function PalmsExportButtons({
     const { default: autoTable } = await import("jspdf-autotable");
     const doc = new jsPDF({ orientation: "landscape", unit: "pt" });
     doc.setFontSize(14);
-    doc.text(`PALMS Report — ${data.weekLabel}`, 40, 40);
+    doc.text(`Attendance — ${data.weekLabel}`, 40, 40);
     doc.setFontSize(8);
     doc.setTextColor(110, 105, 95);
     doc.text(`Members: ${data.memberCount}`, 40, 54);

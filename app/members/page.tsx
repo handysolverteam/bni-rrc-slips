@@ -1,4 +1,7 @@
+import { redirect } from "next/navigation";
 import ListShell from "@/components/ListShell";
+import MergeMembers from "@/components/MergeMembers";
+import { homeChapterNameOf } from "@/lib/new-members";
 import NoAccess from "@/components/NoAccess";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { distinctValues } from "@/lib/distinct";
@@ -16,6 +19,11 @@ export default async function MembersPage({
   if ("noAccess" in guard) return <NoAccess uid={guard.uid} />;
   const tenantId = guard.tenantId;
   const sp = await searchParams;
+  if (sp.home === "1") {
+    // Nav entry: active members of THIS chapter's home chapter.
+    const home = await homeChapterNameOf(tenantId);
+    redirect(`/members?active=1&c_chapter=${encodeURIComponent(home).replace(/%20/g, "+")}`);
+  }
   const page = Math.max(1, Number(sp.page || 1));
   const pageSize = 100;
   const q = sp.q || "";
@@ -95,6 +103,8 @@ const memberEq: [string, unknown][] = [];
   });
 
   return (
+    <>
+      <MergeMembers names={filterOptions.name} />
     <ListShell
       title="Bni Member"
       total={count ?? 0}
@@ -120,5 +130,6 @@ const memberEq: [string, unknown][] = [];
       columnFilters={columnFilters}
       filterOptions={filterOptions}
     />
+    </>
   );
 }

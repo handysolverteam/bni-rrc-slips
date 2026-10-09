@@ -599,7 +599,7 @@ export function PalmsSkeleton() {
       <div className="report-top">
         <div className="page-head">
           <h1>
-            PALMS Report
+            Attendance
             <span className="count-badge" style={{ height: 24 }}>
               <Bar w={96} h={16} r={4} />
             </span>

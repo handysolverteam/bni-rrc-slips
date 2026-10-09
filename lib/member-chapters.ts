@@ -1,4 +1,3 @@
-import { DEFAULT_TENANT_ID } from "./server-auth";
 import { classifySlipType, isCountLikeName, normalizeName } from "./report-import";
 import type { ReportRow } from "./types";
 
@@ -12,21 +11,17 @@ export type HomeTenant = {
 /**
  * Home chapter for blank-Detail / non-bold names — where a member files when
  * the file itself names no chapter:
- *   1. the tenant's configured `home_chapter_name`, if set;
- *   2. `NEXT_PUBLIC_CHAPTER_NAME`, ONLY for the default tenant (BNI
- *      Influencers) — any other chapter never inherits the env chapter;
- *   3. any other tenant falls back to its own name (created as a chapter on
- *      first import).
+ *   1. the tenant's configured `home_chapter_name`, if set (Settings);
+ *   2. otherwise the tenant's own name (created as a chapter on first import).
+ * The chapter comes from the app's data and the uploaded files, never from an
+ * environment variable.
  * Every chapter named in a file (Detail) is created if missing and assigned
  * to that other-chapter member — unchanged, see computeDesiredChapters.
  */
 export function resolveHomeChapter(tenant?: HomeTenant | null): string {
   const configured = normalizeName(tenant?.home_chapter_name || "");
   if (configured) return configured;
-  if (!tenant || tenant.id === DEFAULT_TENANT_ID) {
-    return normalizeName(process.env.NEXT_PUBLIC_CHAPTER_NAME || "") || "BNI Influencers";
-  }
-  return normalizeName(tenant.name || "") || "BNI Influencers";
+  return normalizeName(tenant?.name || "") || "BNI Influencers";
 }
 
 const detailChapter = (detail: string | null, home: string): string =>
