@@ -21,6 +21,7 @@ const links: NavItem[] = [
     label: "Bni Member",
     exact: false,
   },
+  { href: "/chapters", label: "Other Chapters", exact: false },
   {
     label: "Slips",
     children: [
@@ -32,7 +33,6 @@ const links: NavItem[] = [
     ],
   },
   { href: "/report", label: "Slip Report", exact: false },
-  { href: "/chapters", label: "Other Chapters", exact: false },
   { href: "/top3", label: "Top 3", exact: false },
   { href: "/palms", label: "PALMS Report", exact: false },
   { href: "/chat", label: "Chat", exact: false },
