@@ -138,13 +138,15 @@ function analyzeReply(data: unknown): {
 const SUGGESTIONS_HEADER = "SUGGESTIONS:";
 const SUGGESTION_MAX_LEN = 120;
 const MAX_SUGGESTIONS = 5;
+/** More non-blank lines than this after the header = it is answer text, not chips. */
+const MAX_SUGGESTION_LINES = 8;
 
 /**
  * The model appends a `SUGGESTIONS:` block of follow-up questions (system
  * rule 7) so the chat can offer chips that match the current thread. Strip it
  * out of the answer and hand it back separately — the visible reply must not
  * show it. The block is only accepted when it runs to the end of the reply
- * and every non-blank line in it is a question: anything off-format keeps the
+ * and every non-blank line in it is a short chip (a question or a request): anything off-format keeps the
  * answer byte-for-byte as written, so no answer content can ever be swallowed
  * by a malformed tail (the client then just falls back to its starter chips).
  * `|` and `]` are removed because the marker form `[suggestions: q1 | q2]` is
@@ -154,6 +156,7 @@ function extractSuggestions(raw: string): { text: string; suggestions: string[] 
   const at = raw.lastIndexOf(SUGGESTIONS_HEADER);
   if (at < 0) return { text: raw, suggestions: [] };
   const suggestions: string[] = [];
+  let lines = 0;
   for (const line of raw.slice(at + SUGGESTIONS_HEADER.length).split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -162,7 +165,11 @@ function extractSuggestions(raw: string): { text: string; suggestions: string[] 
       .replace(/[\]\|]/g, "")
       .trim();
     if (!q) continue; // blank / marker-only line (e.g. the closing `**` of a bold header)
-    if (!q.endsWith("?") || q.length > SUGGESTION_MAX_LEN) return { text: raw, suggestions: [] };
+    // Chips are short lines. The model sometimes phrases them as requests ("Show me …",
+    // "List the visitors of …") instead of questions, and rejecting the whole block for
+    // that left a raw "SUGGESTIONS:" list under the answer — so only length/count guard
+    // against swallowing real answer content.
+    if (q.length > SUGGESTION_MAX_LEN || ++lines > MAX_SUGGESTION_LINES) return { text: raw, suggestions: [] };
     if (suggestions.length < MAX_SUGGESTIONS) suggestions.push(q);
   }
   if (suggestions.length === 0) return { text: raw, suggestions: [] };
