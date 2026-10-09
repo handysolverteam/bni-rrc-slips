@@ -15,10 +15,10 @@ import ImportPanel from "@/components/ImportPanel";
 import SectionCollapse from "@/components/SectionCollapse";
 import ColumnFilter from "@/components/ColumnFilter";
 import MultiSelectToggle from "@/components/MultiSelectToggle";
+import UrlSync from "@/components/UrlSync";
 import Link from "next/link";
 import ReportExportButtons from "@/components/ReportExportButtons";
 import ReportTabs from "@/components/ReportTabs";
-import { redirect } from "next/navigation";
 import FilterBar from "@/components/FilterBar";
 import DataWarnings from "@/components/DataWarnings";
 
@@ -156,14 +156,9 @@ export default async function ReportPage({
     sp.week ? Promise.resolve(null) : defaultWeekId(tenantId),
   ]);
   const weekId = sp.week || defaultId || latest || weeks[0]?.id || "";
-  // The auto-selected latest week goes into the URL so the address always
-  // matches the filter boxes (shareable / refresh-safe).
-  if (!sp.week && weekId) {
-    const qs = new URLSearchParams();
-    for (const [k, v] of Object.entries(sp)) if (v !== undefined) qs.set(k, v);
-    qs.set("week", weekId);
-    redirect(`/report?${qs.toString()}`);
-  }
+  // The auto-selected latest week is written into the address bar by <UrlSync/>
+  // (history.replaceState — a server redirect() here made the page flash blank
+  // between the loading skeleton and the real UI).
   const tab = (sp.tab as ReportSectionKey | "all" | undefined) || "all";
   const q = sp.q || "";
   const colFor = (key: ReportSectionKey) => ({
@@ -302,6 +297,7 @@ export default async function ReportPage({
         </div>
       </div>
 
+      {!sp.week && weekId ? <UrlSync set={{ week: weekId }} /> : null}
       <MultiSelectToggle />
 
       <ReportTabs weekId={weekId} activeTab={tab} />

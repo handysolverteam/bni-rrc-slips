@@ -251,7 +251,10 @@ export default function PalmsImportPanel({
                     key={pv.filename}
                     check={pv.chapter}
                     disabled={refreshing}
-                    onChange={(f) => picked && preview(picked, f, true)}
+                    onChange={(f) => {
+                      setChapterVal(f); // the import uses this at once, even before the recount returns
+                      if (picked) void preview(picked, f, true);
+                    }}
                   />
                 ) : null}
                 <NewMembersPicker
@@ -308,7 +311,7 @@ export default function PalmsImportPanel({
               <button
                 type="button"
                 className="primary btn-block"
-                disabled={state.kind === "busy" || pv.cellNew === 0}
+                disabled={state.kind === "busy" || refreshing || pv.cellNew === 0}
                 onClick={upload}
               >
                 {state.kind === "busy" ? "Importing…" : `Import ${pv.cellNew} new cell(s)`}

@@ -162,6 +162,7 @@ export default function ImportPanel({
   async function chooseChapter(name: string, field: string) {
     const file = files.find((x) => x.name === name);
     if (!file) return;
+    setChapters((c) => ({ ...c, [name]: field })); // the import uses this at once, even before the recount returns
     const again = await previewOne(file, field);
     if (!again) return;
     setChapters((c) => ({ ...c, [name]: field }));

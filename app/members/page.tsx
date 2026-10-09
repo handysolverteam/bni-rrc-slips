@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
 import ListShell from "@/components/ListShell";
 import MergeMembers from "@/components/MergeMembers";
+import UrlSync from "@/components/UrlSync";
 import { homeChapterNameOf } from "@/lib/new-members";
 import NoAccess from "@/components/NoAccess";
 import { getSupabaseServer } from "@/lib/supabase/server";
@@ -18,11 +18,15 @@ export default async function MembersPage({
   const guard = await requirePageTenant();
   if ("noAccess" in guard) return <NoAccess uid={guard.uid} />;
   const tenantId = guard.tenantId;
-  const sp = await searchParams;
+  let sp = await searchParams;
+  // Nav entry (?home=1): active members of THIS chapter's home chapter. Rendered
+  // directly with those filters; <UrlSync/> rewrites the address bar afterwards
+  // (no redirect: it blanked the page between the skeleton and the real UI).
+  let homeSync: string | null = null;
   if (sp.home === "1") {
-    // Nav entry: active members of THIS chapter's home chapter.
-    const home = await homeChapterNameOf(tenantId);
-    redirect(`/members?active=1&c_chapter=${encodeURIComponent(home).replace(/%20/g, "+")}`);
+    homeSync = await homeChapterNameOf(tenantId);
+    const { home: _home, ...rest } = sp;
+    sp = { ...rest, active: "1", c_chapter: homeSync };
   }
   const page = Math.max(1, Number(sp.page || 1));
   const pageSize = 100;
@@ -104,6 +108,7 @@ const memberEq: [string, unknown][] = [];
 
   return (
     <>
+      {homeSync ? <UrlSync set={{ active: "1", c_chapter: homeSync }} remove={["home"]} /> : null}
       <MergeMembers names={filterOptions.name} />
     <ListShell
       title="Bni Member"

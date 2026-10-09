@@ -1477,3 +1477,8 @@ button.wa-btn:active:not(:disabled) { background: #1fbf5b; }
   .week-row { flex-wrap: wrap; }
   .week-row .combo { flex: 1 1 100%; width: 100%; }
 }
+
+/* Chapter chooser (always shown in an import preview) */
+.chapter-chooser { margin-top: 10px; }
+.chapter-chooser-hint { margin: 6px 0 0; }
+.chapter-chooser .filter-label { display: block; margin-bottom: 4px; }
