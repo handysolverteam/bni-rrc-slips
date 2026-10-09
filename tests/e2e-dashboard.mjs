@@ -182,7 +182,7 @@ for (let from = 0; ; from += 1000) {
   homeMembers.push(...(data ?? []));
   if ((data ?? []).length < 1000) break;
 }
-const nk = (n) => n.replace(/s+/g, " ").trim().toLowerCase();
+const nk = (n) => n.replace(/\s+/g, " ").trim().toLowerCase();
 const homeKeys = new Set(homeMembers.map((m) => nk(m.name)));
 const attRows = (weekIds.length ? await all("member_attendance", "member_name,bni_week_id,present,absent,m,s,l") : []).filter(
   (r) => homeKeys.has(nk(r.member_name)),

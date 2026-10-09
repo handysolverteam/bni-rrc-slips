@@ -1,13 +1,18 @@
+import { dropDuplicates, rowSignature, SIG_FIELDS, type SlipTable } from "@/lib/import-dedup";
 import { findWeekByDate, parseUpload, weekSlipCounts } from "@/lib/import-upload";
+import { signatureRows } from "@/lib/slip-signatures";
+import { fetchAllRows } from "@/lib/supabase/paged";
 import { validateReportRows } from "@/lib/report-import";
 import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 /**
  * Inspect an uploaded Report file WITHOUT importing it: resolves the week
  * from the file title and reports row problems so the UI can pause and ask
- * for permission when typing mistakes are found. In-file duplicates are NOT
- * new rows but the import route still keeps them (owner rule); a re-import
- * is skipped at import time (lib/import-dedup.ts), not here.
+ * for permission when typing mistakes are found. Also counts how many valid
+ * rows are NEW vs already imported for the week (same signatures as the
+ * import route, lib/import-dedup.ts) so the UI can say what will be skipped.
+ * In-file duplicates are still kept (owner rule): only rows already in the
+ * database count as duplicates.
  * Requires a signed-in member of the active chapter (roles were removed).
  */
 export async function POST(request: Request) {
@@ -38,10 +43,27 @@ export async function POST(request: Request) {
     const week = await findWeekByDate(upload.meetingDate);
     let slipCount = 0;
     let counts: Record<string, number> = {};
+    const sigRows = signatureRows(upload.rows);
+    const validRows = (Object.keys(sigRows) as SlipTable[]).reduce((n, t) => n + sigRows[t].length, 0);
+    let duplicateCount = 0;
     if (week) {
       const result = await weekSlipCounts(ctx.tenantId, week.id);
       slipCount = result.total;
       counts = result.counts;
+      if (slipCount > 0) {
+        for (const table of Object.keys(sigRows) as SlipTable[]) {
+          if (sigRows[table].length === 0) continue;
+          const existing = await fetchAllRows<Record<string, unknown>>(table, SIG_FIELDS[table].join(","), {
+            eq: [
+              ["tenant_id", ctx.tenantId],
+              ["bni_week_id", week.id],
+            ],
+            pageSize: 1000,
+          });
+          const keys = new Set(existing.map((r) => rowSignature(table, r)));
+          duplicateCount += dropDuplicates(table, sigRows[table], keys).duplicateCount;
+        }
+      }
     }
 
     // Every structural row problem (mirrors the import route's rules):
@@ -64,6 +86,9 @@ export async function POST(request: Request) {
       slipCount,
       counts,
       rowCount: upload.rows.length,
+      /** Valid rows not in the database yet / already there (skipped on import). */
+      newCount: validRows - duplicateCount,
+      duplicateCount,
       columns: upload.headers.filter(Boolean),
       boldUsed: upload.boldUsed,
       errors: upload.errors,

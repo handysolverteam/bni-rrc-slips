@@ -29,6 +29,9 @@ type Preview = {
   slipCount: number;
   counts: Record<string, number>;
   rowCount: number;
+  /** Valid rows not yet in the database / already imported (skipped). */
+  newCount?: number;
+  duplicateCount?: number;
   columns: string[];
   boldUsed: boolean;
   errors: string[];
@@ -39,7 +42,8 @@ type Preview = {
  * Shared import panel — identical UI on /import and /report:
  * multi-file picker, per-file preview cards (week, rows, bold,
  * typing-mistake rows), one confirmation when bad rows exist, per-file
- * results. Duplicates are never flagged: every entry is imported as-is.
+ * results. Rows already imported for the week are flagged in the preview and
+ * skipped on import (same-file repeats are still kept — owner rule).
  * variant "card": self-contained card with its own head (/import page and /report).
  * variant "toolbar": solid accent button + dropdown panel — available for a
  * toolbar next to other actions (currently unused).
@@ -120,8 +124,9 @@ export default function ImportPanel({
     setReading(false);
   }
 
-  // Only typing mistakes pause the import — duplicate entries are
-  // correct and never ask for confirmation (owner rule).
+  // Only typing mistakes pause the import — already-imported rows are
+  // skipped silently (they are shown in the preview, no confirmation).
+  const nothingNew = (p: Preview) => (p.duplicateCount ?? 0) > 0 && (p.newCount ?? 1) <= 0;
   const badFiles = previews.filter((p) => p.rowIssues.skippedCount > 0);
   const needsConfirm = badFiles.length > 0;
   const done = results.filter((r) => r.kind === "success");
@@ -154,6 +159,13 @@ export default function ImportPanel({
     for (const p of previews) {
       const file = byName.get(p.filename);
       if (!file) continue;
+      if (nothingNew(p)) {
+        // Every row is already in: no empty import batch, just say so.
+        setResults((r) => [...r, { kind: "success", title: `${p.filename}: nothing new — all ${p.duplicateCount} row(s) already imported` }]);
+        setPreviews((prev) => prev.filter((x) => x.filename !== p.filename));
+        setFiles((prev) => prev.filter((x) => x.name !== p.filename));
+        continue;
+      }
       let ok = false;
       try {
         const fd = new FormData();
@@ -240,7 +252,10 @@ export default function ImportPanel({
             </p>
               {p.weekExists && p.slipCount > 0 ? (
                 <p className="preview-note">
-                  Week already holds {p.slipCount} slip(s) — every row in this file is imported (duplicates are kept).
+                  Week already holds {p.slipCount} slip(s) —{" "}
+                  {(p.duplicateCount ?? 0) > 0
+                    ? `${p.duplicateCount} row(s) in this file are already imported and will be skipped; ${p.newCount ?? 0} new row(s) will be imported.`
+                    : "all rows in this file are new and will be imported."}
                 </p>
               ) : (
                 <p className="preview-ok">New week — nothing imported yet.</p>
@@ -260,8 +275,8 @@ export default function ImportPanel({
           </div>
         ))}
 
-        <button className="primary btn-block" disabled={busy || reading || files.length === 0 || previews.length === 0} type="submit">
-          {busy ? "Importing..." : reading ? "Reading…" : files.length > 1 ? `Import ${files.length} files` : "Import"}
+        <button className="primary btn-block" disabled={busy || reading || files.length === 0 || previews.length === 0 || previews.every(nothingNew)} type="submit">
+          {busy ? "Importing..." : reading ? "Reading…" : previews.length > 0 && previews.every(nothingNew) ? "Nothing new to import" : files.length > 1 ? `Import ${files.length} files` : "Import"}
         </button>
       </form>
 

@@ -388,6 +388,14 @@ await removeBatchesNamed(HIST_PALMS_FILE); // the seed's own batch (drops its at
 // mistake that is always skipped): a re-import must insert 0 and report the
 // duplicates + the mistake as 8 skips — in both migration-003 states.
 const dbBefore = await dbSummary(weekId);
+// The preview already tells what the re-import will skip: all 7 valid rows
+// are in the DB, none are new (the typing mistake is a bad row, not a dup).
+const pvDup = await (await post("/api/import/preview", fd(seedCsv, "e2e-preview-dup.csv"))).json();
+check(
+  "preview of an imported file: 7 duplicates, 0 new",
+  pvDup.duplicateCount === 7 && pvDup.newCount === 0,
+  JSON.stringify({ dup: pvDup.duplicateCount, new: pvDup.newCount }),
+);
 const rp = await post("/api/import/report", fd(seedCsv, "e2e-reimport.csv"));
 const rpJson = rp.ok ? await rp.json() : {};
 check(

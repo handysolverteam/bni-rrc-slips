@@ -127,7 +127,26 @@ export async function fetchAttendanceTrends(tenantId: string, weeks: TrendWeek[]
   };
 }
 
-const nameKey = (n: string): string => n.replace(/s+/g, " ").trim().toLowerCase();
+const nameKey = (n: string): string => n.replace(/\s+/g, " ").trim().toLowerCase();
+
+/** Id of the tenant's HOME chapter row: configured home chapter first, then
+ *  the tenant's own name, then the env name (a stray "BNI Influencer" row once
+ *  made the env name unreliable). null when none of them exists. */
+export async function fetchHomeChapterId(tenantId: string): Promise<string | null> {
+  const sb = getSupabaseServer();
+  const { data: tenant } = await sb
+    .from("tenants")
+    .select("id,name,home_chapter_name")
+    .eq("id", tenantId)
+    .maybeSingle();
+  const home = resolveHomeChapter(tenant ?? { id: tenantId });
+  for (const name of [tenant?.home_chapter_name ?? "", tenant?.name ?? "", home]) {
+    if (!name) continue;
+    const { data } = await sb.from("chapters").select("id").ilike("name", name).maybeSingle();
+    if (data) return (data as { id: string }).id;
+  }
+  return null;
+}
 
 /**
  * Active members of the tenant's HOME chapter only (members the import filed
@@ -137,28 +156,12 @@ const nameKey = (n: string): string => n.replace(/s+/g, " ").trim().toLowerCase(
 export async function fetchHomeActiveMembers(
   tenantId: string,
 ): Promise<{ count: number; activeKeys: Set<string> }> {
-  const sb = getSupabaseServer();
-  const { data: tenant } = await sb
-    .from("tenants")
-    .select("id,name,home_chapter_name")
-    .eq("id", tenantId)
-    .maybeSingle();
-  const home = resolveHomeChapter(tenant ?? { id: tenantId });
-  // Configured home chapter first, then the tenant's own name, then the env name.
-  let chapter: { id: string } | null = null;
-  for (const name of [tenant?.home_chapter_name ?? "", tenant?.name ?? "", home]) {
-    if (!name) continue;
-    const { data } = await sb.from("chapters").select("id").ilike("name", name).maybeSingle();
-    if (data) {
-      chapter = data;
-      break;
-    }
-  }
-  if (!chapter) return { count: 0, activeKeys: new Set() };
+  const chapterId = await fetchHomeChapterId(tenantId);
+  if (!chapterId) return { count: 0, activeKeys: new Set() };
   const rows = await fetchAllRows<{ name: string }>("members", "name", {
     eq: [
       ["tenant_id", tenantId],
-      ["chapter_id", chapter.id],
+      ["chapter_id", chapterId],
       ["is_inactive", false],
     ],
     pageSize: 1000,

@@ -104,11 +104,8 @@ const memberEq: [string, unknown][] = [];
       q={q}
       weekId=""
       weeks={[]}
-      sub={
-        activeOnly
-          ? `${counts.active.toLocaleString("en-IN")} active`
-          : `${counts.active.toLocaleString("en-IN")} active · ${(counts.all - counts.active).toLocaleString("en-IN")} inactive`
-      }
+      // Both counts always show — the Active checkbox only narrows the rows.
+      sub={`${counts.active.toLocaleString("en-IN")} active · ${(counts.all - counts.active).toLocaleString("en-IN")} inactive`}
       activeToggle={{ param: "active", label: "Active", checked: activeOnly }}
       columns={[
         ...[{ key: "active", label: "Active" }],
