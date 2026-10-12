@@ -97,6 +97,7 @@ async function ask(q) {
   return "";
 }
 
+if (process.env.DUMP) { for (const [q, groups, note] of T_) console.log(JSON.stringify({ q, expect: groups.map((g) => g.slice(0, 3).join(" or ")), note })); process.exit(0); }
 const only = process.argv[2];
 let pass = 0, fail = 0;
 for (const [q, groups, note] of T_) {

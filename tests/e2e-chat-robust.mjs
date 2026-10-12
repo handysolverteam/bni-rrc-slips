@@ -142,6 +142,7 @@ async function ask(q, history = []) {
   return "";
 }
 
+if (process.env.DUMP) { for (const t of tests) console.log(JSON.stringify({ q: t.follow ? `${t.q}  →  (follow-up) ${t.follow}` : t.q, expect: t.groups.map((g) => g.slice(0, 3).join(" or ")).filter(Boolean).concat(t.re ? [`pattern ${t.re}`] : []), note: t.section })); process.exit(0); }
 const only = process.argv[2];
 let pass = 0, fail = 0;
 for (const t of tests) {

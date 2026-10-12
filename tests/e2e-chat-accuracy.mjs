@@ -122,6 +122,7 @@ async function ask(q) {
   return "";
 }
 
+if (process.env.DUMP) { for (const [q, must, note] of TESTS) console.log(JSON.stringify({ q, expect: must.map(String), note })); process.exit(0); }
 let pass = 0, fail = 0;
 for (const [q, must, note] of TESTS) {
   const t = await ask(q);
