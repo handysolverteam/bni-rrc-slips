@@ -120,7 +120,7 @@ export default async function PalmsPage({
                   <th className="idx">Sr. No.</th>
                   <th>Member</th>
                   {matrix.weeks.map((w) => (
-                    <th key={w.id} title={w.label}>
+                    <th key={w.id} title={w.label} className="plm-h">
                       {w.header}
                     </th>
                   ))}
