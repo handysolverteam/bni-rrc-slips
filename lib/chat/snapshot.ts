@@ -35,6 +35,19 @@ export type WeekStat = {
   uniqueTyfcbReceivers: number;
 };
 
+export type MonthStat = {
+  /** YYYY-MM */
+  month: string;
+  meetings: number;
+  referrals: number;
+  referralsInside: number;
+  referralsOutside: number;
+  oneToOnes: number;
+  visitors: number;
+  tyfcbEntries: number;
+  tyfcbAmount: number;
+};
+
 export type SlipsSnapshot = {
   chapterName: string;
   generatedAt: string;
@@ -50,6 +63,10 @@ export type SlipsSnapshot = {
   recentWeeks: string[];
   /** One entry per meeting week, newest first. weekly[0] = latest week. */
   weekly: WeekStat[];
+  /** Whole-chapter totals per calendar month, newest first: the sum of that month's meetings —
+   *  EVERY slip of every member (active + inactive, any chapter), so they equal the Slip
+   *  Report / Referrals / TYFCB screens and the Home charts. */
+  monthly: MonthStat[];
   /** Label of the newest week that actually has slips (weekly[0] can be an
    *  upcoming week with no data yet). */
   latestWithDataLabel: string | null;
@@ -362,6 +379,24 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
     };
   });
 
+  // Whole-chapter monthly totals (sums of the weekly buckets, only months with a meeting).
+  const byMonth = new Map<string, MonthStat>();
+  for (const w of weekly) {
+    const key = String(w.meetingDate ?? "").slice(0, 7);
+    if (!key) continue;
+    const cur = byMonth.get(key) ?? { month: key, meetings: 0, referrals: 0, referralsInside: 0, referralsOutside: 0, oneToOnes: 0, visitors: 0, tyfcbEntries: 0, tyfcbAmount: 0 };
+    cur.meetings += 1;
+    cur.referrals += w.referrals;
+    cur.referralsInside += w.referralsInside;
+    cur.referralsOutside += w.referralsOutside;
+    cur.oneToOnes += w.oneToOnes;
+    cur.visitors += w.visitors;
+    cur.tyfcbEntries += w.tyfcbEntries;
+    cur.tyfcbAmount += Math.round(w.tyfcbAmount);
+    byMonth.set(key, cur);
+  }
+  const monthly = [...byMonth.values()].sort((a, b) => (a.month < b.month ? 1 : -1));
+
   const referrals = refRes.length;
   // Owner count: a 121 with a bold (other-chapter) side counts 1,
   // a meeting between two home members counts 2. Per-member participation
@@ -386,6 +421,7 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
     },
     recentWeeks: weeksRows.map((w) => w.label).slice(0, 12),
     weekly,
+    monthly,
     latestWithDataLabel:
       weekly.find((w) => w.referrals > 0 || w.oneToOnes > 0 || w.visitors > 0 || w.tyfcbEntries > 0)?.label ?? null,
     members,

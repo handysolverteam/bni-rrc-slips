@@ -85,7 +85,7 @@ export const METRIC_KEYS = Object.keys(METRIC_TO_FIELD) as MetricKey[];
 export const CHAPTER_QUERY_TOOL = {
   name: "chapter_query",
   description:
-    "Query member-level metrics (slips AND PALMS attendance) for any time scope — a single meeting week, a month, a date range, the latest week, the last N weeks/months, or all-time — with filters for chapter (home chapter or another), member status (ACTIVE members only by default — set status only when the user explicitly asks about inactive members or says to include them), a metric condition (e.g. visitorsInvited = 0), sorting and a row limit. Zero-activity members are included when you filter by chapter/status or set includeZero. Returns { scope, rowCount, distinct, totals, rows[] }. Call it for ANY member-level, scoped or filtered question; never answer a scoped 'who did X' question from memory.",
+    "Query member-level metrics (slips AND PALMS attendance) for any time scope — a single meeting week, a month, a date range, the latest week, the last N weeks/months, or all-time — with filters for chapter (home chapter or another), member status (NO filter by default — pass chapter / status only when the question calls for it), a metric condition (e.g. visitorsInvited = 0), sorting and a row limit. Zero-activity members are included when you filter by chapter/status or set includeZero. Returns { scope, rowCount, distinct, totals, rows[] }. Call it for ANY member-level, scoped or filtered question; never answer a scoped 'who did X' question from memory.",
   parameters: {
     type: "object",
     properties: {
@@ -125,7 +125,7 @@ export const CHAPTER_QUERY_TOOL = {
       status: {
         type: "string",
         enum: ["active", "inactive", "any"],
-        description: "Member status. DEFAULT = active members only: leave it unset unless the question explicitly mentions inactive members — then use 'inactive' (only inactive) or 'any' (active + inactive, e.g. 'including inactive' / 'all members ever').",
+        description: "Member status filter. DEFAULT = no filter (active + inactive). Pass 'active' only when the question is about active / current members (or is a who-did-NOT list about our members); 'inactive' only when it asks about inactive members.",
       },
       includeZero: {
         type: "boolean",
@@ -351,6 +351,42 @@ const chapterKeyOf = (raw: string): string =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
+/**
+ * The plain-words basis of a tool result: which chapter(s), which members and
+ * which period the numbers cover. The system prompt makes the model state it
+ * in every data answer, so a reader never has to guess whether inactive
+ * members or other chapters are in the figures.
+ */
+function basisOf(o: {
+  /** The chapter filter that was applied, or null for none. */
+  chapter: string | null;
+  status: "active" | "inactive" | "any";
+  weeks: number;
+  from?: string;
+  to?: string;
+  homeChapter: string;
+  memberNamed?: string;
+}): { chapter: string; members: string; period: string; filtersApplied: string[]; filtersSummary: string } {
+  const filtersApplied = [
+    ...(o.chapter ? [`Chapter: ${o.chapter}`] : []),
+    ...(o.memberNamed ? [`Member: ${o.memberNamed}`] : []),
+    ...(o.status === "active" ? ["Members: active only"] : o.status === "inactive" ? ["Members: inactive only"] : []),
+  ];
+  return {
+    filtersApplied,
+    filtersSummary: filtersApplied.length > 0 ? filtersApplied.join(" · ") : "none (all chapters, active and inactive members)",
+    chapter: o.chapter ?? `all chapters in the data (${o.homeChapter} members plus members of other chapters)`,
+    members: o.memberNamed
+      ? `the named member(s) (${o.memberNamed}) — active or inactive`
+      : o.status === "active"
+        ? "active members only"
+        : o.status === "inactive"
+          ? "inactive members only"
+          : "all members (active and inactive)",
+    period: o.from && o.to ? `${o.weeks} meeting(s), ${o.from} to ${o.to}` : `${o.weeks} meeting(s)`,
+  };
+}
+
 type Agg = Record<MetricField, number> & { name: string };
 type MetricField = (typeof METRIC_TO_FIELD)[MetricKey];
 const FIELDS = Object.values(METRIC_TO_FIELD) as MetricField[];
@@ -400,7 +436,7 @@ export function executeChapterQuery(args: unknown, index: QueryIndex): Record<st
     homeWords.test(chapterRaw) || (chapterRaw !== "" && chapterKeyOf(chapterRaw) === chapterKeyOf(index.homeChapter));
   // Unless inactive members are explicitly asked for, only ACTIVE members count.
   const statusArg = a.status === "active" || a.status === "inactive" || a.status === "any" ? a.status : null;
-  const status = statusArg ?? "active";
+  const status = statusArg ?? "any"; // no status filter unless the question calls for one
   const inactiveKeys = new Set(index.roster.filter((m) => !m.active).map((m) => m.key));
   const useRoster = chapterRaw !== "" || statusArg === "active" || statusArg === "inactive" || a.includeZero === true;
 
@@ -490,6 +526,15 @@ export function executeChapterQuery(args: unknown, index: QueryIndex): Record<st
     },
     homeChapter: index.homeChapter,
     memberStatus: status, // which members were counted (active unless the question asked otherwise)
+    // What the numbers are BASED ON — the answer must state this in plain words.
+    basis: basisOf({
+      chapter: chapterRaw ? (wantHome ? `${index.homeChapter} (home chapter)` : `chapters matching "${chapterRaw}"`) : null,
+      status,
+      weeks: scope.ids.size,
+      from: dates[0],
+      to: dates[dates.length - 1],
+      homeChapter: index.homeChapter,
+    }),
     ...(rosterMatched !== null ? { rosterMembersMatched: rosterMatched } : {}),
     rowCount: entries.length, // members matching the scope/filters BEFORE topN
     distinct,
@@ -522,7 +567,7 @@ export const SLIP_ENTRIES_TOOL = {
       status: {
         type: "string",
         enum: ["active", "inactive", "any"],
-        description: "Only when NO member is named: which members' slips to list. DEFAULT = slips of ACTIVE members only; use 'inactive' / 'any' only if the question explicitly asks about inactive members.",
+        description: "Only when NO member is named: which members' slips to list. DEFAULT = no filter (everyone); 'active' / 'inactive' only when the question asks for them.",
       },
       limit: { type: "integer", description: "Max entries (default 50, max 200)." },
     },
@@ -539,8 +584,8 @@ export function executeSlipEntries(args: unknown, index: QueryIndex): Record<str
   const role = a.role === "first" || a.role === "second" ? a.role : "either";
   const limit = Math.min(200, Math.max(1, Math.floor(Number(a.limit)) || 50));
   const weekOf = new Map(index.weeks.map((w) => [w.id, w]));
-  // With no member named, list only ACTIVE members' slips unless inactive ones are asked for.
-  const status = a.status === "inactive" || a.status === "any" ? a.status : "active";
+  // No status filter unless the question calls for one.
+  const status = a.status === "inactive" || a.status === "active" ? a.status : "any";
   const inactiveKeys = new Set(index.roster.filter((m) => !m.active).map((m) => m.key));
   const nk = (n: string) => n.replace(/\s+/g, " ").trim().toLowerCase();
 
@@ -580,6 +625,13 @@ export function executeSlipEntries(args: unknown, index: QueryIndex): Record<str
       ...(scope.unmatched ? { unmatched: scope.unmatched } : {}),
       ...(scope.hint ? { hint: scope.hint } : {}),
     },
+    basis: basisOf({
+      chapter: null,
+      status: member ? "any" : status,
+      weeks: scope.ids.size,
+      homeChapter: index.homeChapter,
+      memberNamed: member ? member : undefined,
+    }),
     count: hits.length,
     entries,
     ...(hits.length > limit ? { note: `Showing ${limit} of ${hits.length}; raise limit (max 200).` } : {}),

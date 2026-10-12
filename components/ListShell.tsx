@@ -84,7 +84,11 @@ export default function ListShell({
         <h1>
           {title}
           <span className="count-badge">
-            {rows.length} of {total.toLocaleString("en-IN")}
+            {rows.length === 0
+              ? "0"
+              : total <= rows.length
+                ? total.toLocaleString("en-IN")
+                : `${((page - 1) * pageSize + 1).toLocaleString("en-IN")}–${((page - 1) * pageSize + rows.length).toLocaleString("en-IN")} of ${total.toLocaleString("en-IN")}`}
           </span>
         </h1>
         {sub ? <p className="sub muted">{sub}</p> : null}

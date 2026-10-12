@@ -79,13 +79,32 @@ check("recent 2 weeks = Week 4 + Week 3", r.scope.weeks === 2, JSON.stringify(r.
 
 // 4b) inactive members are left out unless explicitly asked for
 r = m.executeChapterQuery({ scope: { kind: "all" }, metrics: ["visitorsInvited"], topN: 100 }, index);
-check("default: inactive Chet (5 visitors) is not counted", !r.rows.some((x) => x.name === "Chet") && r.memberStatus === "active", JSON.stringify(r.rows));
+check("default: NO status filter — inactive Chet (5 visitors) is counted", r.rows.some((x) => x.name === "Chet") && r.memberStatus === "any", JSON.stringify(r.rows));
+r = m.executeChapterQuery({ scope: { kind: "all" }, status: "active", metrics: ["visitorsInvited"], topN: 100 }, index);
+check("status active excludes Chet", !r.rows.some((x) => x.name === "Chet") && r.memberStatus === "active", JSON.stringify(r.rows));
 r = m.executeChapterQuery({ scope: { kind: "all" }, status: "any", metrics: ["visitorsInvited"], topN: 100 }, index);
 check("status any includes Chet", r.rows.some((x) => x.name === "Chet"));
 r = m.executeChapterQuery({ scope: { kind: "all" }, status: "inactive", metrics: ["visitorsInvited"], topN: 100 }, index);
 check("status inactive = only Chet", r.rowCount === 1 && r.rows[0].name === "Chet", JSON.stringify(r.rows));
 r = m.executeChapterQuery({ scope: { kind: "all" }, includeZero: true, metrics: ["visitorsInvited"], topN: 100 }, index);
-check("includeZero without status still hides inactive members", !r.rows.some((x) => x.name === "Chet") && r.rows.some((x) => x.name === "Bina"), JSON.stringify(r.rows.map((x) => x.name)));
+check("includeZero without status lists everyone on the roster (inactive too)", r.rows.some((x) => x.name === "Chet") && r.rows.some((x) => x.name === "Bina"), JSON.stringify(r.rows.map((x) => x.name)));
+
+// basis: every result says which chapter / members / period it covers
+r = m.executeChapterQuery({ scope: { kind: "all" }, chapter: "home", status: "active", metrics: ["visitorsInvited"] }, index);
+check("basis names the home chapter, active members and the period", r.basis?.chapter === "BNI Influencers (home chapter)" && r.basis?.members === "active members only" && /meeting/.test(r.basis?.period), JSON.stringify(r.basis));
+r = m.executeChapterQuery({ scope: { kind: "all" }, metrics: ["visitorsInvited"] }, index);
+check("no chapter filter -> basis says all chapters", /^all chapters in the data/.test(r.basis?.chapter ?? ""), JSON.stringify(r.basis));
+r = m.executeChapterQuery({ scope: { kind: "all" }, status: "any", metrics: ["visitorsInvited"] }, index);
+check("status any -> basis says active and inactive", r.basis?.members === "all members (active and inactive)", JSON.stringify(r.basis));
+check("slip_entries carries a basis too", m.executeSlipEntries({ type: "visitor" }, index).basis?.members === "all members (active and inactive)" && /named member/.test(m.executeSlipEntries({ type: "visitor", member: "amit" }, index).basis?.members));
+
+// every result lists the filters it applied ("none" when it applied none)
+r = m.executeChapterQuery({ scope: { kind: "all" }, metrics: ["visitorsInvited"] }, index);
+check("no filters -> filtersApplied empty + summary says none", r.basis.filtersApplied.length === 0 && /^none/.test(r.basis.filtersSummary), JSON.stringify(r.basis));
+r = m.executeChapterQuery({ scope: { kind: "all" }, chapter: "home", status: "active", metrics: ["visitorsInvited"] }, index);
+check("home + active -> both listed", JSON.stringify(r.basis.filtersApplied) === JSON.stringify(["Chapter: BNI Influencers (home chapter)", "Members: active only"]), JSON.stringify(r.basis.filtersApplied));
+r = m.executeChapterQuery({ scope: { kind: "all" }, status: "inactive", metrics: ["visitorsInvited"] }, index);
+check("inactive only -> listed", JSON.stringify(r.basis.filtersApplied) === JSON.stringify(["Members: inactive only"]), JSON.stringify(r.basis.filtersApplied));
 
 // 5) attendance metrics + ascending order
 r = m.executeChapterQuery({ scope: { kind: "all" }, chapter: "home", metrics: ["attendanceAbsent"], orderBy: "+attendanceAbsent", topN: 10 }, index);
@@ -93,9 +112,9 @@ check("attendance metric present and ascending sort", r.rows[0].attendanceAbsent
 
 // slip_entries: with no member named, only ACTIVE members' slips unless asked
 let ee = m.executeSlipEntries({ type: "visitor" }, { ...index, entries: [...index.entries, { t: "visitor", w: "w1", a: "Chet", b: "Old Guest" }] });
-check("slip_entries default hides an inactive inviter's visitors", !ee.entries.some((x) => x.visitor === "Old Guest"), JSON.stringify(ee.entries.map((x) => x.visitor)));
-ee = m.executeSlipEntries({ type: "visitor", status: "any" }, { ...index, entries: [...index.entries, { t: "visitor", w: "w1", a: "Chet", b: "Old Guest" }] });
-check("slip_entries status any includes them", ee.entries.some((x) => x.visitor === "Old Guest"));
+check("slip_entries default: no filter — an inactive inviter's visitors are listed", ee.entries.some((x) => x.visitor === "Old Guest"), JSON.stringify(ee.entries.map((x) => x.visitor)));
+ee = m.executeSlipEntries({ type: "visitor", status: "active" }, { ...index, entries: [...index.entries, { t: "visitor", w: "w1", a: "Chet", b: "Old Guest" }] });
+check("slip_entries status active hides them", !ee.entries.some((x) => x.visitor === "Old Guest"));
 ee = m.executeSlipEntries({ type: "visitor", member: "chet" }, { ...index, entries: [...index.entries, { t: "visitor", w: "w1", a: "Chet", b: "Old Guest" }] });
 check("slip_entries naming the member explicitly still answers", ee.entries.some((x) => x.visitor === "Old Guest"));
 
@@ -110,5 +129,12 @@ check("either-side member filter spans types", e.count === 2, String(e.count));
 // 7) tool declarations expose the new arguments
 check("tool declares chapter/status/where/recent", ["chapter", "status", "where", "includeZero"].every((k) => k in m.CHAPTER_QUERY_TOOL.parameters.properties) && m.CHAPTER_QUERY_TOOL.parameters.properties.scope.properties.kind.enum.includes("recent"));
 check("slip_entries tool declared", m.SLIP_ENTRIES_TOOL.name === "slip_entries");
+
+// the snapshot's monthly totals are the whole-chapter basis for total questions (checked on source)
+const snapSrc = readFileSync(new URL("../lib/chat/snapshot.ts", import.meta.url), "utf8");
+check("snapshot carries monthly whole-chapter totals", snapSrc.includes("monthly: MonthStat[]") && snapSrc.includes("byMonth"));
+const gemSrc = readFileSync(new URL("../lib/chat/gemini.ts", import.meta.url), "utf8");
+check("prompt: totals come from monthly[] / weekly[]", gemSrc.includes("TOTALS vs MEMBER LISTS"));
+check("prompt: filters only when relevant + always shown + informative", gemSrc.includes("APPLY ONLY WHEN RELEVANT") && gemSrc.includes("Filters applied:") && gemSrc.includes("INFORMATIVE ANSWERS") && !gemSrc.includes("ACTIVE MEMBERS ONLY BY DEFAULT"));
 
 console.log(`TOTAL: ${pass} passed, ${fail} failed`);

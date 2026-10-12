@@ -209,12 +209,21 @@ let sessionB = null;
     check("the owner can still rename it", ownerRename.status === 200, `status=${ownerRename.status}`);
 
     // ANY account can write into the chat; each question is stamped with who asked.
-    const ask = (headers, who) =>
-      fetch(`${APP}/api/chat/generate`, {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ message: `Say OK (${who})`, sessionId: sessionA.id, authorName: who }),
-      });
+    // The AI backend sometimes answers 502 when two requests arrive back to back: retry a
+    // couple of times so the check tests our routing, not the model's availability.
+    const ask = async (headers, who) => {
+      let res;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        res = await fetch(`${APP}/api/chat/generate`, {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ message: `Say OK (${who})`, sessionId: sessionA.id, authorName: who }),
+        });
+        if (res.status !== 502) break;
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      return res;
+    };
     const askedByB = await ask(asB, "E2E Asker B");
     const askedByA = await ask(asA, "E2E Asker A");
     check("another account can write in the chat (reply generated + saved)", askedByB.status === 200 && askedByA.status === 200, `B=${askedByB.status} A=${askedByA.status}`);
