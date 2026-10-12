@@ -288,7 +288,14 @@ export default function Nav() {
               onMouseLeave={scheduleClose}
             >
               {activeGroup.children.map((c) => (
-                <Link key={c.href} href={c.href} role="menuitem" onClick={closeGroup}>
+                <Link
+                  key={c.href}
+                  href={c.href}
+                  role="menuitem"
+                  className={pathname.startsWith(c.href) ? "active" : undefined}
+                  aria-current={pathname.startsWith(c.href) ? "page" : undefined}
+                  onClick={closeGroup}
+                >
                   {c.label}
                 </Link>
               ))}

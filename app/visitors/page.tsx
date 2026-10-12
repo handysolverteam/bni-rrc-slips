@@ -74,10 +74,10 @@ export default async function VisitorsPage({
       weeks={weeks}
       hideWeekBar
       columns={[
+        { key: "bni_week", label: "BNI Week" },
         { key: "full_name", label: "Full Name" },
         { key: "company", label: "Company" },
         { key: "invited_by_name", label: "Invited By" },
-        { key: "bni_week", label: "BNI Week" },
         { key: "email", label: "Email" },
         { key: "phone", label: "Phone" },
       ]}
