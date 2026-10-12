@@ -105,6 +105,7 @@ function HistoryTable({
             <table className="grid">
               <thead>
                 <tr>
+                  <th className="idx">Sr. No.</th>
                   <th>
                     <span className="col-filter-wrap">
                       <span
@@ -152,17 +153,18 @@ function HistoryTable({
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="muted">
+                    <td colSpan={7} className="muted">
                       No imports match the selected filters.
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((b) => {
+                  filtered.map((b, bi) => {
                     const open = openSkip === b.id;
                     const entries = skipEntries(b);
                     return (
                       <Fragment key={b.id}>
                         <tr>
+                          <td className="idx">{bi + 1}</td>
                           <td>{new Date(b.created_at).toLocaleString()}</td>
                           <td>{b.filename}</td>
                           <td>{b.bni_weeks?.label ?? "—"}</td>
@@ -195,7 +197,7 @@ function HistoryTable({
                         </tr>
                         {open && (
                           <tr className="skip-detail">
-                            <td colSpan={6}>
+                            <td colSpan={7}>
                               <strong>
                                 Skipped entries (
                                 {entries && entries.length !== b.skipped_count

@@ -122,6 +122,7 @@ export default function ListShell({
           filterable={filterable}
           initialFilters={columnFilters}
           filterOptions={filterOptions}
+          indexStart={(page - 1) * pageSize}
           loading={isPending}
           activeToggle={
             activeToggle

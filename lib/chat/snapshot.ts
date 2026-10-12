@@ -5,6 +5,8 @@ import type { QueryIndex, QueryRow, RosterMember, SlipEntry } from "./query-inde
 
 export type MemberStat = {
   name: string;
+  /** true only for INACTIVE members (absent = active). */
+  inactive?: boolean;
   chapter: string | null;
   category: string | null;
   referralsGiven: number;
@@ -206,6 +208,7 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
     const s = ensure(m.name, rel?.name ?? null);
     if (s) {
       s.category = m.category;
+      if (m.is_inactive === true) s.inactive = true;
       if (!s.chapter && rel?.name) s.chapter = rel.name;
     }
   }

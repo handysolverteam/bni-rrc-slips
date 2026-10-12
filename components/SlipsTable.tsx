@@ -51,6 +51,7 @@ export default function SlipsTable({
   emptyHint = "No records yet — import a Report XLS to get started.",
   loading = false,
   activeToggle,
+  indexStart = 0,
 }: {
   columns: Col[];
   rows: Record<string, unknown>[];
@@ -59,6 +60,8 @@ export default function SlipsTable({
   filterOptions?: Record<string, ComboOption[]>;
   emptyHint?: string;
   loading?: boolean;
+  /** Rows on earlier pages: the Sr. No. column keeps counting across pages. */
+  indexStart?: number;
   /** Boolean URL filter shown as a checkbox inside its column's header cell. */
   activeToggle?: { param: string; label: string; checked: boolean; onChange: (checked: boolean) => void };
 }) {
@@ -72,6 +75,9 @@ export default function SlipsTable({
         <table className="grid">
           <thead>
             <tr>
+              <th className="idx">
+                <span className="th-label">Sr. No.</span>
+              </th>
               {columns.map((c) => (
                 <th key={c.key}>
                   {activeToggle && c.key === activeToggle.param ? (
@@ -104,6 +110,9 @@ export default function SlipsTable({
             {loading
               ? Array.from({ length: skeletonRows }, (_, i) => (
                   <tr key={`skel-${i}`}>
+                    <td className="idx">
+                      <span className="skel" style={{ display: "block", height: cellH, width: 22, borderRadius: 4, margin: "0 auto" }} />
+                    </td>
                     {columns.map((c, j) => (
                       <td key={c.key}>
                         <span
@@ -121,6 +130,7 @@ export default function SlipsTable({
                 ))
               : rows.map((r, i) => (
                   <tr key={(r.id as string) ?? i}>
+                    <td className="idx">{indexStart + i + 1}</td>
                     {columns.map((c) => (
                       <td key={c.key}>
                         <Cell columnKey={c.key} value={r[c.key]} row={r} />

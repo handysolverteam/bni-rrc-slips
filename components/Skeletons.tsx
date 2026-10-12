@@ -15,15 +15,18 @@ export function Bar({
   w = "100%",
   h,
   r = 5,
+  center = false,
 }: {
   w?: number | string;
   h: number;
   r?: number;
+  /** Centre the bar in its cell (the Sr. No. column). */
+  center?: boolean;
 }) {
   return (
     <span
       className="skel"
-      style={{ display: "block", width: w, height: h, borderRadius: r }}
+      style={{ display: "block", width: w, height: h, borderRadius: r, ...(center ? { margin: "0 auto" } : {}) }}
     />
   );
 }
@@ -97,6 +100,9 @@ export function ListSkeleton({
             <table className="grid">
               <thead>
                 <tr>
+                  <th className="idx">
+                    <span className="th-label">Sr. No.</span>
+                  </th>
                   {columns.map((c) =>
                     filterable.includes(c.key) ? (
                       <th key={c.key}>
@@ -118,6 +124,9 @@ export function ListSkeleton({
               <tbody>
                 {Array.from({ length: rows }, (_, i) => (
                   <tr key={i}>
+                    <td className="idx">
+                      <Bar h={cellH} w={22} r={4} center />
+                    </td>
                     {columns.map((c, j) => (
                       <td key={c.key}>
                         <Bar
@@ -375,7 +384,7 @@ function ReportSectionTable({
           {withSum ? (
             <tfoot>
               <tr className="sum-row">
-                <td colSpan={5}>
+                <td colSpan={6}>
                   <strong>Total</strong>
                 </td>
                 <td className="num">
@@ -534,6 +543,9 @@ function ImportHistorySkeleton({ heading, rows }: { heading: string; rows: numbe
           <table className="grid">
             <thead>
               <tr>
+                <th className="idx">
+                  <span className="th-label">Sr. No.</span>
+                </th>
                 <th>
                   <span className="combo">
                     <span className="combo-field" style={{ height: 39 }}>
@@ -558,6 +570,7 @@ function ImportHistorySkeleton({ heading, rows }: { heading: string; rows: numbe
             <tbody>
               {Array.from({ length: rows }, (_, i) => (
                 <tr key={i}>
+                  <td className="idx"><Bar h={18} w={22} r={4} center /></td>
                   <td><Bar h={18} w={`${CELL_W[i % CELL_W.length]}%`} r={4} /></td>
                   <td><Bar h={18} w={`${CELL_W[(i + 1) % CELL_W.length]}%`} r={4} /></td>
                   <td><Bar h={18} w={`${CELL_W[(i + 2) % CELL_W.length]}%`} r={4} /></td>
@@ -636,6 +649,9 @@ export function PalmsSkeleton() {
             <table className="grid">
               <thead>
                 <tr>
+                  <th className="idx">
+                    <span className="th-label">Sr. No.</span>
+                  </th>
                   {PALMS_LABELS.map((c) => (
                     <th key={c}>
                       <span className="th-label">{c}</span>
@@ -646,6 +662,9 @@ export function PalmsSkeleton() {
               <tbody>
                 {Array.from({ length: 12 }, (_, i) => (
                   <tr key={i}>
+                    <td className="idx">
+                      <Bar h={18} w={22} r={4} center />
+                    </td>
                     {PALMS_LABELS.map((c, j) => (
                       <td key={c}>
                         <Bar h={18} w={`${CELL_W[(i + j) % CELL_W.length]}%`} r={4} />

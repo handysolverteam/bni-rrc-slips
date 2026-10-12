@@ -1492,3 +1492,7 @@ button.wa-btn:active:not(:disabled) { background: #1fbf5b; }
 .chat-sidebar .chat-groups { margin-top: 18px; gap: 18px; }
 .chat-sidebar .chat-group-title { margin: 0; padding: 0 12px; line-height: 1.2; }
 .chat-sidebar .chat-group ul { margin-top: 6px; }
+
+/* Sr. No. column on every table */
+.grid th.idx, .grid td.idx { width: 64px; min-width: 56px; text-align: center; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
+.grid th.idx { color: inherit; }

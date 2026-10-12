@@ -44,7 +44,7 @@ export default async function PalmsPage({
     fetchPalmsAttendanceStats(tenantId),
   ]);
   const scopeLabel = palmsScopeLabel(weeks, weekIds, "All weeks");
-  const colSpan = 1 + matrix.weeks.length;
+  const colSpan = 2 + matrix.weeks.length;
 
   return (
     <div>
@@ -117,6 +117,7 @@ export default async function PalmsPage({
             <table className="grid">
               <thead>
                 <tr>
+                  <th className="idx">Sr. No.</th>
                   <th>Member</th>
                   {matrix.weeks.map((w) => (
                     <th key={w.id} title={w.label}>
@@ -133,8 +134,9 @@ export default async function PalmsPage({
                     </td>
                   </tr>
                 ) : (
-                  matrix.rows.map((r) => (
+                  matrix.rows.map((r, ri) => (
                     <tr key={r.name}>
+                      <td className="idx">{ri + 1}</td>
                       <td>{r.name}</td>
                       {r.cells.map((cell, i) => (
                         <td key={matrix.weeks[i]?.id ?? i} className={cell ? `plm plm-${cell[0].toLowerCase()}` : undefined}>

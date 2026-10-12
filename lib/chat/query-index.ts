@@ -85,7 +85,7 @@ export const METRIC_KEYS = Object.keys(METRIC_TO_FIELD) as MetricKey[];
 export const CHAPTER_QUERY_TOOL = {
   name: "chapter_query",
   description:
-    "Query member-level metrics (slips AND PALMS attendance) for any time scope — a single meeting week, a month, a date range, the latest week, the last N weeks/months, or all-time — with filters for chapter (home chapter or another), active/inactive status, a metric condition (e.g. visitorsInvited = 0), sorting and a row limit. Zero-activity members are included when you filter by chapter/status or set includeZero. Returns { scope, rowCount, distinct, totals, rows[] }. Call it for ANY member-level, scoped or filtered question; never answer a scoped 'who did X' question from memory.",
+    "Query member-level metrics (slips AND PALMS attendance) for any time scope — a single meeting week, a month, a date range, the latest week, the last N weeks/months, or all-time — with filters for chapter (home chapter or another), member status (ACTIVE members only by default — set status only when the user explicitly asks about inactive members or says to include them), a metric condition (e.g. visitorsInvited = 0), sorting and a row limit. Zero-activity members are included when you filter by chapter/status or set includeZero. Returns { scope, rowCount, distinct, totals, rows[] }. Call it for ANY member-level, scoped or filtered question; never answer a scoped 'who did X' question from memory.",
   parameters: {
     type: "object",
     properties: {
@@ -125,7 +125,7 @@ export const CHAPTER_QUERY_TOOL = {
       status: {
         type: "string",
         enum: ["active", "inactive", "any"],
-        description: "Member status filter (default any). 'active members' = active.",
+        description: "Member status. DEFAULT = active members only: leave it unset unless the question explicitly mentions inactive members — then use 'inactive' (only inactive) or 'any' (active + inactive, e.g. 'including inactive' / 'all members ever').",
       },
       includeZero: {
         type: "boolean",
@@ -398,8 +398,11 @@ export function executeChapterQuery(args: unknown, index: QueryIndex): Record<st
   const homeWords = /^(home|our|my|this)(\s+chapter)?$/i;
   const wantHome =
     homeWords.test(chapterRaw) || (chapterRaw !== "" && chapterKeyOf(chapterRaw) === chapterKeyOf(index.homeChapter));
-  const status = a.status === "active" || a.status === "inactive" ? a.status : "any";
-  const useRoster = chapterRaw !== "" || status !== "any" || a.includeZero === true;
+  // Unless inactive members are explicitly asked for, only ACTIVE members count.
+  const statusArg = a.status === "active" || a.status === "inactive" || a.status === "any" ? a.status : null;
+  const status = statusArg ?? "active";
+  const inactiveKeys = new Set(index.roster.filter((m) => !m.active).map((m) => m.key));
+  const useRoster = chapterRaw !== "" || statusArg === "active" || statusArg === "inactive" || a.includeZero === true;
 
   let entries: Agg[];
   let rosterMatched: number | null = null;
@@ -416,13 +419,15 @@ export function executeChapterQuery(args: unknown, index: QueryIndex): Record<st
     });
     rosterMatched = picked.length;
     entries = picked.map((m) => byMember.get(m.key) ?? zeroAgg(m.name));
-    if (a.includeZero === true && !chapterRaw && status === "any") {
+    if (a.includeZero === true && !chapterRaw && status !== "inactive") {
       // Whole roster plus anyone with activity but no roster row.
       const have = new Set(picked.map((m) => m.key));
-      for (const [k, v] of byMember) if (!have.has(k)) entries.push(v);
+      for (const [k, v] of byMember) if (!have.has(k) && !(status === "active" && inactiveKeys.has(k))) entries.push(v);
     }
   } else {
-    entries = [...byMember.values()];
+    entries = [...byMember.entries()]
+      .filter(([k]) => (status === "any" ? true : status === "active" ? !inactiveKeys.has(k) : inactiveKeys.has(k)))
+      .map(([, v]) => v);
   }
   if (memberFilters.length > 0) {
     entries = entries.filter((e) => memberFilters.some((f) => e.name.toLowerCase().includes(f)));
@@ -484,6 +489,7 @@ export function executeChapterQuery(args: unknown, index: QueryIndex): Record<st
       ...(dates.length ? { from: dates[0], to: dates[dates.length - 1] } : {}),
     },
     homeChapter: index.homeChapter,
+    memberStatus: status, // which members were counted (active unless the question asked otherwise)
     ...(rosterMatched !== null ? { rosterMembersMatched: rosterMatched } : {}),
     rowCount: entries.length, // members matching the scope/filters BEFORE topN
     distinct,
@@ -513,6 +519,11 @@ export const SLIP_ENTRIES_TOOL = {
         enum: ["either", "first", "second"],
         description: "first = visitor's inviter / referral giver / 121 initiator / TYFCB thanked member; second = the visitor / referral receiver / 121 partner / TYFCB thanker. Default either.",
       },
+      status: {
+        type: "string",
+        enum: ["active", "inactive", "any"],
+        description: "Only when NO member is named: which members' slips to list. DEFAULT = slips of ACTIVE members only; use 'inactive' / 'any' only if the question explicitly asks about inactive members.",
+      },
       limit: { type: "integer", description: "Max entries (default 50, max 200)." },
     },
     required: [],
@@ -528,10 +539,18 @@ export function executeSlipEntries(args: unknown, index: QueryIndex): Record<str
   const role = a.role === "first" || a.role === "second" ? a.role : "either";
   const limit = Math.min(200, Math.max(1, Math.floor(Number(a.limit)) || 50));
   const weekOf = new Map(index.weeks.map((w) => [w.id, w]));
+  // With no member named, list only ACTIVE members' slips unless inactive ones are asked for.
+  const status = a.status === "inactive" || a.status === "any" ? a.status : "active";
+  const inactiveKeys = new Set(index.roster.filter((m) => !m.active).map((m) => m.key));
+  const nk = (n: string) => n.replace(/\s+/g, " ").trim().toLowerCase();
 
   const hits = index.entries.filter((e) => {
     if (!scope.ids.has(e.w)) return false;
     if (type !== "all" && e.t !== type) return false;
+    if (!member && status !== "any") {
+      const off = inactiveKeys.has(nk(e.a));
+      if (status === "active" ? off : !off) return false;
+    }
     if (member) {
       const first = e.a.toLowerCase().includes(member);
       const second = e.b.toLowerCase().includes(member);

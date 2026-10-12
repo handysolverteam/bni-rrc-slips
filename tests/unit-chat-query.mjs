@@ -77,9 +77,27 @@ check("other chapter filter finds Dev", r.rowCount === 1 && r.rows[0].name === "
 r = m.executeChapterQuery({ scope: { kind: "recent", weeks: 2 }, metrics: ["visitorsInvited"] }, index);
 check("recent 2 weeks = Week 4 + Week 3", r.scope.weeks === 2, JSON.stringify(r.scope));
 
+// 4b) inactive members are left out unless explicitly asked for
+r = m.executeChapterQuery({ scope: { kind: "all" }, metrics: ["visitorsInvited"], topN: 100 }, index);
+check("default: inactive Chet (5 visitors) is not counted", !r.rows.some((x) => x.name === "Chet") && r.memberStatus === "active", JSON.stringify(r.rows));
+r = m.executeChapterQuery({ scope: { kind: "all" }, status: "any", metrics: ["visitorsInvited"], topN: 100 }, index);
+check("status any includes Chet", r.rows.some((x) => x.name === "Chet"));
+r = m.executeChapterQuery({ scope: { kind: "all" }, status: "inactive", metrics: ["visitorsInvited"], topN: 100 }, index);
+check("status inactive = only Chet", r.rowCount === 1 && r.rows[0].name === "Chet", JSON.stringify(r.rows));
+r = m.executeChapterQuery({ scope: { kind: "all" }, includeZero: true, metrics: ["visitorsInvited"], topN: 100 }, index);
+check("includeZero without status still hides inactive members", !r.rows.some((x) => x.name === "Chet") && r.rows.some((x) => x.name === "Bina"), JSON.stringify(r.rows.map((x) => x.name)));
+
 // 5) attendance metrics + ascending order
 r = m.executeChapterQuery({ scope: { kind: "all" }, chapter: "home", metrics: ["attendanceAbsent"], orderBy: "+attendanceAbsent", topN: 10 }, index);
 check("attendance metric present and ascending sort", r.rows[0].attendanceAbsent === 0 && r.rows.at(-1).attendanceAbsent === 1, JSON.stringify(r.rows));
+
+// slip_entries: with no member named, only ACTIVE members' slips unless asked
+let ee = m.executeSlipEntries({ type: "visitor" }, { ...index, entries: [...index.entries, { t: "visitor", w: "w1", a: "Chet", b: "Old Guest" }] });
+check("slip_entries default hides an inactive inviter's visitors", !ee.entries.some((x) => x.visitor === "Old Guest"), JSON.stringify(ee.entries.map((x) => x.visitor)));
+ee = m.executeSlipEntries({ type: "visitor", status: "any" }, { ...index, entries: [...index.entries, { t: "visitor", w: "w1", a: "Chet", b: "Old Guest" }] });
+check("slip_entries status any includes them", ee.entries.some((x) => x.visitor === "Old Guest"));
+ee = m.executeSlipEntries({ type: "visitor", member: "chet" }, { ...index, entries: [...index.entries, { t: "visitor", w: "w1", a: "Chet", b: "Old Guest" }] });
+check("slip_entries naming the member explicitly still answers", ee.entries.some((x) => x.visitor === "Old Guest"));
 
 // 6) slip_entries: guests of a member with dates, newest first
 let e = m.executeSlipEntries({ type: "visitor", member: "amit", role: "first" }, index);
