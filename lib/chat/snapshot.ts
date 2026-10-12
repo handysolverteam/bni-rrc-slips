@@ -8,6 +8,8 @@ export type MemberStat = {
   /** true only for INACTIVE members (absent = active). */
   inactive?: boolean;
   chapter: string | null;
+  /** Only when the same name is a member of SEVERAL chapters: all of them (chapter = the home one if present). */
+  chapters?: string[];
   category: string | null;
   referralsGiven: number;
   referralsReceived: number;
@@ -229,6 +231,11 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
       // Same name in two chapters (e.g. a home member and a namesake elsewhere) merges into one
       // stat row: the home chapter must win, or the home member vanishes from home-chapter lists.
       const isHome = !!rel?.name && rel.name.trim().toLowerCase() === homeName.trim().toLowerCase();
+      if (rel?.name) {
+        const all = new Set(s.chapters ?? (s.chapter ? [s.chapter] : []));
+        all.add(rel.name);
+        if (all.size > 1) s.chapters = [...all];
+      }
       if (rel?.name && (!s.chapter || isHome)) s.chapter = rel.name;
       if (isHome) {
         s.category = m.category;
