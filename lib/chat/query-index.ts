@@ -141,11 +141,16 @@ export const CHAPTER_QUERY_TOOL = {
         },
         required: ["metric", "op", "value"],
       },
+      and: {
+        type: "array",
+        description: "More conditions ANDed with `where` (same shape), e.g. 'gave at least 10 referrals AND invited at least 2 visitors' = where {referralsGiven gte 10} + and [{visitorsInvited gte 2}]. Always use this instead of filtering a top-N list yourself.",
+        items: { type: "object", properties: { metric: { type: "string", enum: [...METRIC_KEYS] }, op: { type: "string", enum: ["eq", "gt", "gte", "lt", "lte"] }, value: { type: "number" } }, required: ["metric", "op", "value"] },
+      },
       orderBy: {
         type: "string",
         description: "Metric to sort by, '-' or 'DESC' for descending (default '-referralsGiven'). Use '+metric' / 'ASC' for least-to-most.",
       },
-      topN: { type: "integer", description: "Max rows to return (default 20, max 100)." },
+      topN: { type: "integer", description: "Max rows to return (default 20, max 150). For 'list all ...' questions pass 150 and read rowCount for the true total." },
     },
     required: ["scope"],
   },
@@ -470,8 +475,8 @@ export function executeChapterQuery(args: unknown, index: QueryIndex): Record<st
   }
 
   // Metric condition ("brought 0 visitors").
-  const w = (a.where && typeof a.where === "object" ? a.where : null) as Record<string, unknown> | null;
-  if (w) {
+  const conds = [a.where, ...(Array.isArray(a.and) ? a.and : [])].filter((c) => c && typeof c === "object") as Record<string, unknown>[];
+  for (const w of conds) {
     const metric = METRIC_KEYS.find((k) => k === w.metric);
     const value = Number(w.value);
     const op = typeof w.op === "string" ? w.op : "eq";
@@ -569,7 +574,10 @@ export const SLIP_ENTRIES_TOOL = {
         enum: ["active", "inactive", "any"],
         description: "Only when NO member is named: which members' slips to list. DEFAULT = no filter (everyone); 'active' / 'inactive' only when the question asks for them.",
       },
-      limit: { type: "integer", description: "Max entries (default 50, max 200)." },
+      minAmount: { type: "number", description: "tyfcb only: keep entries with amount strictly ABOVE this rupee value (₹10 lakh = 1000000, ₹1 crore = 10000000)." },
+      groupBy: { type: "string", enum: ["first", "second"], description: "Count the matching slips per person instead of listing them: first = per inviter / referral giver / 121 INITIATOR / TYFCB thanked member; second = per visitor / referral receiver / 121 partner / thanker. Use it for 'who initiated the most 121s', 'who received the most referrals' style questions about individual slips. Result: groups[{name,count,totalAmount?}] (top 50, largest first)." },
+      sortBy: { type: "string", enum: ["date", "amount"], description: "date = newest first (default); amount = largest first (tyfcb)." },
+      limit: { type: "integer", description: "Max entries (default 50, max 200). The result's count / totalAmount always cover ALL matches, not just the entries shown." },
     },
     required: [],
   },
@@ -583,6 +591,7 @@ export function executeSlipEntries(args: unknown, index: QueryIndex): Record<str
   const member = typeof a.member === "string" ? a.member.trim().toLowerCase() : "";
   const role = a.role === "first" || a.role === "second" ? a.role : "either";
   const limit = Math.min(200, Math.max(1, Math.floor(Number(a.limit)) || 50));
+  const minAmount = Number.isFinite(Number(a.minAmount)) && a.minAmount !== undefined && a.minAmount !== null ? Number(a.minAmount) : null;
   const weekOf = new Map(index.weeks.map((w) => [w.id, w]));
   // No status filter unless the question calls for one.
   const status = a.status === "inactive" || a.status === "active" ? a.status : "any";
@@ -601,9 +610,11 @@ export function executeSlipEntries(args: unknown, index: QueryIndex): Record<str
       const second = e.b.toLowerCase().includes(member);
       if (role === "first" ? !first : role === "second" ? !second : !(first || second)) return false;
     }
+    if (minAmount !== null && !(e.t === "tyfcb" && (e.amt ?? 0) > minAmount)) return false;
     return true;
   });
-  hits.sort((x, y) => (weekOf.get(y.w)?.date ?? "").localeCompare(weekOf.get(x.w)?.date ?? ""));
+  if (a.sortBy === "amount") hits.sort((x, y) => (y.amt ?? 0) - (x.amt ?? 0));
+  else hits.sort((x, y) => (weekOf.get(y.w)?.date ?? "").localeCompare(weekOf.get(x.w)?.date ?? ""));
 
   const entries = hits.slice(0, limit).map((e) => {
     const date = weekOf.get(e.w)?.date ?? "";
@@ -618,6 +629,20 @@ export function executeSlipEntries(args: unknown, index: QueryIndex): Record<str
         return { type: "tyfcb", date, memberThanked: e.a, thanker: e.b || null, amount: e.amt ?? 0 };
     }
   });
+  const groups =
+    a.groupBy === "first" || a.groupBy === "second"
+      ? (() => {
+          const g = new Map<string, { name: string; count: number; totalAmount: number }>();
+          for (const e of hits) {
+            const name = (a.groupBy === "first" ? e.a : e.b).replace(/s+/g, " ").trim() || "(not recorded)";
+            const cur = g.get(name.toLowerCase()) ?? { name, count: 0, totalAmount: 0 };
+            cur.count += 1;
+            cur.totalAmount += e.amt ?? 0;
+            g.set(name.toLowerCase(), cur);
+          }
+          return [...g.values()].sort((x, y) => y.count - x.count || x.name.localeCompare(y.name)).slice(0, 50);
+        })()
+      : null;
   return {
     scope: {
       kind: scope.kind,
@@ -625,6 +650,7 @@ export function executeSlipEntries(args: unknown, index: QueryIndex): Record<str
       ...(scope.unmatched ? { unmatched: scope.unmatched } : {}),
       ...(scope.hint ? { hint: scope.hint } : {}),
     },
+    ...(groups ? { groups, groupedBy: a.groupBy } : {}),
     basis: basisOf({
       chapter: null,
       status: member ? "any" : status,
@@ -633,6 +659,8 @@ export function executeSlipEntries(args: unknown, index: QueryIndex): Record<str
       memberNamed: member ? member : undefined,
     }),
     count: hits.length,
+    ...(groups ? {} : {}),
+    ...(type === "tyfcb" ? { totalAmount: Math.round(hits.reduce((s, e) => s + (e.amt ?? 0), 0)) } : {}),
     entries,
     ...(hits.length > limit ? { note: `Showing ${limit} of ${hits.length}; raise limit (max 200).` } : {}),
   };

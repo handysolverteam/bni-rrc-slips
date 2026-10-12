@@ -490,7 +490,7 @@ table.grid tfoot tr.sum-row td {
 .combo.has-value .combo-field {
   background: var(--panel);
   border-radius: 6px;
-  padding: 1px 7px;
+  padding: 7px 10px 5px;
   border-bottom: none;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
@@ -615,6 +615,27 @@ table.grid tfoot tr.sum-row td {
 .filter-form .combo-adorn { color: buttontext; opacity: 1; }
 .filter-form .combo.has-value .combo-adorn { color: buttontext; }
 .filter-form .combo-adorn:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent-hover); }
+
+/* Floating label: sits on the field's top border once a value is picked (or the list is open). */
+.combo-label, .float-label {
+  position: absolute; top: -9px; left: 10px; z-index: 2;
+  padding: 1px 6px 2px; border-radius: 4px;
+  font-size: 11px; font-weight: 600; line-height: 1.3; letter-spacing: 0.02em; text-shadow: none;
+  color: var(--muted); background: var(--panel);
+  pointer-events: none; white-space: nowrap; overflow: visible;
+}
+.combo-label { opacity: 0; transition: opacity 0.12s; }
+.combo.has-value .combo-label, .combo.is-open .combo-label, .combo:focus-within .combo-label { opacity: 1; }
+/* Header filter while typing / open: same roomy padding as the picked-value pill, so the label tab never covers the text. */
+table.grid .combo.is-open .combo-field, table.grid .combo:focus-within .combo-field { padding: 7px 10px 5px; }
+.combo.is-open .combo-input::placeholder, .combo:focus-within .combo-input::placeholder { color: transparent; }
+.filter-form .combo.is-open .combo-field, .filter-form .combo:focus-within .combo-field { border-color: var(--accent-hover); }
+.filter-form .combo-label { top: -8px; left: 12px; color: var(--muted); }
+.filter-form .combo.is-open .combo-label, .filter-form .combo:focus-within .combo-label { color: var(--accent-hover); }
+.float-field { display: inline-block; position: relative; min-width: 0; margin-top: 8px; }
+.float-field > select { width: 100%; }
+.float-field:focus-within .float-label { color: var(--accent-hover); }
+.chapter-chooser-row .float-field { flex: 1 1 260px; }
 
 label.field { display: block; font-size: 13.5px; font-weight: 600; margin-bottom: 14px; }
 label.field > input[type="file"] { margin-top: 10px; }

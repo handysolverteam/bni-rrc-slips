@@ -96,12 +96,12 @@ export default function FilterBar({
       ) : null}
       {weeks.length > 0 ? (
         <div className="filter-field">
-          <span className="filter-label">Week</span>
           <div className="week-row">
             <SearchSelect
               value={multi ? weekId : weekId.includes(",") ? "" : weekId}
               options={weeks.map((w) => ({ value: w.id, label: w.label }))}
               placeholder={multi ? "Select weeks" : "All weeks"}
+              label="Week"
               allLabel="All weeks"
               multiple={multi}
               showClear={!!weekId && weekId !== "all"}

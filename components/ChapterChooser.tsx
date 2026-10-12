@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import FloatField from "./FloatField";
 
 export type ChapterOption = { id: string; name: string };
 
@@ -65,8 +66,8 @@ export default function ChapterChooser({
 
   return (
     <div className="chapter-chooser">
-      <span className="filter-label">Import into chapter</span>
       <div className="chapter-chooser-row">
+        <FloatField label="Import into chapter">
         <select
           aria-label="Import into chapter"
           value={selection}
@@ -87,6 +88,7 @@ export default function ChapterChooser({
           ) : null}
           <option value={NEW}>＋ Type a new chapter name…</option>
         </select>
+        </FloatField>
         {selection === NEW ? (
           <input
             aria-label="New chapter name"

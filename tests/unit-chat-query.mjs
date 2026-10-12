@@ -137,4 +137,18 @@ const gemSrc = readFileSync(new URL("../lib/chat/gemini.ts", import.meta.url), "
 check("prompt: totals come from monthly[] / weekly[]", gemSrc.includes("TOTALS vs MEMBER LISTS"));
 check("prompt: filters only when relevant + always shown + informative", gemSrc.includes("APPLY ONLY WHEN RELEVANT") && gemSrc.includes("Filters applied:") && gemSrc.includes("INFORMATIVE ANSWERS") && !gemSrc.includes("ACTIVE MEMBERS ONLY BY DEFAULT"));
 
+// filter guard: a filter the question gives no cue for is dropped
+const gsrc = readFileSync(new URL("../lib/chat/filter-guard.ts", import.meta.url), "utf8");
+const g = await import("data:text/javascript;base64," + Buffer.from(ts.transpileModule(gsrc, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText).toString("base64"));
+const HC = "BNI Influencers";
+const gd = (args, q) => g.guardFilters(args, q, HC);
+check("guard: plain ranking drops home + active", (() => { const r = gd({ chapter: "home", status: "active" }, "Who gave the most referrals in the last 4 weeks?"); return r.chapter === undefined && r.status === undefined; })());
+check("guard: month question drops home filter", gd({ chapter: "BNI Influencers" }, "Top 3 referral givers in October 2026").chapter === undefined);
+check("guard: 'active members who brought 0 visitors' keeps both", (() => { const r = gd({ chapter: "home", status: "active" }, "List active members who brought 0 visitors in the last 26 weeks"); return r.chapter === "home" && r.status === "active"; })());
+check("guard: who-did-not list keeps active even without the word", (() => { const r = gd({ chapter: "home", status: "active" }, "Which members brought 0 visitors?"); return r.chapter === "home" && r.status === "active"; })());
+check("guard: inactive kept when asked, dropped when not", gd({ status: "inactive" }, "Which inactive members brought visitors?").status === "inactive" && gd({ status: "inactive" }, "Top 3 givers").status === undefined);
+check("guard: 'our chapter' keeps home", gd({ chapter: "home" }, "Who in our chapter gave the most?").chapter === "home");
+check("guard: another chapter is never stripped", gd({ chapter: "Alchemist" }, "Top givers in Alchemist").chapter === "Alchemist");
+check("guard: follow-up inherits cue from history text", gd({ chapter: "home", status: "active" }, "How many did they bring? active members of our chapter").status === "active");
+
 console.log(`TOTAL: ${pass} passed, ${fail} failed`);

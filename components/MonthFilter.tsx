@@ -20,11 +20,11 @@ export default function MonthFilter({
   return (
     <div className="filter-form">
       <div className="filter-field">
-        <span className="filter-label">Months</span>
         <SearchSelect
           value={value}
           options={months.map((m) => ({ value: m.key, label: m.label }))}
           placeholder="Last 6 months"
+          label="Months"
           allLabel="Last 6 months"
           multiple
           showClear={!!value}

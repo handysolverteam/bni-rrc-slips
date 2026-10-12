@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import FloatField from "./FloatField";
 
 type Tenant = { id: string; name: string };
 
@@ -53,6 +54,7 @@ export default function SettingsPanel({
         <h2>Active chapter</h2>
         <p className="muted">Everything you see and import belongs to this chapter.</p>
         <div className="settings-row">
+          <FloatField label="Active chapter">
           <select aria-label="Active chapter" value={active} disabled={busy} onChange={(e) => setActive(e.target.value)}>
             {tenants.map((t) => (
               <option key={t.id} value={t.id}>
@@ -60,6 +62,7 @@ export default function SettingsPanel({
               </option>
             ))}
           </select>
+          </FloatField>
           <button
             type="button"
             className="primary"
@@ -78,6 +81,7 @@ export default function SettingsPanel({
           confirm each one in the import preview).
         </p>
         <div className="settings-row">
+          <FloatField label="Home chapter">
           <select aria-label="Home chapter" value={home} disabled={busy} onChange={(e) => setHome(e.target.value)}>
             {homeOptions.map((n) => (
               <option key={n} value={n}>
@@ -85,6 +89,7 @@ export default function SettingsPanel({
               </option>
             ))}
           </select>
+          </FloatField>
           <button
             type="button"
             className="primary"

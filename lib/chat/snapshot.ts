@@ -54,7 +54,13 @@ export type SlipsSnapshot = {
   chapterName: string;
   generatedAt: string;
   totals: {
+    /** Every member row imported (home chapter + other chapters). */
     members: number;
+    /** Roster split: our home chapter's members (active + inactive) and members of other chapters. */
+    homeMembers: number;
+    homeActive: number;
+    homeInactive: number;
+    otherChapterMembers: number;
     weeks: number;
     referrals: number;
     oneToOnes: number;
@@ -426,6 +432,10 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
     generatedAt: new Date().toISOString(),
     totals: {
       members: membersRows.length,
+      homeMembers: roster.filter((r) => r.home).length,
+      homeActive: roster.filter((r) => r.home && r.active).length,
+      homeInactive: roster.filter((r) => r.home && !r.active).length,
+      otherChapterMembers: roster.filter((r) => !r.home).length,
       weeks: weeksRows.length,
       referrals,
       oneToOnes,

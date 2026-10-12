@@ -18,6 +18,7 @@ export default function SearchSelect({
   value,
   options,
   placeholder,
+  label,
   allLabel,
   showClear = true,
   multiple = false,
@@ -26,6 +27,8 @@ export default function SearchSelect({
   value: string;
   options: ComboOption[];
   placeholder: string;
+  /** Floating label shown on the field's top border once a value is picked / the list is open (default: the placeholder). */
+  label?: string;
   allLabel?: string;
   /** Render the ✕ button inside the field (week box relies on the "All" item). */
   showClear?: boolean;
@@ -170,10 +173,11 @@ export default function SearchSelect({
 
   return (
     <span
-      className={`combo${value ? " has-value" : ""}`}
+      className={`combo${value ? " has-value" : ""}${open ? " is-open" : ""}`}
       ref={ref}
       onClick={(e) => e.stopPropagation()}
     >
+      <span className="combo-label" aria-hidden="true">{label ?? placeholder}</span>
       <span className="combo-field">
         <input
           className="combo-input"

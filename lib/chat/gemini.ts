@@ -1,4 +1,5 @@
 import type { SlipsSnapshot } from "./snapshot";
+import { guardFilters } from "./filter-guard";
 import {
   CHAPTER_QUERY_TOOL,
   SLIP_ENTRIES_TOOL,
@@ -187,6 +188,12 @@ function buildSystemInstruction(snapshot: SlipsSnapshot): string {
     "Date questions: to answer things like '30 September meet', 'week of 30/09/2026' or a specific meeting date, match the date against weekly[] entries' meetingDate or label and answer ONLY from the matching entry. For 'this week', 'latest week' or 'give for latest week' use latestWithDataLabel (the newest week that actually has slips) — weekly[0] can be an upcoming week with no slips yet; if a matched week has all zeros, say that meeting has no slips yet and use latestWithDataLabel instead. recentWeeks lists the latest 12 week labels. If nothing matches the date, say which weeks exist (the nearest two or three) instead of guessing.",
     "MEMBER-LEVEL AND SCOPED QUESTIONS: use the chapter_query TOOL — it answers from the full member × week index for ANY scope (one meeting week, a month, a date range, the latest week, the last N weeks or months, all-time) with chapter / active-status filters, a metric condition (where), metric selection, sorting and a row limit. It also carries PALMS attendance metrics (present, absent, medical, substitute, leave). For 'members who did NOT do X' / 'brought 0 visitors' / 'zero referrals' set chapter ('home' for our chapter), status ('active'), a where condition (e.g. visitorsInvited eq 0) and a large topN — the tool includes members with no activity, so never list such members from memory or from members[]. 'Last 26 weeks' or 'last 6 months' = scope kind recent (weeks: 26 or months: 6), counted back from the newest week with data. Call it for every 'who did X' question with a time scope, every top-N/ranking over a period, every unique-count question for a period, inside/outside per-member splits, and any question naming members together with a scope. Answer ONLY from the tool result: scope (matched week labels; when nothing matched it includes unmatched + hint with the nearest weeks — relay that and ask which week they meant), rowCount (members matching before the row limit), distinct (unique givers/receivers/participants/tyfcb receivers counts), totals (sums), rows (per-member values, limited by topN). Use members[] only for plain all-time facts and weekly[] for whole-chapter week totals so simple questions stay fast. NEVER say data is unavailable, not possible, or 'not available in this snapshot' for a data question — first try chapter_query; only if every attempt genuinely fails, say the query could not be completed and suggest a simpler wording.",
     "FILTERS — APPLY ONLY WHEN RELEVANT: do not filter by default. Apply the HOME CHAPTER filter (chapter 'home') only when the question is about our chapter's own members (it says home chapter / our chapter / BNI Influencers, or it is a who-did-NOT / zero-activity list of members, which only makes sense for our roster). Apply the ACTIVE filter (status 'active') only when the question says active / current members, or is such a who-did-NOT list of our members. Use status 'inactive' only when the question asks about inactive members. Otherwise (rankings of everyone, totals, comparisons, 'top 3 referral givers', individual slips) apply NO filter: count everyone — all chapters in the data, active and inactive. 'All members', 'active and inactive both' or 'including inactive' mean no status filter and never the home chapter. In members[] a member with inactive:true is inactive — leave them out only when an active filter applies.",
+    "LISTS AND CONDITIONS: for 'list all ...' questions call chapter_query with topN 150 and name EVERY row (rowCount is the true total); never say you are showing only the first 20 when rowCount is higher without raising topN. Several conditions at once ('at least 10 referrals AND 2 visitors', 'both 0 referrals and 0 visitors') = ONE chapter_query with where + and[] — never intersect top-N lists yourself. 'Last week' / 'this week' = the latest meeting week (weekly[0]). The 121 count in chapter_query is PARTICIPATION (either side of the meeting); for who INITIATED / was met by use slip_entries with type oneToOne and groupBy first / second. The data holds no reasons for absences — when asked why someone missed a meeting say the reason is not recorded and give only the attendance status (present / absent / medical / substitute / leave).",
+    "NAMES: match a name the user typed only when it matches a roster / members[] name as typed (case, spacing and a leading/trailing part ignored). If NO member matches, answer that no member by that name was found, and at most suggest 1-3 close names with 'Did you mean …?' — NEVER answer about a similar name as if the user had asked for it, and never run a lookup for the suggestion unless the user confirms.",
+    "FILTER EXAMPLES: 'Top 3 referral givers in October 2026' -> NO filters (chapter and status unset); 'How many referrals in August' -> no filters (whole-chapter total); 'who brought 0 visitors' / 'active members who ...' -> chapter 'home' + status 'active'; 'which inactive members ...' -> status 'inactive'. A month or week in the question never means the home chapter, and neither does the word 'top'.",
+    "For a member-count answer the filter line is 'Filters applied: Home chapter (<name>) · all members (active and inactive)' (or '· active members only'), never 'none'.",
+    "MEMBER COUNTS: 'how many members' (with or without 'including inactive') means OUR chapter's roster — use totals.homeMembers (active + inactive), totals.homeActive and totals.homeInactive, and say the split (e.g. '97 members: 77 active + 20 inactive'). Members of other chapters imported = totals.otherChapterMembers (totals.members is the grand total of every imported row, only quote it when the user asks about all chapters together).",
+    "WINDOWS & COMPOUND QUESTIONS: a question with two time windows ('last 4 weeks and last 12 weeks') needs one chapter_query call PER window — answer each window only from its own tool result, never reuse one window's figures for the other. Never answer a 'last N weeks / months' ranking from members[] or weekly[]. For TYFCB entries above an amount or the largest TYFCB entries use slip_entries with type tyfcb, minAmount and sortBy amount, and report count and totalAmount from the result (they cover all matches even when entries is cut at the limit); never describe a result as a 'sample'.",
     "ALWAYS SHOW THE FILTERS: every data answer ends with one line starting 'Filters applied:' that says either 'none' (then add in brackets what that covers: all chapters, active and inactive members) or exactly which filters were applied (for example 'Home chapter (BNI Influencers) · active members only'), followed by the period covered (for example 'Period: 26 meetings, 15 Apr – 7 Oct 2026'). Take it from the tool result's filtersApplied / filtersSummary / basis fields; for answers read straight from weekly[] / monthly[] / totals say 'none (whole chapter totals — all members, active and inactive)'. If an earlier answer in this conversation used different filters for the same figure, say so and why. Never present a number without making clear whether a filter changed it.",
     "INFORMATIVE ANSWERS: lead with the direct answer, then add useful context in a few short lines — how many matched out of how many (e.g. '40 of 77 active members'), the period, the top / bottom items or a short breakdown (inside vs outside, per week or month), and a comparison, share or trend when it helps — without padding. Keep names exact and lists compact (comma-separated with a total count).",
     "INDIVIDUAL SLIPS WITH DATES: use the slip_entries TOOL for 'which visitors did X bring and on which dates', 'who did X refer', 'list the TYFCB of X' or any question needing the guest names / meeting dates behind the counts. Visitor, referral, 121 and TYFCB entries all carry their meeting date there — never say dates are not stored.",
@@ -295,13 +302,13 @@ async function callModel(
   }
 }
 
-function executeToolCall(call: { name: string; args: unknown }, index: QueryIndex): unknown {
+function executeToolCall(call: { name: string; args: unknown }, index: QueryIndex, cueText = ""): unknown {
   if (call.name !== CHAPTER_QUERY_TOOL.name && call.name !== SLIP_ENTRIES_TOOL.name) {
     return { error: `Unknown tool: ${call.name}` };
   }
   try {
     if (call.name === SLIP_ENTRIES_TOOL.name) return executeSlipEntries(call.args, index);
-    return executeChapterQuery(call.args, index);
+    return executeChapterQuery(guardFilters(call.args, cueText, index.homeChapter), index);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "query failed" };
   }
@@ -320,7 +327,7 @@ export async function askGemini(
   index: QueryIndex,
   history: ChatHistoryMessage[] = [],
   attachments: ChatAttachment[] = [],
-  temperature = 0.2,
+  temperature = 0,
 ): Promise<GeminiResult> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) return { text: null, detail: "missing GEMINI_API_KEY" };
@@ -351,7 +358,11 @@ export async function askGemini(
   const contents: unknown[] = [
     { role: "user", parts: [{ text: combinedPrompt }, ...attachmentParts] },
   ];
+  // Words the member actually used (this question + their recent ones) decide which filters may apply.
+  const cueText = [prompt, ...(history ?? []).filter((m) => m.sender === "user").slice(-3).map((m) => m.text)].join(" ");
   const failures: string[] = [];
+  let lastBasis: string | null = null;
+  let usedTool = false;
   const toolsBroken = new Set<string>();
 
   for (let round = 0; round < 3; round++) {
@@ -370,8 +381,16 @@ export async function askGemini(
         // truncation" and confabulating a reason for it. The suggestions block
         // is parsed first so the notice appended here never lands inside it.
         const { text: answer, suggestions } = extractSuggestions(attempt.text);
+        // The model sometimes drops the required line: add it from the last tool basis (or the
+        // whole-chapter default for an answer read straight from the snapshot) so it is never missing.
+        const needsLine = !/filters applied:/i.test(answer) && (usedTool || /d/.test(answer));
+        const withLine = needsLine
+          ? `${answer.trimEnd()}
+
+Filters applied: ${lastBasis ?? "none (whole chapter totals — all members, active and inactive)"}`
+          : answer;
         return {
-          text: attempt.truncated ? answer + TRUNCATION_NOTICE : answer,
+          text: attempt.truncated ? withLine + TRUNCATION_NOTICE : withLine,
           suggestions,
         };
       }
@@ -386,9 +405,13 @@ export async function askGemini(
     // Execute every requested call and hand the results back for the next round.
     // The model turn echoes each raw part verbatim (thoughtSignature included).
     const modelParts = calls.map((c) => c.part);
-    const responseParts = calls.map((c) => ({
-      functionResponse: { name: c.name, response: { json: executeToolCall(c, index) } },
-    }));
+    const responseParts = calls.map((c) => {
+      const result = executeToolCall(c, index, cueText);
+      usedTool = true;
+      const b = (result as { basis?: { filtersSummary?: string } } | null)?.basis;
+      if (b?.filtersSummary) lastBasis = b.filtersSummary;
+      return { functionResponse: { name: c.name, response: { json: result } } };
+    });
     contents.push({ role: "model", parts: modelParts });
     contents.push({ role: "user", parts: responseParts });
   }
