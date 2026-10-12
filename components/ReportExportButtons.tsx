@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import ExportNameDialog from "@/components/ExportNameDialog";
+import { reportDefaultName } from "@/lib/export-name";
 
 const FORMATS = ["xlsx", "csv", "pdf"] as const;
 
@@ -23,13 +25,8 @@ export default function ReportExportButtons({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const scopePart = scopeLabel
-    .replace(/[^a-z0-9]+/gi, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-  const fallbackName = (format: string) =>
-    `week-report-${scopePart || "data"}${tab === "all" ? "" : `-${tab}`}.${format}`;
+  // The format waiting for a file name (modal open) and the suggested name.
+  const [asking, setAsking] = useState<{ format: string; name: string } | null>(null);
 
   function downloadViaNavigation(endpoint: string, filename: string) {
     // Fallback path: top-level navigation download (bypasses fetch hooks).
@@ -43,7 +40,7 @@ export default function ReportExportButtons({
     a.remove();
   }
 
-  async function downloadPdf() {
+  async function downloadPdf(fileName: string) {
     // PDF bytes get swallowed between this server and this browser (server
     // logs 200, browser sees 204) — so build the file here from JSON data,
     // which passes through untouched.
@@ -131,10 +128,21 @@ export default function ReportExportButtons({
       });
       first = false;
     }
-    doc.save(data.filename);
+    doc.save(`${fileName}.pdf`);
   }
 
-  async function download(format: string) {
+  /** Opens the file-name modal, prefilled from the filters currently on screen. */
+  function ask(format: string) {
+    if (busy || !weekId) return;
+    const name = reportDefaultName({
+      scopeLabel,
+      tab,
+      query: new URLSearchParams(window.location.search),
+    });
+    setAsking({ format, name });
+  }
+
+  async function download(format: string, fileName: string) {
     if (busy || !weekId) return;
     setBusy(format);
     setError(null);
@@ -149,7 +157,7 @@ export default function ReportExportButtons({
     const endpoint = `/api/report/export?${endpointParams.toString()}&format=${format}`;
     try {
       if (format === "pdf") {
-        await downloadPdf();
+        await downloadPdf(fileName);
         return;
       }
       const res = await fetch(endpoint);
@@ -162,12 +170,10 @@ export default function ReportExportButtons({
         // Something between the server and this page emptied the reply
         // (curl proves the bytes leave the server intact) — retry as a
         // plain navigation download instead of failing silently.
-        downloadViaNavigation(endpoint, fallbackName(format));
+        downloadViaNavigation(endpoint, `${fileName}.${format}`);
         return;
       }
-      const disposition = res.headers.get("Content-Disposition") ?? "";
-      const nameMatch = disposition.match(/filename="([^"]+)"/);
-      const filename = nameMatch ? nameMatch[1] : `week-report.${format}`;
+      const filename = `${fileName}.${format}`;
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;
@@ -188,12 +194,24 @@ export default function ReportExportButtons({
       <span className="export-title">Export</span>
       <span className="seg-group">
         {FORMATS.map((f) => (
-          <button key={f} type="button" disabled={busy !== null} onClick={() => download(f)}>
+          <button key={f} type="button" disabled={busy !== null} onClick={() => ask(f)}>
             {busy === f ? "Preparing…" : f.toUpperCase()}
           </button>
         ))}
       </span>
       {error ? <span className="preview-warn">Export failed: {error}</span> : null}
+      {asking ? (
+        <ExportNameDialog
+          defaultName={asking.name}
+          ext={asking.format}
+          onCancel={() => setAsking(null)}
+          onConfirm={(name) => {
+            const f = asking.format;
+            setAsking(null);
+            void download(f, name);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import ExportNameDialog from "@/components/ExportNameDialog";
+import { attendanceDefaultName } from "@/lib/export-name";
 
 const FORMATS = ["xlsx", "csv", "pdf"] as const;
 
@@ -22,13 +24,7 @@ export default function PalmsExportButtons({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const scopePart = scopeLabel
-    .replace(/[^a-z0-9]+/gi, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-  const fallbackName = (format: string) =>
-    `palms-report-${scopePart || "report"}.${format}`;
+  const [asking, setAsking] = useState<{ format: string; name: string } | null>(null);
 
   function downloadViaNavigation(endpoint: string, filename: string) {
     // Fallback path: top-level navigation download (bypasses fetch hooks).
@@ -42,7 +38,7 @@ export default function PalmsExportButtons({
     a.remove();
   }
 
-  async function downloadPdf() {
+  async function downloadPdf(fileName: string) {
     // Same byte-swallowing workaround as the report: build the PDF here
     // from JSON data, which passes through untouched.
     const endpoint = buildEndpoint("json");
@@ -68,7 +64,7 @@ export default function PalmsExportButtons({
       styles: { fontSize: 7 },
       headStyles: { fillColor: [214, 84, 44], textColor: 255 },
     });
-    doc.save(data.filename);
+    doc.save(`${fileName}.pdf`);
   }
 
   function buildEndpoint(format: string): string {
@@ -82,14 +78,20 @@ export default function PalmsExportButtons({
     return `/api/palms/export?${params.toString()}&format=${format}`;
   }
 
-  async function download(format: string) {
+  /** Opens the file-name modal, prefilled from the week scope on screen. */
+  function ask(format: string) {
+    if (busy || !weekId) return;
+    setAsking({ format, name: attendanceDefaultName({ scopeLabel }) });
+  }
+
+  async function download(format: string, fileName: string) {
     if (busy || !weekId) return;
     setBusy(format);
     setError(null);
     const endpoint = buildEndpoint(format);
     try {
       if (format === "pdf") {
-        await downloadPdf();
+        await downloadPdf(fileName);
         return;
       }
       const res = await fetch(endpoint);
@@ -99,12 +101,10 @@ export default function PalmsExportButtons({
       }
       const blob = await res.blob();
       if (blob.size === 0) {
-        downloadViaNavigation(endpoint, fallbackName(format));
+        downloadViaNavigation(endpoint, `${fileName}.${format}`);
         return;
       }
-      const disposition = res.headers.get("Content-Disposition") ?? "";
-      const nameMatch = disposition.match(/filename="([^"]+)"/);
-      const filename = nameMatch ? nameMatch[1] : `palms-report.${format}`;
+      const filename = `${fileName}.${format}`;
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;
@@ -125,12 +125,24 @@ export default function PalmsExportButtons({
       <span className="export-title">Export</span>
       <span className="seg-group">
         {FORMATS.map((f) => (
-          <button key={f} type="button" disabled={busy !== null} onClick={() => download(f)}>
+          <button key={f} type="button" disabled={busy !== null} onClick={() => ask(f)}>
             {busy === f ? "Preparing…" : f.toUpperCase()}
           </button>
         ))}
       </span>
       {error ? <span className="preview-warn">Export failed: {error}</span> : null}
+      {asking ? (
+        <ExportNameDialog
+          defaultName={asking.name}
+          ext={asking.format}
+          onCancel={() => setAsking(null)}
+          onConfirm={(name) => {
+            const f = asking.format;
+            setAsking(null);
+            void download(f, name);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

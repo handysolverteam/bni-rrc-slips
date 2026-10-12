@@ -1496,3 +1496,9 @@ button.wa-btn:active:not(:disabled) { background: #1fbf5b; }
 /* Sr. No. column on every table */
 .grid th.idx, .grid td.idx { width: 64px; min-width: 56px; text-align: center; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
 .grid th.idx { color: inherit; }
+
+/* Export file-name dialog */
+.export-name-dialog { max-width: 520px; width: 100%; }
+.export-name-row { display: flex; align-items: center; gap: 8px; margin: 12px 0 4px; }
+.export-name-row input { flex: 1 1 auto; min-width: 0; }
+.export-name-ext { font-weight: 700; color: var(--muted); }
