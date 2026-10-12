@@ -1366,7 +1366,7 @@ form + .preview-warn { margin-top: 12px; }
    rows) follows its first letter. Blank = never imported. */
 .plm { font-weight: 700; text-align: center; }
 /* Week-date header sits over its letters: same centring as the cells below. */
-th.plm-h { text-align: center; }
+table.grid th.plm-h { text-align: center; }
 .plm-p { color: var(--plm-p); }
 .plm-a { color: var(--plm-a); }
 .plm-m { color: var(--plm-m); }
@@ -1498,6 +1498,9 @@ button.wa-btn:active:not(:disabled) { background: #1fbf5b; }
    (box 340px + gap + checkbox), so the checkbox never spills over the legend / buttons beside it. */
 .report-controls-row .filter-form:has(.week-row) { flex: none; }
 .report-controls-row .filter-form .filter-field:has(.week-row) { flex: none; min-width: max-content; }
+/* The week box has a fixed width inside the row (a % width here made the box fill the field and push the checkbox out). */
+.filter-form .filter-field .week-row .combo { flex: 0 0 340px; width: 340px; min-width: 0; }
+@media (max-width: 640px) { .filter-form .filter-field .week-row .combo { flex: 1 1 100%; width: 100%; } }
 .table-multi-toggle { margin: 0 0 8px; }
 @media (max-width: 640px) {
   .filter-form .filter-field:has(.week-row) { flex: 1 1 100%; }
