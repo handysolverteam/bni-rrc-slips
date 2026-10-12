@@ -1,5 +1,6 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paged";
+import { decodeCommas } from "@/lib/list-filters";
 import { createTtlCache, sharedState } from "@/lib/cache";
 
 export type ReportSectionKey = "one-to-one" | "referral" | "tyfcb" | "visitor" | "ceu";
@@ -211,7 +212,7 @@ export async function fetchReportSections(
   // Multi-select cell filter: "a" keeps rows containing "a"; "a,b" keeps a
   // row matching ANY value (OR). Picks come from the distinct-value dropdown.
   const terms = (v: string | undefined): string[] =>
-    (v ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    (v ?? "").split(",").map((s) => decodeCommas(s.trim()).toLowerCase()).filter(Boolean);
   const matchAny = (hay: string, list: string[]): boolean =>
     list.length === 0 || list.some((t) => hay.toLowerCase().includes(t));
   const applyFilter = (key: ReportSectionKey, rows: ReportRow[]): ReportRow[] => {

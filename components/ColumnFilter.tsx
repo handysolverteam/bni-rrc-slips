@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { useMultiSelect } from "@/components/MultiSelectToggle";
 import SearchSelect, { type ComboOption } from "@/components/SearchSelect";
+import { decodeCommas, encodeCommas } from "@/lib/list-filters";
 
 /**
  * Column filter as a searchable dropdown. Options are distinct values
@@ -42,7 +43,12 @@ export default function ColumnFilter({
   const multi = msOn || defaultValue.includes(",");
   // Keep the current value visible even when it is missing from the options
   // (multi: one entry per missing part, never the raw comma string).
-  const optionValues = options.map((o) => (typeof o === "string" ? o : o.value));
+  // A comma inside one option value (chapter "Champions, Gurgaon, India") must not read as a
+  // multi-select separator: its value travels with the comma encoded, its label stays readable.
+  const encoded: ComboOption[] = options.map((o) =>
+    typeof o === "string" ? { value: encodeCommas(o), label: o } : { value: encodeCommas(o.value), label: o.label },
+  );
+  const optionValues = encoded.map((o) => (typeof o === "string" ? o : o.value));
   const parts = defaultValue
     ? multi
       ? defaultValue.split(",").map((s) => s.trim()).filter(Boolean)
@@ -50,8 +56,8 @@ export default function ColumnFilter({
     : [];
   const missing = parts
     .filter((v) => !optionValues.includes(v))
-    .map((v) => ({ value: v, label: v }));
-  const list = missing.length > 0 ? [...missing, ...options] : options;
+    .map((v) => ({ value: v, label: decodeCommas(v) }));
+  const list = missing.length > 0 ? [...missing, ...encoded] : encoded;
 
   function apply(value: string) {
     if (onApply) {

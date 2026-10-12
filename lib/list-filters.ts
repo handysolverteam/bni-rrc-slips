@@ -1,6 +1,15 @@
-/** Split a comma-separated multi-select value into trimmed, non-empty parts. */
+/**
+ * A filter value may itself contain commas (chapter names: "Champions, Gurgaon, India"), but the
+ * URL joins multi-selects with ",". So a comma INSIDE one option is carried as U+201A (a low
+ * quote that looks like a comma) and turned back into a real comma where the value is used.
+ */
+export const COMMA_IN_VALUE = "‚";
+export const encodeCommas = (v: string): string => v.replace(/,/g, COMMA_IN_VALUE);
+export const decodeCommas = (v: string): string => v.split(COMMA_IN_VALUE).join(",");
+
+/** Split a comma-separated multi-select value into trimmed, non-empty parts (commas inside a value restored). */
 export function multiParts(value: string): string[] {
-  return value.split(",").map((s) => s.trim()).filter(Boolean);
+  return value.split(",").map((s) => decodeCommas(s.trim())).filter(Boolean);
 }
 
 type Filterable = {
