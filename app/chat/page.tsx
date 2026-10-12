@@ -3,15 +3,28 @@
 import { useCallback, useEffect, useState } from "react";
 import ChatBox from "@/components/ChatBox";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { useAuth } from "@/context/AuthContext";
 
 export type ChatSession = {
   id: string;
   title: string;
   created_at: string;
   updated_at: string;
+  /** The account that owns the chat; only the owner can write to it. */
+  owner_uid?: string | null;
+  owner_name?: string | null;
+  owner_email?: string | null;
+  /** True for the caller's own chats: only those can be renamed / deleted / cleared (anyone can read and write in any chat). */
+  mine: boolean;
 };
 
+/** Sidebar section title of an account: its name, else a short id. */
+const accountLabel = (s: ChatSession): string =>
+  s.owner_name?.trim() || s.owner_email?.trim() || (s.owner_uid ? `Account ${s.owner_uid.slice(0, 6)}` : "Unassigned chats");
+
 export default function ChatPage() {
+  const { user } = useAuth();
+  const myName = user?.displayName || user?.email || "";
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   // Bumped only when the user explicitly switches chats: creating a session
@@ -24,7 +37,8 @@ export default function ChatPage() {
 
   const refreshSessions = useCallback(async (selectId?: string) => {
     try {
-      const res = await fetch("/api/chat/sessions");
+      // `name` back-fills the owner label on this account's older chats.
+      const res = await fetch(`/api/chat/sessions${myName ? `?name=${encodeURIComponent(myName)}` : ""}`);
       const data = await res.json();
       if (Array.isArray(data.sessions)) {
         setSessions(data.sessions);
@@ -42,7 +56,7 @@ export default function ChatPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [myName]);
 
   useEffect(() => {
     refreshSessions();
@@ -71,6 +85,22 @@ export default function ChatPage() {
     }).catch(() => {});
   }
 
+  // Sections: the caller's own chats first, then one section per other account
+  // (most recently active account first). Sessions arrive newest-first already.
+  const groups = (() => {
+    const mine = sessions.filter((s) => s.mine);
+    const out: { key: string; label: string; own: boolean; sessions: ChatSession[] }[] = [];
+    if (mine.length > 0) out.push({ key: "mine", label: "Your chats", own: true, sessions: mine });
+    const byOwner = new Map<string, ChatSession[]>();
+    for (const s of sessions) {
+      if (s.mine) continue;
+      const k = s.owner_uid ?? "none";
+      byOwner.set(k, [...(byOwner.get(k) ?? []), s]);
+    }
+    for (const [k, list] of byOwner) out.push({ key: k, label: accountLabel(list[0]), own: false, sessions: list });
+    return out;
+  })();
+
   return (
     <div>
       <div className="page-head">
@@ -95,8 +125,14 @@ export default function ChatPage() {
           ) : sessions.length === 0 ? (
             <p className="muted">No chats yet — start one.</p>
           ) : (
-            <ul>
-              {sessions.map((s) => (
+            <div className="chat-groups">
+              {groups.map((g) => (
+                <div key={g.key} className="chat-group">
+                  <h3 className="chat-group-title" title={g.sessions[0]?.owner_email ?? undefined}>
+                    {g.label}
+                  </h3>
+                  <ul>
+              {g.sessions.map((s) => (
                 <li key={s.id} className={s.id === activeId ? "active" : undefined}>
                   {renamingId === s.id ? (
                     <input
@@ -123,6 +159,7 @@ export default function ChatPage() {
                       >
                         {s.title}
                       </button>
+                      {s.mine ? (
                       <span className="chat-session-actions">
                         <button
                           type="button"
@@ -138,11 +175,15 @@ export default function ChatPage() {
                           🗑
                         </button>
                       </span>
+                      ) : null}
                     </>
                   )}
                 </li>
               ))}
-            </ul>
+                  </ul>
+                </div>
+              ))}
+            </div>
           )}
         </aside>
 
@@ -151,6 +192,12 @@ export default function ChatPage() {
             key={epoch}
             sessionId={activeId}
             chatTitle={sessions.find((s) => s.id === activeId)?.title ?? ""}
+            ownerName={myName}
+            chatOwner={(() => {
+              const s = sessions.find((x) => x.id === activeId);
+              return s ? (s.mine ? myName : accountLabel(s)) : myName;
+            })()}
+            canManage={sessions.find((s) => s.id === activeId)?.mine ?? true}
             onSessionCreated={(id) => refreshSessions(id)}
             onActivity={() => refreshSessions()}
           />

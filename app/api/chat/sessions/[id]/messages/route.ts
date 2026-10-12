@@ -2,24 +2,23 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 /** chat_messages has no tenant_id of its own — scope through its session.
- *  Tenant + (when the caller has a uid) owner: another user's session 404s. */
-async function requireOwnSession(
+ *  READING is open to every member of the chapter (tenant scope only); CLEARING is
+ *  owner-only (`ownerOnly`: another account's chat 404s). A chat of another chapter
+ *  always 404s. */
+async function requireSession(
   ctx: { tenantId: string; uid?: string | null },
   sessionId: string,
+  ownerOnly: boolean,
 ): Promise<Response | null> {
   const sb = getSupabaseServer();
-  let query = sb
-    .from("chat_sessions")
-    .select("id")
-    .eq("id", sessionId)
-    .eq("tenant_id", ctx.tenantId);
-  if (ctx.uid) query = query.eq("owner_uid", ctx.uid);
+  let query = sb.from("chat_sessions").select("id").eq("id", sessionId).eq("tenant_id", ctx.tenantId);
+  if (ownerOnly && ctx.uid) query = query.eq("owner_uid", ctx.uid);
   const { data } = await query.maybeSingle();
   if (!data) return Response.json({ error: "Chat not found." }, { status: 404 });
   return null;
 }
 
-/** List messages of a chat session, oldest first. */
+/** List messages of a chat session, oldest first (any member of the chapter may read). */
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -29,7 +28,7 @@ export async function GET(
     if (!ctx) return unauthorized();
     if ("noAccess" in ctx) return forbidden();
     const { id } = await params;
-    const denied = await requireOwnSession(ctx, id);
+    const denied = await requireSession(ctx, id, false);
     if (denied) return denied;
     const sb = getSupabaseServer();
     const { data, error } = await sb
@@ -58,7 +57,7 @@ export async function DELETE(
     if (!ctx) return unauthorized();
     if ("noAccess" in ctx) return forbidden();
     const { id } = await params;
-    const denied = await requireOwnSession(ctx, id);
+    const denied = await requireSession(ctx, id, true);
     if (denied) return denied;
     const sb = getSupabaseServer();
     const { error } = await sb.from("chat_messages").delete().eq("session_id", id);

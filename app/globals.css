@@ -1482,3 +1482,13 @@ button.wa-btn:active:not(:disabled) { background: #1fbf5b; }
 .chapter-chooser { margin-top: 10px; }
 .chapter-chooser-hint { margin: 6px 0 0; }
 .chapter-chooser .filter-label { display: block; margin-bottom: 4px; }
+
+/* ---------- Chat: every account's chats, grouped per account ---------- */
+.chat-groups { display: flex; flex-direction: column; gap: 14px; }
+.chat-group-title { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.chat-readonly { margin: 8px 0; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; background: var(--panel); font-size: 14px; }
+.chat-chips[hidden], .chat-input[hidden] { display: none !important; }
+/* Chat sidebar sections: heading sits in line with the chat titles, with air above */
+.chat-sidebar .chat-groups { margin-top: 18px; gap: 18px; }
+.chat-sidebar .chat-group-title { margin: 0; padding: 0 12px; line-height: 1.2; }
+.chat-sidebar .chat-group ul { margin-top: 6px; }

@@ -1,15 +1,17 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
-/** Scope helper: tenant + (when the caller has a uid) owner — so users only
- *  ever touch their own chats; plain service callers (no uid) touch all. */
+/** Scope helper for CHANGES (rename / delete): tenant + (when the caller has a uid)
+ *  owner — only the account that started a chat can rename or delete it. Anyone in
+ *  the chapter can read and write in it (see the messages / generate routes);
+ *  plain service callers (no uid) are root. */
 function scope(ctx: { tenantId: string; uid?: string | null }, sb: ReturnType<typeof getSupabaseServer>) {
   let query = sb.from("chat_sessions").select("id").eq("tenant_id", ctx.tenantId);
   if (ctx.uid) query = query.eq("owner_uid", ctx.uid);
   return query;
 }
 
-/** Rename a chat session (tenant + owner scoped: another's session 404s). */
+/** Rename a chat session (owner only: another account's chat 404s). */
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -43,7 +45,7 @@ export async function PATCH(
   }
 }
 
-/** Delete a chat session and all its messages (tenant + owner scoped). */
+/** Delete a chat session and all its messages (owner only: another account's chat 404s). */
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> },

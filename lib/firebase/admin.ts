@@ -157,3 +157,53 @@ export async function consumeSsoExchangeCode(code: string): Promise<string | nul
 
   return record.uid;
 }
+
+let cachedAdminApiToken: CachedAccessToken | null = null;
+
+/** OAuth2 access token for the Identity Toolkit admin API (separate scope + cache from the RTDB token above). */
+async function getAdminApiToken(): Promise<string> {
+  assertConfigured();
+  if (cachedAdminApiToken && cachedAdminApiToken.expiresAt - Date.now() > 60_000) return cachedAdminApiToken.token;
+  const key = await getPrivateKey();
+  const now = Math.floor(Date.now() / 1000);
+  const assertion = await new SignJWT({ scope: "https://www.googleapis.com/auth/cloud-platform" })
+    .setProtectedHeader({ alg: "RS256" })
+    .setIssuedAt(now)
+    .setExpirationTime(now + 3600)
+    .setIssuer(ADMIN_CLIENT_EMAIL)
+    .setSubject(ADMIN_CLIENT_EMAIL)
+    .setAudience("https://oauth2.googleapis.com/token")
+    .sign(key);
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion }),
+  });
+  if (!response.ok) throw new Error(`Failed to obtain admin API token: ${response.status}`);
+  const data = (await response.json()) as { access_token: string; expires_in: number };
+  cachedAdminApiToken = { token: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
+  return data.access_token;
+}
+
+/** Display name + e-mail of Firebase accounts by uid (missing uids are simply absent from the map). */
+export async function lookupFirebaseUsers(
+  uids: string[],
+): Promise<Map<string, { name: string | null; email: string | null }>> {
+  const out = new Map<string, { name: string | null; email: string | null }>();
+  if (uids.length === 0) return out;
+  const token = await getAdminApiToken();
+  for (let i = 0; i < uids.length; i += 100) {
+    const response = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/accounts:lookup`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ localId: uids.slice(i, i + 100) }),
+      },
+    );
+    if (!response.ok) throw new Error(`accounts:lookup failed: ${response.status}`);
+    const data = (await response.json()) as { users?: { localId: string; displayName?: string; email?: string }[] };
+    for (const u of data.users ?? []) out.set(u.localId, { name: u.displayName?.trim() || null, email: u.email ?? null });
+  }
+  return out;
+}

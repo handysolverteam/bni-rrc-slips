@@ -10,6 +10,8 @@ type Msg = {
   sender: "user" | "ai";
   text: string;
   createdAt?: string;
+  /** Who asked (user messages): the account's name / e-mail. */
+  author?: string;
   attachments?: Attachment[];
   tag?: TagRef;
   /** Follow-up questions proposed by the AI for this reply (see SUGGESTIONS). */
@@ -41,12 +43,20 @@ function splitAttached(raw: string): {
   attachments: Attachment[];
   tag?: TagRef;
   suggestions?: string[];
+  author?: string;
 } {
   let text = raw;
+  let author: string | undefined;
   const attachments: Attachment[] = [];
   let tag: TagRef | undefined;
   let suggestions: string[] | undefined;
   for (;;) {
+    const by = /\n?\[by: ([^\]\n]{1,80})\]$/.exec(text);
+    if (by) {
+      author = by[1].trim();
+      text = text.slice(0, by.index);
+      continue;
+    }
     const attached = /\n?\[attached: ([^\]\n]{1,160})\]$/.exec(text);
     if (attached) {
       attachments.unshift({ name: attached[1].trim(), mime: "" });
@@ -68,7 +78,7 @@ function splitAttached(raw: string): {
     }
     break;
   }
-  return { text, attachments, tag, suggestions };
+  return { text, attachments, tag, suggestions, author };
 }
 
 const GREETING: Msg = {
@@ -110,7 +120,16 @@ export default function ChatBox({
   chatTitle,
   onSessionCreated,
   onActivity,
+  ownerName = "",
+  chatOwner = "",
+  canManage = true,
 }: {
+  /** Name of the account that started this chat — shown for older messages that carry no author. */
+  chatOwner?: string;
+  /** Only the chat's owner may clear it (anyone can read and write). */
+  canManage?: boolean;
+  /** This account's display name — stored with a new chat so others see whose it is. */
+  ownerName?: string;
   sessionId: string | null;
   /** Session title — heads the transcript when the chat is shared. */
   chatTitle?: string;
@@ -155,9 +174,11 @@ export default function ChatBox({
       .then((data) => {
         const loaded: Msg[] = Array.isArray(data.messages)
           ? data.messages.map((m: { sender: string; text: string; created_at?: string }) => {
-              const { text, attachments, tag, suggestions } = splitAttached(m.text);
+              const { text, attachments, tag, suggestions, author } = splitAttached(m.text);
               return {
                 sender: m.sender === "user" ? ("user" as const) : ("ai" as const),
+                // Older messages carry no marker: only the owner could write then.
+                author: m.sender === "user" ? (author ?? (chatOwner || undefined)) : undefined,
                 text,
                 attachments: attachments.length > 0 ? attachments : undefined,
                 tag,
@@ -214,7 +235,11 @@ export default function ChatBox({
     let sid = sessionId;
     if (!sid) {
       try {
-        const res = await fetch("/api/chat/sessions", { method: "POST" });
+        const res = await fetch("/api/chat/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ownerName }),
+        });
         const data = await res.json();
         if (!res.ok || !data.session?.id) throw new Error(data.error ?? "Could not start chat.");
         sid = data.session.id as string;
@@ -233,6 +258,7 @@ export default function ChatBox({
       {
         sender: "user",
         text: clean,
+        author: ownerName || undefined,
         createdAt: new Date().toISOString(),
         attachments: files.length > 0 ? files.map(({ name, mime }) => ({ name, mime })) : undefined,
         tag: replyTo ? { text: replyTo.text } : undefined,
@@ -250,6 +276,7 @@ export default function ChatBox({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: clean,
+          authorName: ownerName,
           sessionId: sid,
           // History carries [attached: name] markers so follow-up turns know
           // an earlier message had files (only the latest turn is re-sent).
@@ -440,7 +467,7 @@ export default function ChatBox({
           >
             Share chat
           </button>
-          {sessionId ? (
+          {sessionId && canManage ? (
             <button type="button" onClick={() => setConfirmingClear(true)} disabled={busy}>
               Clear chat
             </button>
@@ -491,7 +518,12 @@ export default function ChatBox({
                   </span>
                 ) : null}
               </div>
-              {fmtTime(m.createdAt) ? <span className="chat-time">{fmtTime(m.createdAt)}</span> : null}
+              {fmtTime(m.createdAt) ? (
+                <span className="chat-time">
+                  {fmtTime(m.createdAt)}
+                  {m.sender === "user" && m.author ? ` · ${m.author}` : ""}
+                </span>
+              ) : null}
             </div>
           </div>
         ))}

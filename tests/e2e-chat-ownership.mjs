@@ -1,6 +1,7 @@
-// E2E: chat ownership (per-user) + the open, role-free active/inactive toggle.
+// E2E: chat ownership + the open, role-free active/inactive toggle.
 // These are the two behaviours that survived the removal of roles (2026-10-05):
-//   - each user only ever sees their OWN chat sessions/messages;
+//   - every account's chats are VISIBLE and WRITABLE by the whole chapter (grouped per account
+//     in the UI, `mine` marks the caller's own) — but only the OWNER can rename, clear or delete;
 //   - every member of a chapter can flip members active/inactive, and everyone
 //     sees inactive rows (no admin/member split any more).
 //
@@ -149,18 +150,29 @@ let sessionB = null;
   );
 
   const ids = (l) => (l.sessions ?? []).map((s) => s.id);
-  const listA = ids(await getJson("/api/chat/sessions", asA));
+  const listAFull = await getJson("/api/chat/sessions", asA);
+  const listA = ids(listAFull);
   const listB = ids(await getJson("/api/chat/sessions", asB));
   const listRoot = ids(await getJson("/api/chat/sessions", asRoot));
   check(
-    "user A sees only own chat",
-    listA.includes(sessionA?.id) && !listA.includes(sessionB?.id) && !listA.includes(sessionRoot?.id),
+    "user A sees every account's chat of the chapter",
+    listA.includes(sessionA?.id) && listA.includes(sessionB?.id) && listA.includes(sessionRoot?.id),
     JSON.stringify(listA),
   );
   check(
-    "user B sees only own chat",
-    listB.includes(sessionB?.id) && !listB.includes(sessionA?.id) && !listB.includes(sessionRoot?.id),
+    "user B sees every account's chat of the chapter",
+    listB.includes(sessionB?.id) && listB.includes(sessionA?.id) && listB.includes(sessionRoot?.id),
     JSON.stringify(listB),
+  );
+  const mineOf = (id) => (listAFull.sessions ?? []).find((s) => s.id === id)?.mine;
+  check(
+    "'mine' marks only the caller's own chats (A: own true, B's false)",
+    mineOf(sessionA?.id) === true && mineOf(sessionB?.id) === false,
+    JSON.stringify({ a: mineOf(sessionA?.id), b: mineOf(sessionB?.id) }),
+  );
+  check(
+    "every listed chat names its owner account (uid)",
+    (listAFull.sessions ?? []).filter((s) => [sessionA?.id, sessionB?.id].includes(s.id)).every((s) => !!s.owner_uid),
   );
   check(
     "service root sees every chat of the tenant",
@@ -175,17 +187,44 @@ let sessionB = null;
     check("owner reads own messages", ownerRead.status === 200 && ownerBody.messages?.length === 1, `status=${ownerRead.status}`);
 
     const crossRead = await fetch(`${APP}/api/chat/sessions/${sessionA.id}/messages`, { headers: asB });
-    check("other user's messages -> 404", crossRead.status === 404, `status=${crossRead.status}`);
+    const crossBody = await crossRead.json().catch(() => ({}));
+    check("another account's chat is readable", crossRead.status === 200 && crossBody.messages?.length === 1, `status=${crossRead.status}`);
+    const crossClear = await fetch(`${APP}/api/chat/sessions/${sessionA.id}/messages`, { method: "DELETE", headers: asB });
+    check("another account cannot clear the chat -> 404", crossClear.status === 404, `status=${crossClear.status}`);
     const crossRename = await fetch(`${APP}/api/chat/sessions/${sessionA.id}`, {
       method: "PATCH",
       headers: { ...asB, "Content-Type": "application/json" },
       body: JSON.stringify({ title: "stolen" }),
     });
-    check("other user's rename -> 404", crossRename.status === 404, `status=${crossRename.status}`);
+    check("another account cannot rename the chat -> 404", crossRename.status === 404, `status=${crossRename.status}`);
     const crossDelete = await fetch(`${APP}/api/chat/sessions/${sessionA.id}`, { method: "DELETE", headers: asB });
-    check("other user's delete -> 404", crossDelete.status === 404, `status=${crossDelete.status}`);
+    check("another account cannot delete the chat -> 404", crossDelete.status === 404, `status=${crossDelete.status}`);
     const stillThere = await sb.from("chat_sessions").select("id").eq("id", sessionA.id).maybeSingle();
-    check("denied delete left the session intact", !!stillThere.data, JSON.stringify(stillThere.data));
+    check("the denied delete left the session intact", !!stillThere.data, JSON.stringify(stillThere.data));
+    const ownerRename = await fetch(`${APP}/api/chat/sessions/${sessionA.id}`, {
+      method: "PATCH",
+      headers: { ...asA, "Content-Type": "application/json" },
+      body: JSON.stringify({ title: `${TITLE_PREFIX} A Chat (renamed)` }),
+    });
+    check("the owner can still rename it", ownerRename.status === 200, `status=${ownerRename.status}`);
+
+    // ANY account can write into the chat; each question is stamped with who asked.
+    const ask = (headers, who) =>
+      fetch(`${APP}/api/chat/generate`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ message: `Say OK (${who})`, sessionId: sessionA.id, authorName: who }),
+      });
+    const askedByB = await ask(asB, "E2E Asker B");
+    const askedByA = await ask(asA, "E2E Asker A");
+    check("another account can write in the chat (reply generated + saved)", askedByB.status === 200 && askedByA.status === 200, `B=${askedByB.status} A=${askedByA.status}`);
+    const afterAsk = await (await fetch(`${APP}/api/chat/sessions/${sessionA.id}/messages`, { headers: asB })).json();
+    const userTexts = (afterAsk.messages ?? []).filter((m) => m.sender === "user").map((m) => m.text);
+    check(
+      "each question carries who asked ([by: …])",
+      userTexts.some((t) => t.includes("[by: E2E Asker B]")) && userTexts.some((t) => t.includes("[by: E2E Asker A]")),
+      JSON.stringify(userTexts),
+    );
   }
 }
 

@@ -1,6 +1,7 @@
 import { getCachedSlipsData } from "@/lib/chat/snapshot-cache";
 import { askGemini, type ChatAttachment, type ChatHistoryMessage } from "@/lib/chat/gemini";
 import { spreadsheetToText } from "@/lib/chat/attachment-text";
+import { accountLabel, accountsFor } from "@/lib/chat/accounts";
 import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 /** Per-request message cap (DoS + LLM cost guard). */
@@ -39,6 +40,8 @@ export async function POST(request: Request) {
     sessionId?: string;
     attachments?: { name?: string; mime?: string; data?: string }[];
     replyTo?: { sender?: string; text?: string };
+    /** Display name of the asker — only a fallback for when the account lookup is unavailable. */
+    authorName?: string;
   } | null;
 
   if (!body) {
@@ -106,7 +109,21 @@ export async function POST(request: Request) {
           .slice(0, 60);
         return snippet ? `[tagged: ${snippet}]` : "";
       })();
-      const storedText = [message, tag, ...attachments.value.map((a) => `[attached: ${a.name}]`)]
+      // Who asked: the account's own name/e-mail (server lookup, not spoofable), else the
+      // client's display name. Stored as a trailing hidden `[by: name]` marker — the chat
+      // shows it next to the time, and no schema change is needed.
+      const acct = ctx.uid ? (await accountsFor([ctx.uid])).get(ctx.uid) : undefined;
+      const author = (accountLabel(acct) || String(body.authorName ?? ""))
+        .replace(/[\]\[\n\r]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 80);
+      const storedText = [
+        message,
+        tag,
+        ...attachments.value.map((a) => `[attached: ${a.name}]`),
+        author ? `[by: ${author}]` : "",
+      ]
         .filter((part) => part.length > 0)
         .join("\n");
       // Best-effort only, but never silent: a failed save is logged so a
@@ -158,13 +175,13 @@ async function persistChatTurn(
   const { getSupabaseServer } = await import("@/lib/supabase/server");
   const sb = getSupabaseServer();
 
-  let sessionQuery = sb
+  // Any member of the chapter may continue any chat of the chapter (tenant scope only).
+  const { data: session } = await sb
     .from("chat_sessions")
     .select("id,title")
     .eq("id", sessionId)
-    .eq("tenant_id", tenantId);
-  if (uid) sessionQuery = sessionQuery.eq("owner_uid", uid);
-  const { data: session } = await sessionQuery.maybeSingle();
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
   if (!session) return;
 
   await sb.from("chat_messages").insert([
