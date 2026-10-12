@@ -6,6 +6,8 @@ import { distinctValues } from "@/lib/distinct";
 import { weekFilterOptions } from "@/lib/weeks";
 import { applyColumnFilter, applyWeekFilter, multiParts } from "@/lib/list-filters";
 import { requirePageTenant } from "@/lib/server-auth";
+import { fetchAllRows } from "@/lib/supabase/paged";
+import { cachedSwr } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -23,31 +25,51 @@ export default async function TyfcbPage({
   const q = sp.q || "";
   const { weekId, weekFilter } = await listWeekScope(tenantId, sp);
   const sb = getSupabaseServer();
-  let query = sb
-    .from("slip_tyfcb")
-    .select("*, bni_weeks(label)", { count: "exact" })
-    .eq("tenant_id", tenantId)
-    .order("created_at", { ascending: false });
-  if (q) query = query.ilike("member_name", `%${q}%`);
-  if (weekId) query = applyWeekFilter(query, weekId);
   const columnFilters: Record<string, string> = {};
   if (weekFilter) columnFilters.bni_week = weekFilter;
+  const amountV = (sp.c_amount || "").trim();
+  const colV: [string, string][] = [];
   for (const k of ["member_name", "other_chapter_member"]) {
     const v = (sp[`c_${k}`] || "").trim();
     if (v) {
-      query = applyColumnFilter(query, k, v);
+      colV.push([k, v]);
       columnFilters[k] = v;
     }
   }
-  const amountV = (sp.c_amount || "").trim();
-  if (amountV) {
-    const nums = multiParts(amountV).map(Number).filter((n) => Number.isFinite(n));
-    if (nums.length === 1) query = query.eq("amount", nums[0]);
-    else if (nums.length > 1) query = query.in("amount", nums);
-    columnFilters.amount = amountV;
-  }
-  const [{ data, count }, weeks, baseOptions] = await Promise.all([
-    query.range((page - 1) * pageSize, page * pageSize - 1),
+  if (amountV) columnFilters.amount = amountV;
+  // The same filters, applied to any select (rows page, and the filtered total).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const filtered = (select: string, count?: boolean): any => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query: any = (count ? sb.from("slip_tyfcb").select(select, { count: "exact" }) : sb.from("slip_tyfcb").select(select)).eq("tenant_id", tenantId);
+    if (q) query = query.ilike("member_name", `%${q}%`);
+    if (weekId) query = applyWeekFilter(query, weekId);
+    for (const [k, v] of colV) query = applyColumnFilter(query, k, v);
+    if (amountV) {
+      const nums = multiParts(amountV).map(Number).filter((n) => Number.isFinite(n));
+      if (nums.length === 1) query = query.eq("amount", nums[0]);
+      else if (nums.length > 1) query = query.in("amount", nums);
+    }
+    return query;
+  };
+  const isFiltered = Boolean(q || weekId || colV.length || amountV);
+  const sumOf = (rs: { amount: number | string | null }[]) => rs.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  // Total of the filtered rows: page the amount column of the same query, remaining pages in parallel.
+  const filteredTotal = async (n: number): Promise<number> => {
+    const pages = Math.ceil(n / 1000);
+    const parts = await Promise.all(
+      Array.from({ length: pages }, (_, i) => filtered("amount").order("id").range(i * 1000, i * 1000 + 999)),
+    );
+    return parts.reduce((s, p) => s + sumOf((p.data ?? []) as { amount: number | string | null }[]), 0);
+  };
+  const allTotal = () =>
+    cachedSwr(`tyfcb-total:${tenantId}`, 60_000, async () =>
+      sumOf(await fetchAllRows<{ amount: number | string | null }>("slip_tyfcb", "amount", { eq: [["tenant_id", tenantId]], order: { column: "id" } })),
+    );
+  const [{ data, count }, weeks, baseOptions, totalAll] = await Promise.all([
+    filtered("*, bni_weeks(label)", true)
+      .order("created_at", { ascending: false })
+      .range((page - 1) * pageSize, page * pageSize - 1),
     getCachedWeekOptions(tenantId),
     Promise.all([
       distinctValues(tenantId, "slip_tyfcb", "member_name"),
@@ -62,7 +84,10 @@ export default async function TyfcbPage({
         .sort((a, b) => a - b)
         .map((n) => ({ value: String(n), label: `₹${n.toLocaleString("en-IN")}` })),
     })),
+    allTotal(),
   ]);
+  const totalFiltered = isFiltered ? await filteredTotal(count ?? 0) : totalAll;
+  const rupees = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
   const rows = (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
     bni_week: (r.bni_weeks as { label: string } | null)?.label ?? "",
@@ -73,6 +98,7 @@ export default async function TyfcbPage({
       title="Slip TYFCB"
       kind="tyfcb"
       total={count ?? 0}
+      sub={isFiltered ? `TYFCB total: ${rupees(totalFiltered)} (filtered, ${(count ?? 0).toLocaleString("en-IN")} entries) · ${rupees(totalAll)} (all entries)` : `TYFCB total: ${rupees(totalAll)} (all ${(count ?? 0).toLocaleString("en-IN")} entries)`}
       page={page}
       pageSize={pageSize}
       basePath="/tyfcb"

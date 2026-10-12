@@ -224,9 +224,16 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
     });
     const s = ensure(m.name, rel?.name ?? null);
     if (s) {
-      s.category = m.category;
+      if (!s.category || !s.chapter) s.category = m.category;
       if (m.is_inactive === true) s.inactive = true;
-      if (!s.chapter && rel?.name) s.chapter = rel.name;
+      // Same name in two chapters (e.g. a home member and a namesake elsewhere) merges into one
+      // stat row: the home chapter must win, or the home member vanishes from home-chapter lists.
+      const isHome = !!rel?.name && rel.name.trim().toLowerCase() === homeName.trim().toLowerCase();
+      if (rel?.name && (!s.chapter || isHome)) s.chapter = rel.name;
+      if (isHome) {
+        s.category = m.category;
+        s.inactive = m.is_inactive === true ? true : undefined;
+      }
     }
   }
 
