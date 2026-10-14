@@ -1,6 +1,6 @@
 import ColumnFilter from "@/components/ColumnFilter";
 import MemberActiveToggle from "@/components/MemberActiveToggle";
-import MemberCategoryInput from "@/components/MemberCategoryInput";
+import MemberFieldInput from "@/components/MemberFieldInput";
 import type { ComboOption } from "@/components/SearchSelect";
 
 type Col = { key: string; label: string };
@@ -24,9 +24,9 @@ function Cell({ columnKey, value, row }: { columnKey: string; value: unknown; ro
       />
     );
   }
-  // Members list: the Category cell is an editable input box (rows carry the `active` flag only there).
-  if (columnKey === "category" && "active" in row && row.id) {
-    return <MemberCategoryInput memberId={String(row.id)} name={String(row.name ?? "")} category={value == null ? "" : String(value)} />;
+  // Members list: Category / Company / Phone are editable input boxes (rows carry the `active` flag only there).
+  if ((columnKey === "category" || columnKey === "company" || columnKey === "phone") && "active" in row && row.id) {
+    return <MemberFieldInput memberId={String(row.id)} name={String(row.name ?? "")} field={columnKey} initial={value == null ? "" : String(value)} />;
   }
   if (columnKey === "inside_outside" && (value === "Inside" || value === "Outside")) {
     return <span className={`pill ${String(value).toLowerCase()}`}>{String(value)}</span>;

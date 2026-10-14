@@ -3,27 +3,35 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 
+/** Members-table columns that are edited in place with a plain input box. */
+export type MemberField = "category" | "company" | "phone";
+
+const PLACEHOLDER: Record<MemberField, string> = { category: "Add category", company: "Add company", phone: "Add phone" };
+const MAX_LEN: Record<MemberField, number> = { category: 120, company: 160, phone: 40 };
+
 /**
- * Editable Category cell of the members table: a plain input box. Saves on Enter or when the box loses
- * focus (only if the text changed) through PATCH /api/members/{id} { category }; Escape reverts.
+ * Editable cell of the members table: a plain input box (never a dropdown). Saves on Enter or when the box
+ * loses focus (only if the text changed) through PATCH /api/members/{id} { <field> }; Escape reverts.
  */
-export default function MemberCategoryInput({
+export default function MemberFieldInput({
   memberId,
   name,
-  category,
+  field,
+  initial,
 }: {
   memberId: string;
   name: string;
-  category: string;
+  field: MemberField;
+  initial: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [value, setValue] = useState(category);
-  const saved = useRef(category);
+  const [value, setValue] = useState(initial);
+  const saved = useRef(initial);
   const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   const save = () => {
-    const next = value.trim();
+    const next = value.replace(/\s+/g, " ").trim();
     if (next === saved.current) {
       setValue(next);
       return;
@@ -32,7 +40,7 @@ export default function MemberCategoryInput({
     fetch(`/api/members/${memberId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ category: next }),
+      body: JSON.stringify({ [field]: next }),
     })
       .then(async (r) => {
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
@@ -50,9 +58,10 @@ export default function MemberCategoryInput({
       <input
         className="cat-input"
         value={value}
-        placeholder="Add category"
-        aria-label={`Category of ${name}`}
-        maxLength={120}
+        placeholder={PLACEHOLDER[field]}
+        aria-label={`${field} of ${name}`}
+        maxLength={MAX_LEN[field]}
+        inputMode={field === "phone" ? "tel" : undefined}
         disabled={state === "saving" || isPending}
         onChange={(e) => {
           setValue(e.target.value);
