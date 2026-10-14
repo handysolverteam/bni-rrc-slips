@@ -33,7 +33,7 @@
 - **Open sign-in**: the first sign-in auto-grants the **Home Chapter**
   (`lib/tenant-grant.ts`, idempotent upsert) — no SQL per user. Membership in
   any *other* chapter stays a manual SQL insert.
-- Migrations `001`–`007` are applied (**`008_member_aliases.sql` is NEW — the user runs it**: remembered member merges; `009_chat_owner_name.sql` is optional: chat owner names now come from the Firebase account itself) (006 = `member_attendance` for the PALMS
+- Migrations `001`–`007` are applied (**`010_traffic_lights.sql` is NEW — the user runs it**: BNI Traffic Lights reference rows for `/traffic-lights`; **`008_member_aliases.sql` is NEW — the user runs it**: remembered member merges; `009_chat_owner_name.sql` is optional: chat owner names now come from the Firebase account itself) (006 = `member_attendance` for the PALMS
   Chapter Summary import, 007 = `palms_stats` for the PALMS-vs-slips
   comparison). No `DATABASE_URL` in `.env.local`, so the
   user runs any new DDL in the Supabase SQL editor.
