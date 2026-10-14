@@ -584,13 +584,42 @@ table.grid tfoot tr.sum-row td {
 .tl-chip:hover { background: var(--surface-hover); }
 .tl-chip.on { border-color: var(--accent-hover); background: var(--accent-soft); color: var(--accent-hover); }
 .tl-legend { font-size: 12px; margin-left: 6px; }
-.tl-table th { text-align: center; white-space: nowrap; }
+/* each band's name in its own colour */
+.tl-lg { font-weight: 700; }
+.tl-lg-green { color: #22c55e; }
+.tl-lg-amber { color: #f59e0b; }
+.tl-lg-red { color: #ef4444; }
+.tl-lg-grey { color: #9ca3af; }
+/* `table.grid th` (left-aligned) outranks a bare `.tl-table th`, so the selector repeats it: every header centred over its columns. */
+table.grid.tl-table th { text-align: center; white-space: nowrap; }
+table.grid.tl-table tr.tl-groups th:nth-child(2) { text-align: left; }
 .tl-table th.idx { text-align: center; }
 .tl-table td { text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.tl-table td:nth-child(2), .tl-table th:nth-child(2) { text-align: left; }
+.tl-table td:nth-child(2) { text-align: left; }
 .tl-table tr.tl-sub th { font-weight: 600; font-size: 11.5px; opacity: 0.92; }
 .tl-note { cursor: help; color: var(--muted); }
 .tl-source { margin: 10px 0 14px; max-width: 980px; font-size: 12.5px; }
+/* Each metric (rate/value + its score) has its own colour: header, sub-header and a light tint down the column. */
+.tl-table { --g-att: #2f6fed; --g-ceu: #0e9488; --g-oto: #8b5cf6; --g-ref: #2e9e57; --g-tyf: #c98a00; --g-vis: #d6459a; --g-spo: #2a8fbd; }
+.tl-table th[data-g="att"] { background: var(--g-att); }
+.tl-table th[data-g="ceu"] { background: var(--g-ceu); }
+.tl-table th[data-g="oto"] { background: var(--g-oto); }
+.tl-table th[data-g="ref"] { background: var(--g-ref); }
+.tl-table th[data-g="tyf"] { background: var(--g-tyf); }
+.tl-table th[data-g="vis"] { background: var(--g-vis); }
+.tl-table th[data-g="spo"] { background: var(--g-spo); }
+/* the second header row is a shade darker than the group name above it */
+.tl-table tr.tl-sub th[data-g] { filter: brightness(0.86); }
+/* body: columns 4-5 attendance, 6-7 CEU, 8-9 121, 10-11 referrals, 12-13 TYFCB, 14-15 visitors, 16-17 sponsors */
+.tl-table tbody td:nth-child(n+4):nth-child(-n+5) { background: color-mix(in srgb, var(--g-att) 13%, transparent); }
+.tl-table tbody td:nth-child(n+6):nth-child(-n+7) { background: color-mix(in srgb, var(--g-ceu) 13%, transparent); }
+.tl-table tbody td:nth-child(n+8):nth-child(-n+9) { background: color-mix(in srgb, var(--g-oto) 13%, transparent); }
+.tl-table tbody td:nth-child(n+10):nth-child(-n+11) { background: color-mix(in srgb, var(--g-ref) 13%, transparent); }
+.tl-table tbody td:nth-child(n+12):nth-child(-n+13) { background: color-mix(in srgb, var(--g-tyf) 13%, transparent); }
+.tl-table tbody td:nth-child(n+14):nth-child(-n+15) { background: color-mix(in srgb, var(--g-vis) 13%, transparent); }
+.tl-table tbody td:nth-child(n+16):nth-child(-n+17) { background: color-mix(in srgb, var(--g-spo) 13%, transparent); }
+/* a thin divider where one metric ends and the next begins */
+.tl-table tbody td:nth-child(5), .tl-table tbody td:nth-child(7), .tl-table tbody td:nth-child(9), .tl-table tbody td:nth-child(11), .tl-table tbody td:nth-child(13), .tl-table tbody td:nth-child(15) { border-right: 1px solid var(--line); }
 
 /* Members table: editable Category input box. */
 .cat-edit { display: inline-flex; align-items: center; gap: 6px; width: 100%; }
@@ -601,6 +630,11 @@ table.grid tfoot tr.sum-row td {
 .cat-input::placeholder { color: var(--muted); font-style: italic; }
 .cat-input:hover { border-color: var(--field); }
 .cat-input:focus { border-color: var(--accent-hover); background: var(--surface); outline: none; }
+.cat-save {
+  padding: 4px 10px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--accent-hover); background: var(--accent-hover); color: #fff;
+}
+.cat-save:disabled { opacity: 0.6; cursor: default; }
 .cat-state { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 .cat-state.ok { color: var(--green-ink); }
 .cat-state.bad { color: #d64545; }

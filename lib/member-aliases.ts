@@ -121,6 +121,21 @@ export async function mergeMembers(tenantId: string, fromName: string, intoName:
     for (const [table, col] of ID_COLUMNS) {
       await sb.from(table).update({ [col]: target.id }).eq("tenant_id", tenantId).eq(col, f.id);
     }
+    // Profile details follow the person: blanks on the kept row are filled from the row being removed.
+    const cols = "category,company,phone,email,is_inactive";
+    const [{ data: oldP }, { data: keepP }] = await Promise.all([
+      sb.from("members").select(cols).eq("id", f.id).maybeSingle(),
+      sb.from("members").select(cols).eq("id", target.id).maybeSingle(),
+    ]);
+    if (oldP && keepP) {
+      const o = oldP as unknown as Record<string, string | boolean | null>;
+      const k = keepP as unknown as Record<string, string | boolean | null>;
+      const fill: Record<string, string> = {};
+      for (const c of ["category", "company", "phone", "email"]) {
+        if (!String(k[c] ?? "").trim() && String(o[c] ?? "").trim()) fill[c] = String(o[c]);
+      }
+      if (Object.keys(fill).length > 0) await sb.from("members").update(fill).eq("id", target.id);
+    }
     await sb.from("members").delete().eq("id", f.id);
     result.membersMerged++;
   }

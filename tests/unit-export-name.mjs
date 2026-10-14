@@ -49,4 +49,10 @@ check("empty / only illegal characters -> empty", m.cleanFileName(' / : * ', "cs
 check("leading dots and trailing dots/spaces are removed", m.cleanFileName("..hidden. ", "pdf") === "hidden");
 check("very long names are capped", m.cleanFileName("a".repeat(400), "pdf").length === 150);
 
+n = m.trafficDefaultName({ month: "2026-09" });
+check("traffic lights: month", n === "traffic-lights_2026-09", n);
+n = m.trafficDefaultName({ month: "2026-09", light: "green", nameFilter: "Ranjan K Sapra,Vaini Mehra" });
+check("traffic lights: colour + first member", n === "traffic-lights_2026-09_green_member-Ranjan-K-Sapra", n);
+check("traffic lights: no month yet", m.trafficDefaultName({ month: "" }) === "traffic-lights_latest");
+
 console.log(`TOTAL: ${pass} passed, ${fail} failed`);

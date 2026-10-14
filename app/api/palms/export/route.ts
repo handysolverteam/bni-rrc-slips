@@ -3,6 +3,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { fetchPalmsMatrix, fetchPalmsWeekOptions, palmsWeekScope } from "@/lib/palms-view";
 import { expandWeekToken } from "@/lib/weeks";
+import { multiParts } from "@/lib/list-filters";
 import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
@@ -50,8 +51,11 @@ export async function GET(request: Request) {
           ? active.map((w) => w.label).join(" + ")
           : "week";
 
+    // The screen's Member column filter (c_member) narrows the export the same way.
+    const wantMembers = new Set(multiParts(url.searchParams.get("c_member") ?? "").map((n) => n.toLowerCase()));
+    const memberRows = wantMembers.size > 0 ? matrix.rows.filter((r) => wantMembers.has(r.name.toLowerCase())) : matrix.rows;
     const headers = ["Member", ...matrix.weeks.map((w) => w.header)];
-    const rows = matrix.rows.map((r) => [r.name, ...r.cells]);
+    const rows = memberRows.map((r) => [r.name, ...r.cells]);
 
     const base = `palms-report-${safeFilePart(weekLabel)}`;
 
@@ -59,7 +63,7 @@ export async function GET(request: Request) {
       return Response.json({
         filename: `${base}.pdf`,
         weekLabel,
-        memberCount: matrix.rows.length,
+        memberCount: memberRows.length,
         headers,
         rows,
         totalRow: null,
@@ -70,7 +74,7 @@ export async function GET(request: Request) {
       const cell = (v: string) => JSON.stringify(v);
       const lines = [
         `Week,${JSON.stringify(weekLabel)}`,
-        `Members,${String(matrix.rows.length)}`,
+        `Members,${String(memberRows.length)}`,
         "",
         headers.map(cell).join(","),
       ];
@@ -87,7 +91,7 @@ export async function GET(request: Request) {
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet([
         [`Attendance — ${weekLabel}`],
-        [`Members: ${matrix.rows.length}`],
+        [`Members: ${memberRows.length}`],
         headers,
         ...rows,
       ]);
@@ -108,7 +112,7 @@ export async function GET(request: Request) {
     doc.text(`Attendance — ${weekLabel}`, 40, 40);
     doc.setFontSize(8);
     doc.setTextColor(110, 105, 95);
-    doc.text(`Members: ${matrix.rows.length}`, 40, 54);
+    doc.text(`Members: ${memberRows.length}`, 40, 54);
     doc.setTextColor(0, 0, 0);
     autoTable(doc, {
       startY: 58,

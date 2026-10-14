@@ -10,8 +10,9 @@ const PLACEHOLDER: Record<MemberField, string> = { category: "Add category", com
 const MAX_LEN: Record<MemberField, number> = { category: 120, company: 160, phone: 40 };
 
 /**
- * Editable cell of the members table: a plain input box (never a dropdown). Saves on Enter or when the box
- * loses focus (only if the text changed) through PATCH /api/members/{id} { <field> }; Escape reverts.
+ * Editable cell of the members table: a plain input box (never a dropdown). Nothing is saved while typing or
+ * when the box loses focus: a Save button appears once the text changed (Enter does the same) and sends
+ * PATCH /api/members/{id} { <field> }; Escape reverts.
  */
 export default function MemberFieldInput({
   memberId,
@@ -29,6 +30,8 @@ export default function MemberFieldInput({
   const [value, setValue] = useState(initial);
   const saved = useRef(initial);
   const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  const dirty = value.replace(/\s+/g, " ").trim() !== saved.current;
 
   const save = () => {
     const next = value.replace(/\s+/g, " ").trim();
@@ -67,15 +70,19 @@ export default function MemberFieldInput({
           setValue(e.target.value);
           if (state !== "idle") setState("idle");
         }}
-        onBlur={save}
         onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Enter" && dirty) save();
           if (e.key === "Escape") {
             setValue(saved.current);
             (e.target as HTMLInputElement).blur();
           }
         }}
       />
+      {dirty && state !== "saving" ? (
+        <button type="button" className="cat-save" disabled={isPending} onClick={save}>
+          Save
+        </button>
+      ) : null}
       {state === "saving" ? <span className="cat-state">Saving…</span> : null}
       {state === "saved" ? <span className="cat-state ok">Saved</span> : null}
       {state === "error" ? <span className="cat-state bad">Not saved</span> : null}

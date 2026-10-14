@@ -34,12 +34,11 @@ const links: NavItem[] = [
     ],
   },
   { href: "/report", label: "Slip Report", exact: false },
+  { href: "/palms", label: "Attendance", exact: false },
   { href: "/top3", label: "Top 3", exact: false },
   { href: "/visitor-rank", label: "Visitor Rank", exact: false },
   { href: "/traffic-lights", label: "Traffic Lights", exact: false },
-  { href: "/palms", label: "Attendance", exact: false },
   { href: "/chat", label: "Chat", exact: false },
-  { href: "/settings", label: "Settings", exact: false },
 ];
 
 const isLeaf = (l: NavItem): l is NavLeaf => "href" in l;

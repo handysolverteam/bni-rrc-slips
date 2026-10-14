@@ -1,4 +1,7 @@
 import CollapseCard from "@/components/CollapseCard";
+import ColumnFilter from "@/components/ColumnFilter";
+import MultiSelectToggle from "@/components/MultiSelectToggle";
+import { multiParts } from "@/lib/list-filters";
 import FilterBar from "@/components/FilterBar";
 import NoAccess from "@/components/NoAccess";
 import PalmsExportButtons from "@/components/PalmsExportButtons";
@@ -49,6 +52,10 @@ export default async function PalmsPage({
     fetchPalmsAttendanceStats(tenantId),
   ]);
   const scopeLabel = palmsScopeLabel(weeks, weekIds, "All weeks");
+  // Member column filter (dropdown; several names with the Multi-select checkbox): narrows the matrix rows.
+  const memberFilter = (sp.c_member ?? "").trim();
+  const wantMembers = new Set(multiParts(memberFilter).map((n) => n.toLowerCase()));
+  const memberRows = wantMembers.size > 0 ? matrix.rows.filter((r) => wantMembers.has(r.name.toLowerCase())) : matrix.rows;
   const colSpan = 2 + matrix.weeks.length;
 
   return (
@@ -57,7 +64,7 @@ export default async function PalmsPage({
         <div className="page-head">
           <h1>
             Attendance
-            <span className="count-badge">{matrix.rows.length} member(s)</span>
+            <span className="count-badge">{memberRows.length} member(s)</span>
           </h1>
           <p className="sub muted">{scopeLabel}</p>
         </div>
@@ -116,14 +123,22 @@ export default async function PalmsPage({
         </div>
       </div>
 
-      <CollapseCard label={`Attendance matrix · ${matrix.rows.length} member(s)`}>
+      <CollapseCard label={`Attendance matrix · ${memberRows.length} member(s)`}>
+        <MultiSelectToggle />
         <div className="table-card">
           <div className="table-scroll">
             <table className="grid">
               <thead>
                 <tr>
                   <th className="idx">Sr. No.</th>
-                  <th>Member</th>
+                  <th>
+                    <ColumnFilter
+                      paramKey="c_member"
+                      defaultValue={memberFilter}
+                      options={matrix.rows.map((r) => r.name).sort((a, b) => a.localeCompare(b))}
+                      label="Member"
+                    />
+                  </th>
                   {matrix.weeks.map((w) => (
                     <th key={w.id} title={w.label} className="plm-h">
                       {w.header}
@@ -132,14 +147,14 @@ export default async function PalmsPage({
                 </tr>
               </thead>
               <tbody>
-                {matrix.rows.length === 0 ? (
+                {memberRows.length === 0 ? (
                   <tr>
                     <td colSpan={colSpan} className="muted">
-                      No PALMS attendance imported yet — upload a file above.
+                      {matrix.rows.length > 0 ? "No member matches this filter." : "No PALMS attendance imported yet — upload a file above."}
                     </td>
                   </tr>
                 ) : (
-                  matrix.rows.map((r, ri) => (
+                  memberRows.map((r, ri) => (
                     <tr key={r.name}>
                       <td className="idx">{ri + 1}</td>
                       <td>{r.name}</td>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import ColumnFilter from "@/components/ColumnFilter";
 import NoAccess from "@/components/NoAccess";
+import TrafficExportButtons from "@/components/TrafficExportButtons";
 import TrafficMonthPicker from "@/components/TrafficMonthPicker";
 import { multiParts } from "@/lib/list-filters";
 import { requirePageTenant } from "@/lib/server-auth";
@@ -10,8 +11,10 @@ import { fetchTrafficData, trafficView } from "@/lib/traffic-lights";
 export const dynamic = "force-dynamic";
 
 const LIGHTS: LightColor[] = ["green", "amber", "red", "grey"];
-const pct = (r: number | null) => (r === null ? "—" : `${Math.round(r * 1000) / 10}%`);
-const rate = (r: number) => (Math.round(r * 100) / 100).toFixed(2);
+// Rates show up to 4 decimals, trailing zeros trimmed — exactly like BNI's sheet (1, 0.963, 0.9565, 2.0741).
+const dec4 = (r: number): string => String(Math.round(r * 10000) / 10000);
+const pct = (r: number | null) => (r === null ? "—" : dec4(r));
+const rate = (r: number) => dec4(r);
 const rupees = (v: number) => (v > 0 ? `₹${Math.round(v).toLocaleString("en-IN")}` : "—");
 
 export default async function TrafficLightsPage({
@@ -62,6 +65,7 @@ export default async function TrafficLightsPage({
       <div className="card report-controls">
         <div className="report-controls-row">
           {view.months.length > 0 ? <TrafficMonthPicker value={view.month} months={view.months} light={light} /> : null}
+          {view.rows.length > 0 ? <TrafficExportButtons month={view.month} light={light} nameFilter={nameFilter} /> : null}
         </div>
         <div className="tl-chips">
           <Link href={chip("")} className={`tl-chip${light === "" ? " on" : ""}`}>
@@ -72,7 +76,10 @@ export default async function TrafficLightsPage({
               <span className={`tl-dot tl-${c}`} /> {LIGHT_LABEL[c]} <strong>{counts[c]}</strong>
             </Link>
           ))}
-          <span className="muted tl-legend">Green ≥ 70 · Amber 50–69 · Red 30–49 · Grey &lt; 30</span>
+          <span className="muted tl-legend">
+            <b className="tl-lg tl-lg-green">Green</b> ≥ 70 · <b className="tl-lg tl-lg-amber">Amber</b> 50–69 · <b className="tl-lg tl-lg-red">Red</b> 30–49 ·{" "}
+            <b className="tl-lg tl-lg-grey">Grey</b> &lt; 30
+          </span>
           {filtered ? (
             <span className="clear-right">
               <Link href={view.month ? `/traffic-lights?month=${view.month}` : "/traffic-lights"}>
@@ -117,17 +124,19 @@ export default async function TrafficLightsPage({
                     />
                   </th>
                   <th rowSpan={2}>Total Score</th>
-                  <th colSpan={2}>Attendance</th>
-                  <th colSpan={2}>CEU</th>
-                  <th colSpan={2}>121</th>
-                  <th colSpan={2}>Referrals Given</th>
-                  <th colSpan={2}>TYFCB</th>
-                  <th colSpan={2}>Visitors</th>
-                  <th colSpan={2}>Sponsors</th>
+                  <th colSpan={2} data-g="att">Attendance</th>
+                  <th colSpan={2} data-g="ceu">CEU</th>
+                  <th colSpan={2} data-g="oto">121</th>
+                  <th colSpan={2} data-g="ref">Referrals Given</th>
+                  <th colSpan={2} data-g="tyf">TYFCB</th>
+                  <th colSpan={2} data-g="vis">Visitors</th>
+                  <th colSpan={2} data-g="spo">Sponsors</th>
                 </tr>
                 <tr className="tl-sub">
                   {["Rate", "Score", "Rate", "Score", "Rate", "Score", "Rate", "Score", "Amount", "Score", "Count", "Score", "Count", "Score"].map((h, i) => (
-                    <th key={i}>{h}</th>
+                    <th key={i} data-g={["att", "ceu", "oto", "ref", "tyf", "vis", "spo"][Math.floor(i / 2)]}>
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>

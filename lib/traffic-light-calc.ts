@@ -126,18 +126,20 @@ export function buildTrafficRows(input: TrafficInput): TrafficRow[] {
     sponsored.set(nameKey(r.inviter), set);
   }
 
-  type Att = { p: number; a: number; m: number; s: number; first: string };
+  type Att = { p: number; a: number; m: number; s: number; l: number; first: string; dates: Set<string> };
   const dateOf = new Map(input.meetings.map((m) => [m.id, m.date]));
   const att = new Map<string, Att>();
   for (const r of slips.attendance) {
     if (!inWin.has(r.week)) continue;
     const k = nameKey(r.name);
     const date = dateOf.get(r.week) ?? "9999";
-    const c = att.get(k) ?? { p: 0, a: 0, m: 0, s: 0, first: date };
+    const c = att.get(k) ?? { p: 0, a: 0, m: 0, s: 0, l: 0, first: date, dates: new Set<string>() };
+    c.dates.add(date);
     c.p += num(r.present);
     c.a += num(r.absent);
     c.m += num(r.m);
     c.s += num(r.s);
+    c.l += num(r.l);
     if (date < c.first) c.first = date;
     att.set(k, c);
   }
@@ -147,11 +149,13 @@ export function buildTrafficRows(input: TrafficInput): TrafficRow[] {
   for (const [k, v] of att) {
     const mk = resolve(k);
     if (!mk) continue;
-    const c = attByMember.get(mk) ?? { p: 0, a: 0, m: 0, s: 0, first: v.first };
+    const c = attByMember.get(mk) ?? { p: 0, a: 0, m: 0, s: 0, l: 0, first: v.first, dates: new Set<string>() };
+    for (const d of v.dates) c.dates.add(d);
     c.p += v.p;
     c.a += v.a;
     c.m += v.m;
     c.s += v.s;
+    c.l += v.l;
     if (v.first < c.first) c.first = v.first;
     attByMember.set(mk, c);
   }
@@ -160,23 +164,37 @@ export function buildTrafficRows(input: TrafficInput): TrafficRow[] {
     const k = nameKey(name);
     const notes: string[] = [];
     const a = attByMember.get(k);
-    const observed = a ? a.p + a.a + a.m + a.s : 0;
+    // Every meeting with a letter (P, A, M, S or L).
+    const observed = a ? a.p + a.a + a.m + a.s + a.l : 0;
 
-    // Weeks the rates are divided by: BNI prorates a member who joined part-way through the window, so the
-    // weeks run from their first PALMS attendance onward; otherwise every meeting in the window.
+    // Weeks the rates are divided by: BNI uses the member's own LETTERED meetings (P, A, M, S, L) — so a member who
+    // joined part-way, or has a blank week, is divided by fewer weeks; no attendance at all = every meeting in the window.
     let weeks = reportWeeks;
     if (a && observed > 0) {
-      weeks = Math.max(1, input.meetings.filter((m) => m.date >= a.first).length);
-      if (weeks < reportWeeks) notes.push(`part-year member: ${weeks} weeks since first attendance`);
+      weeks = Math.max(1, observed);
+      if (weeks < reportWeeks) {
+        // Why are some meetings of the window without a letter? Before the first one = joined part-way; after the last
+        // one = the newest meeting(s) are not in the PALMS file yet; otherwise a blank week in between.
+        const missing = input.meetings.map((m) => m.date).filter((d) => !a.dates.has(d)).sort();
+        const last = [...a.dates].sort().at(-1) ?? "";
+        const before = missing.filter((d) => d < a.first).length;
+        const after = missing.filter((d) => d > last).length;
+        const between = missing.length - before - after;
+        const parts: string[] = [];
+        if (before > 0) parts.push(`joined part-way (first PALMS letter ${a.first})`);
+        if (after > 0) parts.push(`PALMS has no letter yet for the newest ${after} meeting${after === 1 ? "" : "s"} (${missing.filter((d) => d > last).join(", ")})`);
+        if (between > 0) parts.push(`${between} blank week${between === 1 ? "" : "s"} in between`);
+        notes.push(`${weeks} lettered weeks of ${reportWeeks}: ${parts.join("; ")}`);
+      }
     }
     const prorated = weeks < reportWeeks;
 
     let attendance: TrafficRow["attendance"];
     if (a && observed > 0) {
-      const attended = a.p + a.m + a.s;
-      const rate = attended + a.a > 0 ? attended / (attended + a.a) : 0;
+      // BNI's rule: (weeks − absents) / weeks — present, medical, substitute AND leave all count as attended.
+      const rate = (observed - a.a) / observed;
       attendance = { rate, score: attendancePoints(rate), source: "palms" };
-      if (observed < Math.floor(weeks * 0.9)) notes.push(`PALMS attendance covers ${observed} of ${weeks} weeks — import the full attendance`);
+      if (observed < Math.floor(reportWeeks * 0.5)) notes.push(`PALMS attendance covers only ${observed} of ${reportWeeks} weeks — import the full attendance`);
     } else {
       attendance = { rate: null, score: 0, source: "none" };
       notes.push("no PALMS attendance imported — 0 points");

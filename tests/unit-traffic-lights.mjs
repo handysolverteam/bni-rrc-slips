@@ -87,6 +87,35 @@ check("total + colour", amit.total === 10 + 5 + 5 + 20 + 4 + 10 + 0 && amit.colo
 const neha = rows.find((r) => r.name === "Neha Goel");
 check("no attendance at all -> 0 points and a note, never a guess", neha.attendance.source === "none" && neha.attendance.score === 0 && neha.notes.some((n) => /no PALMS attendance imported/.test(n)));
 
+// BNI's attendance rule: (weeks - absents) / weeks — leave counts as attended
+{
+  const L = ["a", "b", "c", "d", "e", "f"].map((id, i) => ({ id, date: `2026-09-${String(i + 1).padStart(2, "0")}` }));
+  const letter = (week, over) => ({ week, name: "Neha Goel", present: 0, absent: 0, m: 0, s: 0, l: 0, ...over });
+  const att = [letter("a", { present: 1 }), letter("b", { present: 1 }), letter("c", { l: 1 }), letter("d", { m: 1 }), letter("e", { s: 1 }), letter("f", { absent: 1 })];
+  const r = calc.buildTrafficRows({ members: ["Neha Goel"], meetings: L, slips: { ...base, attendance: att } })[0];
+  check("attendance = (weeks - absents) / weeks: 1 absent in 6 weeks = 5/6 (leave counts as attended)", Math.abs(r.attendance.rate - 5 / 6) < 1e-9, String(r.attendance.rate));
+  const sixOfSix = calc.buildTrafficRows({ members: ["Neha Goel"], meetings: L, slips: { ...base, attendance: att.map((x) => ({ ...x, absent: 0 })).map((x, i) => (i === 5 ? { ...x, present: 1 } : x)) } })[0];
+  check("no absences -> 1", sixOfSix.attendance.rate === 1);
+  // BNI's chat example: 26 weeks = 23 P + 1 M + 1 S + 1 A -> 25/26 = 0.96
+  const W26 = Array.from({ length: 26 }, (_, i) => ({ id: "w" + i, date: `2026-04-${String((i % 28) + 1).padStart(2, "0")}` })).map((x, i) => ({ id: "w" + i, date: new Date(Date.UTC(2026, 3, 1 + i * 7)).toISOString().slice(0, 10) }));
+  const a26 = W26.map((w, i) => letter(w.id, i === 23 ? { m: 1 } : i === 24 ? { s: 1 } : i === 25 ? { absent: 1 } : { present: 1 }));
+  const r26 = calc.buildTrafficRows({ members: ["Neha Goel"], meetings: W26, slips: { ...base, attendance: a26 } })[0];
+  check("BNI's own example: 23 P + 1 M + 1 S + 1 A over 26 weeks = 25/26 = 0.9615 -> 96%", Math.abs(r26.attendance.rate - 25 / 26) < 1e-9 && r26.attendance.score === 10, String(r26.attendance.rate));
+}
+
+// why a member has fewer lettered weeks than the window — the note must say which case it is
+{
+  const L = ["a", "b", "c", "d", "e", "f"].map((id, i) => ({ id, date: `2026-09-${String(i + 1).padStart(2, "0")}` }));
+  const run = (weeks) => calc.buildTrafficRows({ members: ["Neha Goel"], meetings: L, slips: { ...base, attendance: weeks.map((w) => ({ week: w, name: "Neha Goel", present: 1, absent: 0, m: 0, s: 0, l: 0 })) } })[0];
+  const joined = run(["c", "d", "e", "f"]);
+  check("note: first letters start late -> 'joined part-way'", joined.notes.some((n) => /joined part-way \(first PALMS letter 2026-09-03\)/.test(n)) && !joined.notes.some((n) => /no letter yet/.test(n)), joined.notes.join(" | "));
+  const lag = run(["a", "b", "c", "d"]);
+  check("note: newest meetings have no letter -> 'PALMS has no letter yet for the newest 2 meetings'", lag.notes.some((n) => /PALMS has no letter yet for the newest 2 meetings/.test(n)) && !lag.notes.some((n) => /joined/.test(n)), lag.notes.join(" | "));
+  const gap = run(["a", "b", "d", "e", "f"]);
+  check("note: a gap in the middle -> '1 blank week in between'", gap.notes.some((n) => /1 blank week in between/.test(n)) && !gap.notes.some((n) => /joined|no letter yet/.test(n)), gap.notes.join(" | "));
+  check("a complete run needs no note", run(["a", "b", "c", "d", "e", "f"]).notes.length === 0);
+}
+
 // part-year member: first attendance in meeting 3 of 6 -> 4 weeks
 const late = W.slice(2).map((w) => ({ week: w.id, name: "Neha Goel", present: 1, absent: 0, m: 0, s: 0, l: 0 }));
 rows = calc.buildTrafficRows({ members: ["Neha Goel"], meetings: W, slips: { ...base, attendance: late, ceus: [{ week: "c", name: "Neha Goel", credits: 2 }] }, bni: [] });
