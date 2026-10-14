@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useMultiSelect } from "@/components/MultiSelectToggle";
 import SearchSelect, { type ComboOption } from "@/components/SearchSelect";
 import { decodeCommas, encodeCommas } from "@/lib/list-filters";
@@ -22,6 +22,7 @@ export default function ColumnFilter({
   onApply,
   clearValue,
   multiSelect,
+  text,
 }: {
   paramKey: string;
   defaultValue: string;
@@ -33,9 +34,32 @@ export default function ColumnFilter({
   clearValue?: string;
   /** Legacy: every column is multi-select-capable now; kept so existing call sites compile. */
   multiSelect?: boolean;
+  /** Free-text box (contains-match) instead of the dropdown of distinct values. */
+  text?: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [typed, setTyped] = useState(() => decodeCommas(defaultValue));
+  const lastApplied = useRef(defaultValue);
+  // Text mode: the URL value is the source of truth after navigation (Clear all, back button).
+  useEffect(() => {
+    if (text) {
+      setTyped(decodeCommas(defaultValue));
+      lastApplied.current = defaultValue;
+    }
+  }, [defaultValue, text]);
+  // Text mode: apply 450 ms after the last keystroke (Enter applies at once).
+  useEffect(() => {
+    if (!text) return;
+    const wanted = encodeCommas(typed.trim());
+    if (wanted === lastApplied.current) return;
+    const t = setTimeout(() => {
+      lastApplied.current = wanted;
+      apply(wanted);
+    }, 450);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typed, text]);
   // Single select by default; the "Multi-select filters" checkbox above the table
   // turns EVERY column filter multi-select. A value that already holds several
   // picks (shared link) stays multi so it is never shown as one raw string.
@@ -73,6 +97,40 @@ export default function ColumnFilter({
     // top (the header cell is deep down the report page).
     startTransition(() =>
       router.push(`${window.location.pathname}?${params.toString()}`, { scroll: false }),
+    );
+  }
+
+  if (text) {
+    return (
+      <span className="col-filter-wrap" onClick={(e) => e.stopPropagation()}>
+        <span className={`combo${typed ? " has-value" : ""}`}>
+          <span className="combo-label" aria-hidden="true">{label}</span>
+          <span className="combo-field">
+            <input
+              className="combo-input"
+              value={typed}
+              placeholder={label}
+              aria-label={label}
+              autoComplete="off"
+              onChange={(e) => setTyped(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const wanted = encodeCommas(typed.trim());
+                  lastApplied.current = wanted;
+                  apply(wanted);
+                }
+              }}
+            />
+            {typed ? (
+              <button type="button" className="combo-adorn" aria-label="Clear" onClick={() => setTyped("")}>
+                ✕
+              </button>
+            ) : null}
+          </span>
+        </span>
+        {isPending ? <span className="spinner small col-filter-busy" /> : null}
+      </span>
     );
   }
 

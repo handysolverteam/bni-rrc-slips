@@ -46,6 +46,7 @@ export default function SlipsTable({
   columns,
   rows,
   filterable = [],
+  textFilters = [],
   initialFilters = {},
   filterOptions = {},
   emptyHint = "No records yet — import a Report XLS to get started.",
@@ -56,6 +57,8 @@ export default function SlipsTable({
   columns: Col[];
   rows: Record<string, unknown>[];
   filterable?: string[];
+  /** Filterable columns that use a free-text box instead of the dropdown (e.g. Category). */
+  textFilters?: string[];
   initialFilters?: Record<string, string>;
   filterOptions?: Record<string, ComboOption[]>;
   emptyHint?: string;
@@ -97,6 +100,7 @@ export default function SlipsTable({
                       label={c.label}
                       allLabel={c.key === "bni_week" ? "All weeks" : undefined}
                       clearValue={c.key === "bni_week" ? "all" : undefined}
+                      text={textFilters.includes(c.key)}
                       multiSelect={c.key !== "bni_week" && c.key !== "chapter" && c.key !== "other_chapter_member"}
                     />
                   ) : (

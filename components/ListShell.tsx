@@ -26,6 +26,7 @@ export default function ListShell({
   rows,
   kind,
   filterable = [],
+  textFilters = [],
   columnFilters = {},
   filterOptions = {},
   hideWeekBar = false,
@@ -45,6 +46,8 @@ export default function ListShell({
   /** Slip type for section coloring (one-to-one / referral / tyfcb / visitor). */
   kind?: string;
   filterable?: string[];
+  /** Filterable columns shown as a free-text box instead of a dropdown. */
+  textFilters?: string[];
   columnFilters?: Record<string, string>;
   filterOptions?: Record<string, ComboOption[]>;
   /** Week lives in the header cell filter instead of the top bar. */
@@ -124,6 +127,7 @@ export default function ListShell({
           columns={columns}
           rows={rows}
           filterable={filterable}
+          textFilters={textFilters}
           initialFilters={columnFilters}
           filterOptions={filterOptions}
           indexStart={(page - 1) * pageSize}

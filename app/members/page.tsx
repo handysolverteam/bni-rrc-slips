@@ -132,6 +132,7 @@ const memberEq: [string, unknown][] = [];
       ]}
       rows={rows}
       filterable={["name", "chapter", "category", "company", "phone"]}
+      textFilters={["category"]}
       columnFilters={columnFilters}
       filterOptions={filterOptions}
     />

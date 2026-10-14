@@ -79,7 +79,9 @@ check("recent 2 weeks = Week 4 + Week 3", r.scope.weeks === 2, JSON.stringify(r.
 
 // 4b) inactive members are left out unless explicitly asked for
 r = m.executeChapterQuery({ scope: { kind: "all" }, metrics: ["visitorsInvited"], topN: 100 }, index);
-check("default: NO status filter — inactive Chet (5 visitors) is counted", r.rows.some((x) => x.name === "Chet") && r.memberStatus === "any", JSON.stringify(r.rows));
+check("default: home chapter + ACTIVE members only — inactive Chet and other-chapter Dev are not counted", !r.rows.some((x) => x.name === "Chet") && !r.rows.some((x) => x.name === "Dev") && r.memberStatus === "active", JSON.stringify(r.rows));
+r = m.executeChapterQuery({ scope: { kind: "all" }, chapter: "all", status: "any", metrics: ["visitorsInvited"], topN: 100 }, index);
+check("chapter all + status any lifts both defaults (Chet and Dev appear)", r.rows.some((x) => x.name === "Chet") && r.rows.some((x) => x.name === "Dev"), JSON.stringify(r.rows.map((x) => x.name)));
 r = m.executeChapterQuery({ scope: { kind: "all" }, status: "active", metrics: ["visitorsInvited"], topN: 100 }, index);
 check("status active excludes Chet", !r.rows.some((x) => x.name === "Chet") && r.memberStatus === "active", JSON.stringify(r.rows));
 r = m.executeChapterQuery({ scope: { kind: "all" }, status: "any", metrics: ["visitorsInvited"], topN: 100 }, index);
@@ -87,24 +89,32 @@ check("status any includes Chet", r.rows.some((x) => x.name === "Chet"));
 r = m.executeChapterQuery({ scope: { kind: "all" }, status: "inactive", metrics: ["visitorsInvited"], topN: 100 }, index);
 check("status inactive = only Chet", r.rowCount === 1 && r.rows[0].name === "Chet", JSON.stringify(r.rows));
 r = m.executeChapterQuery({ scope: { kind: "all" }, includeZero: true, metrics: ["visitorsInvited"], topN: 100 }, index);
-check("includeZero without status lists everyone on the roster (inactive too)", r.rows.some((x) => x.name === "Chet") && r.rows.some((x) => x.name === "Bina"), JSON.stringify(r.rows.map((x) => x.name)));
+check("includeZero with the defaults lists the home chapter's ACTIVE roster only", !r.rows.some((x) => x.name === "Chet") && r.rows.some((x) => x.name === "Bina") && r.rows.some((x) => x.name === "Amit"), JSON.stringify(r.rows.map((x) => x.name)));
+r = m.executeChapterQuery({ scope: { kind: "all" }, includeZero: true, chapter: "all", status: "any", metrics: ["visitorsInvited"], topN: 100 }, index);
+check("includeZero with chapter all + status any lists everyone (inactive too)", r.rows.some((x) => x.name === "Chet") && r.rows.some((x) => x.name === "Bina"), JSON.stringify(r.rows.map((x) => x.name)));
+r = m.executeChapterQuery({ scope: { kind: "all" }, members: ["chet"], metrics: ["visitorsInvited"] }, index);
+check("a named member is never filtered by the defaults", r.rows.length === 1 && r.rows[0].name === "Chet" && /Member: chet/.test(r.basis.filtersSummary), JSON.stringify(r.basis));
 
 // basis: every result says which chapter / members / period it covers
 r = m.executeChapterQuery({ scope: { kind: "all" }, chapter: "home", status: "active", metrics: ["visitorsInvited"] }, index);
 check("basis names the home chapter, active members and the period", r.basis?.chapter === "BNI Influencers (home chapter)" && r.basis?.members === "active members only" && /meeting/.test(r.basis?.period), JSON.stringify(r.basis));
 r = m.executeChapterQuery({ scope: { kind: "all" }, metrics: ["visitorsInvited"] }, index);
-check("no chapter filter -> basis says all chapters", /^all chapters in the data/.test(r.basis?.chapter ?? ""), JSON.stringify(r.basis));
+r = m.executeChapterQuery({ scope: { kind: "all" }, chapter: "all", status: "any", metrics: ["visitorsInvited"] }, index);
+check("chapter all -> basis says all chapters", /^all chapters in the data/.test(r.basis?.chapter ?? ""), JSON.stringify(r.basis));
 r = m.executeChapterQuery({ scope: { kind: "all" }, status: "any", metrics: ["visitorsInvited"] }, index);
 check("status any -> basis says active and inactive", r.basis?.members === "all members (active and inactive)", JSON.stringify(r.basis));
-check("slip_entries carries a basis too", m.executeSlipEntries({ type: "visitor" }, index).basis?.members === "all members (active and inactive)" && /named member/.test(m.executeSlipEntries({ type: "visitor", member: "amit" }, index).basis?.members));
+check("slip_entries carries a basis too (default = active members of the home chapter)", m.executeSlipEntries({ type: "visitor" }, index).basis?.members === "active members only" && /named member/.test(m.executeSlipEntries({ type: "visitor", member: "amit" }, index).basis?.members));
 
 // every result lists the filters it applied ("none" when it applied none)
 r = m.executeChapterQuery({ scope: { kind: "all" }, metrics: ["visitorsInvited"] }, index);
-check("no filters -> filtersApplied empty + summary says none", r.basis.filtersApplied.length === 0 && /^none/.test(r.basis.filtersSummary), JSON.stringify(r.basis));
+r = m.executeChapterQuery({ scope: { kind: "all" }, chapter: "all", status: "any", metrics: ["visitorsInvited"] }, index);
+check("chapter all + status any -> filtersApplied empty + summary says none", r.basis.filtersApplied.length === 0 && /^none/.test(r.basis.filtersSummary), JSON.stringify(r.basis));
+r = m.executeChapterQuery({ scope: { kind: "all" }, metrics: ["visitorsInvited"] }, index);
+check("no arguments -> the defaults are listed (home chapter, active only)", r.basis.filtersSummary === "Home chapter (BNI Influencers) · active members only", JSON.stringify(r.basis));
 r = m.executeChapterQuery({ scope: { kind: "all" }, chapter: "home", status: "active", metrics: ["visitorsInvited"] }, index);
 check("home + active -> both listed", JSON.stringify(r.basis.filtersApplied) === JSON.stringify(["Chapter: BNI Influencers (home chapter)", "Members: active only"]), JSON.stringify(r.basis.filtersApplied));
 r = m.executeChapterQuery({ scope: { kind: "all" }, status: "inactive", metrics: ["visitorsInvited"] }, index);
-check("inactive only -> listed", JSON.stringify(r.basis.filtersApplied) === JSON.stringify(["Members: inactive only"]), JSON.stringify(r.basis.filtersApplied));
+check("inactive -> home chapter + inactive only", JSON.stringify(r.basis.filtersApplied) === JSON.stringify(["Chapter: BNI Influencers (home chapter)", "Members: inactive only"]), JSON.stringify(r.basis.filtersApplied));
 
 // 5) attendance metrics + ascending order
 r = m.executeChapterQuery({ scope: { kind: "all" }, chapter: "home", metrics: ["attendanceAbsent"], orderBy: "+attendanceAbsent", topN: 10 }, index);
@@ -112,7 +122,9 @@ check("attendance metric present and ascending sort", r.rows[0].attendanceAbsent
 
 // slip_entries: with no member named, only ACTIVE members' slips unless asked
 let ee = m.executeSlipEntries({ type: "visitor" }, { ...index, entries: [...index.entries, { t: "visitor", w: "w1", a: "Chet", b: "Old Guest" }] });
-check("slip_entries default: no filter — an inactive inviter's visitors are listed", ee.entries.some((x) => x.visitor === "Old Guest"), JSON.stringify(ee.entries.map((x) => x.visitor)));
+check("slip_entries default: an inactive inviter's visitors are hidden", !ee.entries.some((x) => x.visitor === "Old Guest"), JSON.stringify(ee.entries.map((x) => x.visitor)));
+ee = m.executeSlipEntries({ type: "visitor", status: "any", chapter: "all" }, { ...index, entries: [...index.entries, { t: "visitor", w: "w1", a: "Chet", b: "Old Guest" }] });
+check("slip_entries status any + chapter all lists them", ee.entries.some((x) => x.visitor === "Old Guest"));
 ee = m.executeSlipEntries({ type: "visitor", status: "active" }, { ...index, entries: [...index.entries, { t: "visitor", w: "w1", a: "Chet", b: "Old Guest" }] });
 check("slip_entries status active hides them", !ee.entries.some((x) => x.visitor === "Old Guest"));
 ee = m.executeSlipEntries({ type: "visitor", member: "chet" }, { ...index, entries: [...index.entries, { t: "visitor", w: "w1", a: "Chet", b: "Old Guest" }] });
@@ -135,20 +147,21 @@ const snapSrc = readFileSync(new URL("../lib/chat/snapshot.ts", import.meta.url)
 check("snapshot carries monthly whole-chapter totals", snapSrc.includes("monthly: MonthStat[]") && snapSrc.includes("byMonth"));
 const gemSrc = readFileSync(new URL("../lib/chat/gemini.ts", import.meta.url), "utf8");
 check("prompt: totals come from monthly[] / weekly[]", gemSrc.includes("TOTALS vs MEMBER LISTS"));
-check("prompt: filters only when relevant + always shown + informative", gemSrc.includes("APPLY ONLY WHEN RELEVANT") && gemSrc.includes("Filters applied:") && gemSrc.includes("INFORMATIVE ANSWERS") && !gemSrc.includes("ACTIVE MEMBERS ONLY BY DEFAULT"));
+check("prompt: default filters + always shown + informative", gemSrc.includes("DEFAULT FILTERS") && gemSrc.includes("Filters applied:") && gemSrc.includes("INFORMATIVE ANSWERS") && gemSrc.includes("Whole chapter for reference") && !gemSrc.includes("APPLY ONLY WHEN RELEVANT"));
 
 // filter guard: a filter the question gives no cue for is dropped
 const gsrc = readFileSync(new URL("../lib/chat/filter-guard.ts", import.meta.url), "utf8");
 const g = await import("data:text/javascript;base64," + Buffer.from(ts.transpileModule(gsrc, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText).toString("base64"));
 const HC = "BNI Influencers";
 const gd = (args, q) => g.guardFilters(args, q, HC);
-check("guard: plain ranking drops home + active", (() => { const r = gd({ chapter: "home", status: "active" }, "Who gave the most referrals in the last 4 weeks?"); return r.chapter === undefined && r.status === undefined; })());
-check("guard: month question drops home filter", gd({ chapter: "BNI Influencers" }, "Top 3 referral givers in October 2026").chapter === undefined);
-check("guard: 'active members who brought 0 visitors' keeps both", (() => { const r = gd({ chapter: "home", status: "active" }, "List active members who brought 0 visitors in the last 26 weeks"); return r.chapter === "home" && r.status === "active"; })());
-check("guard: who-did-not list keeps active even without the word", (() => { const r = gd({ chapter: "home", status: "active" }, "Which members brought 0 visitors?"); return r.chapter === "home" && r.status === "active"; })());
-check("guard: inactive kept when asked, dropped when not", gd({ status: "inactive" }, "Which inactive members brought visitors?").status === "inactive" && gd({ status: "inactive" }, "Top 3 givers").status === undefined);
-check("guard: 'our chapter' keeps home", gd({ chapter: "home" }, "Who in our chapter gave the most?").chapter === "home");
-check("guard: another chapter is never stripped", gd({ chapter: "Alchemist" }, "Top givers in Alchemist").chapter === "Alchemist");
-check("guard: follow-up inherits cue from history text", gd({ chapter: "home", status: "active" }, "How many did they bring? active members of our chapter").status === "active");
+check("guard: plain ranking -> forced to home chapter + active (model tried to widen)", (() => { const r = gd({ chapter: "all", status: "any" }, "Who gave the most referrals in the last 4 weeks?"); return r.chapter === "home" && r.status === "active"; })());
+check("guard: 'across all chapters' lifts the chapter default", gd({ chapter: "home" }, "Top givers across all chapters in October").chapter === "all");
+check("guard: 'inactive members' -> inactive", gd({ status: "active" }, "Which inactive members brought visitors?").status === "inactive");
+check("guard: 'including inactive' / 'active and inactive' / 'all members' -> any", ["How many members including inactive ones?", "Active and inactive members who gave referrals", "List all members who brought visitors"].every((q) => gd({ status: "active" }, q).status === "any"));
+check("guard: the model cannot widen status without a cue", gd({ status: "any" }, "Top 3 givers in October").status === "active");
+check("guard: a named member is never filtered", (() => { const r = gd({ members: ["Neha Goel"], chapter: "home", status: "active" }, "How many visitors did Neha Goel bring?"); return r.chapter === undefined && r.status === undefined; })());
+check("guard: another chapter named in the question is kept", gd({ chapter: "Alchemist" }, "Top givers in Alchemist").chapter === "Alchemist");
+check("guard: another chapter NOT named in the question is dropped to home", gd({ chapter: "Alchemist" }, "Top givers in October").chapter === "home");
+check("guard: follow-up inherits the cue from the history text", gd({ status: "active" }, "How many did they bring? inactive members only").status === "inactive");
 
 console.log(`TOTAL: ${pass} passed, ${fail} failed`);

@@ -85,7 +85,7 @@ export const METRIC_KEYS = Object.keys(METRIC_TO_FIELD) as MetricKey[];
 export const CHAPTER_QUERY_TOOL = {
   name: "chapter_query",
   description:
-    "Query member-level metrics (slips AND PALMS attendance) for any time scope — a single meeting week, a month, a date range, the latest week, the last N weeks/months, or all-time — with filters for chapter (home chapter or another), member status (NO filter by default — pass chapter / status only when the question calls for it), a metric condition (e.g. visitorsInvited = 0), sorting and a row limit. Zero-activity members are included when you filter by chapter/status or set includeZero. Returns { scope, rowCount, distinct, totals, rows[] }. Call it for ANY member-level, scoped or filtered question; never answer a scoped 'who did X' question from memory.",
+    "Query member-level metrics (slips AND PALMS attendance) for any time scope — a single meeting week, a month, a date range, the latest week, the last N weeks/months, or all-time — with filters for chapter (home chapter or another), filters that DEFAULT to the home chapter's ACTIVE members (pass chapter 'all' / status 'any' or 'inactive' only when the question explicitly asks), a metric condition (e.g. visitorsInvited = 0), sorting and a row limit. Zero-activity members are included when you filter by chapter/status or set includeZero. Returns { scope, rowCount, distinct, totals, rows[] }. Call it for ANY member-level, scoped or filtered question; never answer a scoped 'who did X' question from memory.",
   parameters: {
     type: "object",
     properties: {
@@ -120,12 +120,12 @@ export const CHAPTER_QUERY_TOOL = {
       },
       chapter: {
         type: "string",
-        description: "Restrict to members of one chapter: 'home' (the app's home chapter — use it for 'BNI Influencers' / 'BNI Influencer' / 'Influencers' / 'our chapter') or another chapter's name (partial, ignoring a leading 'BNI').",
+        description: "DEFAULT = 'home' (the app's home chapter: 'BNI Influencers' / 'BNI Influencer' / 'Influencers' / 'our chapter'). Pass 'all' ONLY when the question explicitly asks for other chapters / all chapters, or another chapter's name (partial, ignoring a leading 'BNI'). Not applied when `members` names specific people.",
       },
       status: {
         type: "string",
         enum: ["active", "inactive", "any"],
-        description: "Member status filter. DEFAULT = no filter (active + inactive). Pass 'active' only when the question is about active / current members (or is a who-did-NOT list about our members); 'inactive' only when it asks about inactive members.",
+        description: "Member status. DEFAULT = 'active'. Pass 'inactive' ONLY when the question asks about inactive members, and 'any' ONLY when it says to include inactive / all members / active and inactive. Not applied when `members` names specific people.",
       },
       includeZero: {
         type: "boolean",
@@ -379,7 +379,16 @@ function basisOf(o: {
   ];
   return {
     filtersApplied,
-    filtersSummary: filtersApplied.length > 0 ? filtersApplied.join(" · ") : "none (all chapters, active and inactive members)",
+    filtersSummary:
+      filtersApplied.length === 0
+        ? "none (all chapters, active and inactive members)"
+        : [
+            o.chapter ? `Home chapter (${o.homeChapter})` : o.memberNamed ? "" : "all chapters",
+            o.memberNamed ? `Member: ${o.memberNamed}` : "",
+            o.status === "active" ? "active members only" : o.status === "inactive" ? "inactive members only" : o.memberNamed ? "" : "active and inactive members",
+          ]
+            .filter(Boolean)
+            .join(" · "),
     chapter: o.chapter ?? `all chapters in the data (${o.homeChapter} members plus members of other chapters)`,
     members: o.memberNamed
       ? `the named member(s) (${o.memberNamed}) — active or inactive`
@@ -435,15 +444,19 @@ export function executeChapterQuery(args: unknown, index: QueryIndex): Record<st
   }
 
   // Roster filters.
-  const chapterRaw = typeof a.chapter === "string" ? a.chapter.trim() : "";
+  const chapterArg = typeof a.chapter === "string" ? a.chapter.trim() : "";
+  const namedLookup = memberFilters.length > 0;
+  // DEFAULT filters: the home chapter's ACTIVE members. 'all' lifts the chapter filter, status 'any' lifts the
+  // status filter. A lookup that names members is never filtered.
+  const chapterRaw = /^(all|any|every)(s+chapters?)?$/i.test(chapterArg) ? "" : chapterArg || (namedLookup ? "" : "home");
   const homeWords = /^(home|our|my|this)(\s+chapter)?$/i;
   const wantHome =
     homeWords.test(chapterRaw) || (chapterRaw !== "" && chapterKeyOf(chapterRaw) === chapterKeyOf(index.homeChapter));
   // Unless inactive members are explicitly asked for, only ACTIVE members count.
   const statusArg = a.status === "active" || a.status === "inactive" || a.status === "any" ? a.status : null;
-  const status = statusArg ?? "any"; // no status filter unless the question calls for one
+  const status = statusArg ?? (namedLookup ? "any" : "active");
   const inactiveKeys = new Set(index.roster.filter((m) => !m.active).map((m) => m.key));
-  const useRoster = chapterRaw !== "" || statusArg === "active" || statusArg === "inactive" || a.includeZero === true;
+  const useRoster = chapterRaw !== "" || status === "active" || status === "inactive" || a.includeZero === true;
 
   let entries: Agg[];
   let rosterMatched: number | null = null;
@@ -539,6 +552,7 @@ export function executeChapterQuery(args: unknown, index: QueryIndex): Record<st
       from: dates[0],
       to: dates[dates.length - 1],
       homeChapter: index.homeChapter,
+      ...(namedLookup ? { memberNamed: memberFilters.join(", ") } : {}),
     }),
     ...(rosterMatched !== null ? { rosterMembersMatched: rosterMatched } : {}),
     rowCount: entries.length, // members matching the scope/filters BEFORE topN
@@ -572,8 +586,9 @@ export const SLIP_ENTRIES_TOOL = {
       status: {
         type: "string",
         enum: ["active", "inactive", "any"],
-        description: "Only when NO member is named: which members' slips to list. DEFAULT = no filter (everyone); 'active' / 'inactive' only when the question asks for them.",
+        description: "Only when NO member is named: which members' slips to list. DEFAULT = 'active'; 'inactive' / 'any' only when the question explicitly asks for them.",
       },
+      chapter: { type: "string", description: "Only when NO member is named. DEFAULT = 'home' (slips whose first-side person — inviter / giver / initiator / thanked member — is a home-chapter member); 'all' only when the question explicitly asks for other chapters / all chapters." },
       minAmount: { type: "number", description: "tyfcb only: keep entries with amount strictly ABOVE this rupee value (₹10 lakh = 1000000, ₹1 crore = 10000000)." },
       groupBy: { type: "string", enum: ["first", "second"], description: "Count the matching slips per person instead of listing them: first = per inviter / referral giver / 121 INITIATOR / TYFCB thanked member; second = per visitor / referral receiver / 121 partner / thanker. Use it for 'who initiated the most 121s', 'who received the most referrals' style questions about individual slips. Result: groups[{name,count,totalAmount?}] (top 50, largest first)." },
       sortBy: { type: "string", enum: ["date", "amount"], description: "date = newest first (default); amount = largest first (tyfcb)." },
@@ -594,7 +609,10 @@ export function executeSlipEntries(args: unknown, index: QueryIndex): Record<str
   const minAmount = Number.isFinite(Number(a.minAmount)) && a.minAmount !== undefined && a.minAmount !== null ? Number(a.minAmount) : null;
   const weekOf = new Map(index.weeks.map((w) => [w.id, w]));
   // No status filter unless the question calls for one.
-  const status = a.status === "inactive" || a.status === "active" ? a.status : "any";
+  const status = member ? "any" : a.status === "inactive" || a.status === "any" ? a.status : "active";
+  const chapterArg = typeof a.chapter === "string" ? a.chapter.trim() : "";
+  const homeOnly = !member && !/^(all|any|every)(s+chapters?)?$/i.test(chapterArg);
+  const homeKeys = new Set(index.roster.filter((m) => m.home).map((m) => m.key));
   const inactiveKeys = new Set(index.roster.filter((m) => !m.active).map((m) => m.key));
   const nk = (n: string) => n.replace(/\s+/g, " ").trim().toLowerCase();
 
@@ -605,6 +623,7 @@ export function executeSlipEntries(args: unknown, index: QueryIndex): Record<str
       const off = inactiveKeys.has(nk(e.a));
       if (status === "active" ? off : !off) return false;
     }
+    if (homeOnly && !homeKeys.has(nk(e.a))) return false;
     if (member) {
       const first = e.a.toLowerCase().includes(member);
       const second = e.b.toLowerCase().includes(member);
@@ -652,7 +671,7 @@ export function executeSlipEntries(args: unknown, index: QueryIndex): Record<str
     },
     ...(groups ? { groups, groupedBy: a.groupBy } : {}),
     basis: basisOf({
-      chapter: null,
+      chapter: homeOnly ? `${index.homeChapter} (home chapter)` : null,
       status: member ? "any" : status,
       weeks: scope.ids.size,
       homeChapter: index.homeChapter,
