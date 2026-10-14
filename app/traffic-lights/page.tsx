@@ -52,20 +52,24 @@ export default async function TrafficLightsPage({
 
   return (
     <div>
-      <div className="page-head">
-        <h1>
-          Traffic Lights
-          <span className="count-badge">{rows.length} member(s)</span>
-        </h1>
-        <p className="sub muted">
-          {view.windowLabel} — active members of {data.homeName}, scored out of 100
-        </p>
+      <div className="report-top tl-top">
+        <div className="page-head">
+          <h1>
+            Traffic Lights
+            <span className="count-badge">{rows.length} member(s)</span>
+          </h1>
+          <p className="sub muted">
+            {view.windowLabel} — active members of {data.homeName}, scored out of 100
+          </p>
+        </div>
+        <div className="report-head-actions">
+          {view.rows.length > 0 ? <TrafficExportButtons month={view.month} light={light} nameFilter={nameFilter} /> : null}
+        </div>
       </div>
 
       <div className="card report-controls">
         <div className="report-controls-row">
           {view.months.length > 0 ? <TrafficMonthPicker value={view.month} months={view.months} light={light} /> : null}
-          {view.rows.length > 0 ? <TrafficExportButtons month={view.month} light={light} nameFilter={nameFilter} /> : null}
         </div>
         <div className="tl-chips">
           <Link href={chip("")} className={`tl-chip${light === "" ? " on" : ""}`}>
