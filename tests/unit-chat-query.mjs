@@ -149,6 +149,10 @@ const gemSrc = readFileSync(new URL("../lib/chat/gemini.ts", import.meta.url), "
 check("prompt: totals come from monthly[] / weekly[]", gemSrc.includes("TOTALS vs MEMBER LISTS"));
 check("prompt: default filters + always shown + informative", gemSrc.includes("DEFAULT FILTERS") && gemSrc.includes("Filters applied:") && gemSrc.includes("INFORMATIVE ANSWERS") && gemSrc.includes("Whole chapter for reference") && !gemSrc.includes("APPLY ONLY WHEN RELEVANT"));
 
+// groupBy keeps names intact (a regex slip once turned every lowercase 's' into a space)
+ee = m.executeSlipEntries({ type: "visitor", status: "any", chapter: "all", groupBy: "first" }, { ...index, entries: [{ t: "visitor", w: "w4", a: "Sunil  Bindra", b: "G1" }, { t: "visitor", w: "w4", a: "Sunil Bindra", b: "G2" }] });
+check("slip_entries groupBy: names intact and whitespace-normalised", ee.groups?.length === 1 && ee.groups[0].name === "Sunil Bindra" && ee.groups[0].count === 2, JSON.stringify(ee.groups));
+
 // filter guard: a filter the question gives no cue for is dropped
 const gsrc = readFileSync(new URL("../lib/chat/filter-guard.ts", import.meta.url), "utf8");
 const g = await import("data:text/javascript;base64," + Buffer.from(ts.transpileModule(gsrc, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText).toString("base64"));

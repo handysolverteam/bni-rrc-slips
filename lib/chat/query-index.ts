@@ -653,7 +653,7 @@ export function executeSlipEntries(args: unknown, index: QueryIndex): Record<str
       ? (() => {
           const g = new Map<string, { name: string; count: number; totalAmount: number }>();
           for (const e of hits) {
-            const name = (a.groupBy === "first" ? e.a : e.b).replace(/s+/g, " ").trim() || "(not recorded)";
+            const name = (a.groupBy === "first" ? e.a : e.b).replace(/\s+/g, " ").trim() || "(not recorded)";
             const cur = g.get(name.toLowerCase()) ?? { name, count: 0, totalAmount: 0 };
             cur.count += 1;
             cur.totalAmount += e.amt ?? 0;

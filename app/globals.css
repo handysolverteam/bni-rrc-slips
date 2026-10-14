@@ -570,6 +570,19 @@ table.grid tfoot tr.sum-row td {
 .pill.inside { background: var(--green-soft); color: var(--green-ink); border-color: rgba(31, 138, 76, 0.25); }
 .pill.outside { background: var(--purple-soft); color: var(--purple-ink); border-color: rgba(106, 79, 199, 0.25); }
 
+/* Members table: editable Category input box. */
+.cat-edit { display: inline-flex; align-items: center; gap: 6px; width: 100%; }
+.cat-input {
+  width: 100%; min-width: 120px; padding: 5px 8px; font-size: 13.5px;
+  border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--ink);
+}
+.cat-input::placeholder { color: var(--muted); font-style: italic; }
+.cat-input:hover { border-color: var(--field); }
+.cat-input:focus { border-color: var(--accent-hover); background: var(--surface); outline: none; }
+.cat-state { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.cat-state.ok { color: var(--green-ink); }
+.cat-state.bad { color: #d64545; }
+
 /* Members table: admin-only Active toggle in the first column. */
 .active-toggle {
   width: 16px; height: 16px; margin: 0; cursor: pointer;
