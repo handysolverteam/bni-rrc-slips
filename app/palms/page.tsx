@@ -5,6 +5,7 @@ import PalmsExportButtons from "@/components/PalmsExportButtons";
 import PalmsImportPanel from "@/components/PalmsImportPanel";
 import PalmsStatsShare from "@/components/PalmsStatsShare";
 import { buildPalmsStatsShare } from "@/lib/palms-share";
+import { expandWeekToken, LAST6_TOKEN } from "@/lib/weeks";
 import { requirePageTenant } from "@/lib/server-auth";
 import {
   fetchPalmsAttendanceStats,
@@ -33,12 +34,16 @@ export default async function PalmsPage({
   const tenantId = guard.tenantId;
   const sp = await searchParams;
 
-  const weekIds = palmsWeekScope(sp.week); // default scope = every week with attendance
-  const allWeeks = weekIds.length === 0;
-  const weekId = allWeeks ? "all" : weekIds.join(",");
+  const weeks = await fetchPalmsWeekOptions(tenantId);
+  // "last6m" = the standard last 6 months (the same entry in every week dropdown): the box keeps the token, queries and
+  // exports get the real week ids.
+  const last6 = (sp.week ?? "").split(",").map((x) => x.trim()).includes(LAST6_TOKEN);
+  const weekIds = palmsWeekScope(expandWeekToken(sp.week, weeks)); // default scope = every week with attendance
+  const allWeeks = weekIds.length === 0 && !last6;
+  const weekId = last6 ? LAST6_TOKEN : allWeeks ? "all" : weekIds.join(",");
+  const exportWeek = allWeeks ? "all" : weekIds.join(",");
 
-  const [weeks, matrix, record, stats] = await Promise.all([
-    fetchPalmsWeekOptions(tenantId),
+  const [matrix, record, stats] = await Promise.all([
     fetchPalmsMatrix(tenantId, weekIds),
     fetchPalmsImportRecord(tenantId),
     fetchPalmsAttendanceStats(tenantId),
@@ -57,7 +62,7 @@ export default async function PalmsPage({
           <p className="sub muted">{scopeLabel}</p>
         </div>
         <div className="report-head-actions">
-          <PalmsExportButtons weekId={weekId} scopeLabel={allWeeks ? "All weeks" : scopeLabel || "palms"} />
+          <PalmsExportButtons weekId={exportWeek} scopeLabel={allWeeks ? "All weeks" : scopeLabel || "palms"} />
         </div>
       </div>
 
@@ -67,9 +72,9 @@ export default async function PalmsPage({
         <div className="card">
           <div className="palms-stats-head">
             <div>
-              <h2 className="palms-stats-title">Last 6 Months rolling period (26 weeks): Active members</h2>
+              <h2 className="palms-stats-title">Last 6 months ({stats.meetingCount} weeks): Active members</h2>
               <p className="sub muted">
-                {dayLabel(stats.from)} – {dayLabel(stats.to)} · {stats.meetingCount} meeting(s)
+                {dayLabel(stats.from)} – {dayLabel(stats.to)} · {stats.meetingCount} weeks
               </p>
             </div>
             <PalmsStatsShare

@@ -6,12 +6,11 @@ import NoAccess from "@/components/NoAccess";
 import VisitorRankShare from "@/components/VisitorRankShare";
 import { multiParts } from "@/lib/list-filters";
 import { requirePageTenant } from "@/lib/server-auth";
+import { inWindow, windowForDates, windowLabel, windowTitle } from "@/lib/period";
 import { fetchVisitorRanking } from "@/lib/visitor-ranking";
 import { buildRankingShare, filterRanking, mergeRanking, namesWithNone } from "@/lib/visitor-ranking-share";
 
 export const dynamic = "force-dynamic";
-
-const DEFAULT_MONTHS = 6;
 
 export default async function VisitorRankPage({
   searchParams,
@@ -24,6 +23,7 @@ export default async function VisitorRankPage({
 
   const data = await fetchVisitorRanking(guard.tenantId).catch(() => ({
     months: [] as { key: string; label: string }[],
+    dates: [] as string[],
     counts: {},
     pool: [] as string[],
   }));
@@ -33,15 +33,17 @@ export default async function VisitorRankPage({
     .split(",")
     .map((s) => s.trim())
     .filter((k) => known.has(k));
-  // Nothing picked = the last 6 months; picked months are summed exactly.
-  const shown = picked.length > 0 ? months.filter((m) => picked.includes(m.key)) : months.slice(0, DEFAULT_MONTHS);
-  const keys = shown.map((m) => m.key);
+  // Nothing picked = the standard "last 6 months" window (lib/period.ts: ends on the newest meeting, 26 or 27
+  // weeks); picked months are summed exactly, meeting by meeting.
+  const win = windowForDates(data.dates);
+  const keys = picked.length > 0 ? data.dates.filter((d) => picked.includes(d.slice(0, 7))) : win ? data.dates.filter((d) => inWindow(d, win)) : [];
+  const windowName = win ? windowTitle(win, keys.length) : "Last 6 months";
   const label =
     picked.length > 0
-      ? shown.length === 1
-        ? shown[0].label
-        : `${shown.length} months`
-      : `Last ${DEFAULT_MONTHS} months`;
+      ? months.filter((m) => picked.includes(m.key)).length === 1
+        ? (months.find((m) => picked.includes(m.key))?.label ?? "Selected month")
+        : `${picked.length} months (${keys.length} weeks)`
+      : windowName;
 
   // Column filters: Member (dropdown, one or several names) and Visitors (typed: 3, >2, 2-4, …).
   const memberFilter = (sp.c_member ?? "").trim();
@@ -63,13 +65,13 @@ export default async function VisitorRankPage({
           <span className="count-badge">{ranking.length} member(s)</span>
         </h1>
         <p className="sub muted">
-          {picked.length > 0 ? "Selected months" : `Last ${DEFAULT_MONTHS} months`} — visitors brought, least to most
+          {picked.length > 0 ? `Selected months · ${keys.length} weeks` : win ? `${windowTitle(win, keys.length)} · ${windowLabel(win, keys.length)}` : "Last 6 months"} — visitors brought, least to most
         </p>
       </div>
 
       <div className="card report-controls">
         <div className="report-controls-row">
-          <MonthFilter basePath="/visitor-rank" value={picked.join(",")} months={months.map((m) => ({ key: m.key, label: m.label }))} />
+          <MonthFilter basePath="/visitor-rank" value={picked.join(",")} months={months.map((m) => ({ key: m.key, label: m.label }))} allLabel={windowName} />
           {ranking.length > 0 ? <VisitorRankShare text={shareText} /> : null}
           {picked.length > 0 || filtered ? (
             <span className="clear-right">

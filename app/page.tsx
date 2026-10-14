@@ -29,7 +29,7 @@ export default async function Home() {
       <div className="card trend-card">
         <div className="import-head">
           <h2>
-            Attendance <span className="muted">— last 6 months, weekly (Wednesdays)</span>
+            Attendance <span className="muted">— last 6 months ({attendance.weeks.length} weeks), weekly (Wednesdays)</span>
           </h2>
         </div>
         <TrendChart weeks={attendance.weeks} series={attendance.series} allLabel="All letters" />
@@ -38,7 +38,7 @@ export default async function Home() {
       <div className="card trend-card">
         <div className="import-head">
           <h2>
-            Slip trends <span className="muted">— last 6 months, weekly (Wednesdays)</span>
+            Slip trends <span className="muted">— last 6 months ({trends.weeks.length} weeks), weekly (Wednesdays)</span>
           </h2>
         </div>
         <TrendChart weeks={trends.weeks} series={trends.series} />

@@ -678,7 +678,7 @@ export function PalmsSkeleton() {
         </div>
       </div>
 
-      {/* Rolling 26-week breakdown card below the matrix. */}
+      {/* Last-6-months breakdown card below the matrix. */}
       <div className="card">
         <div className="palms-stats-title">
           <Bar w={340} h={18} r={4} />

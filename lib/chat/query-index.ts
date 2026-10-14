@@ -95,7 +95,7 @@ export const CHAPTER_QUERY_TOOL = {
           kind: {
             type: "string",
             enum: ["week", "month", "range", "all", "latest", "recent"],
-            description: "week = one meeting (date or label text), month = YYYY-MM or 'September 2026', range = start..end dates, all = every week, latest = newest week with slips, recent = the last N meetings or months ending at the newest week with slips (set weeks or months, or value like '26 weeks' / '6 months')",
+            description: "week = one meeting (date or label text), month = YYYY-MM or 'September 2026', range = start..end dates, all = every week, latest = newest week with slips, recent = the last N meetings, or the last N MONTHS ending at the newest week with slips (set weeks or months, or value like '4 weeks' / '6 months'). 'Last 6 months' and 'last 26 weeks' are the same BNI window (26 or 27 meetings): use months: 6",
           },
           value: {
             type: "string",
@@ -103,7 +103,7 @@ export const CHAPTER_QUERY_TOOL = {
           },
           start: { type: "string", description: "range start date (optional override)" },
           end: { type: "string", description: "range end date (optional override)" },
-          weeks: { type: "integer", description: "recent: how many meetings back (e.g. 26)" },
+          weeks: { type: "integer", description: "recent: how many meetings back (e.g. 4, 12) — for BNI's 'last 6 months / 26 weeks' window use months: 6 instead" },
           months: { type: "integer", description: "recent: how many months back (e.g. 6)" },
         },
         required: ["kind"],
@@ -227,6 +227,9 @@ function resolveScope(
     if (nWeeks > 0) {
       hits = withData.slice(0, nWeeks);
     } else {
+      // BNI / go-green window (lib/period.ts rollingWindow): ends on the newest meeting, starts the DAY AFTER the same
+      // date `months` months earlier (so 'last 6 months' holds 26 or 27 meetings). Kept inline: this file is compiled
+      // stand-alone by its unit test.
       const months = nMonths > 0 ? nMonths : 6;
       const anchor = new Date(`${withData[0].date}T00:00:00Z`);
       anchor.setUTCMonth(anchor.getUTCMonth() - months);

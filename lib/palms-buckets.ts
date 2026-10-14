@@ -1,4 +1,4 @@
-// Rolling 26-week attendance breakdown for the `/palms` "Active members"
+// Attendance breakdown (last 6 months, lib/period.ts) for the `/palms` "Active members"
 // card — pure functions (no I/O), unit-tested standalone in
 // tests/unit-palms-stats.mjs.
 
@@ -14,17 +14,6 @@ export type PalmsBucketGroup = {
   key: "absent" | "medical" | "substitute";
   buckets: PalmsBucket[];
 };
-
-/** The rolling window is 26 weeks = 182 days, ending on (and including) today. */
-export const ROLLING_WEEKS = 26;
-
-/** Inclusive `[from, to]` day window: the last 26 weeks ending at `todayIso`. */
-export function rollingWindow(todayIso: string): { from: string; to: string } {
-  const t = Date.parse(`${todayIso}T00:00:00Z`);
-  const from = new Date(t - (ROLLING_WEEKS * 7 - 1) * 86400000);
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  return { from: iso(from), to: iso(new Date(t)) };
-}
 
 /** Display-normalised member name key (same rule as the matrix). */
 export const attendanceNameKey = (n: string): string =>

@@ -2,8 +2,8 @@ import { cachedSwr } from "@/lib/cache";
 import { fetchAllRows } from "@/lib/supabase/paged";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import type { ParsedPalmsWide } from "@/lib/palms-import";
-import { bucketAttendance, rollingWindow, type AttendanceFlagRow, type PalmsBucketGroup } from "@/lib/palms-buckets";
-import { todayIso } from "@/lib/missing-weeks";
+import { bucketAttendance, type AttendanceFlagRow, type PalmsBucketGroup } from "@/lib/palms-buckets";
+import { inWindow, latestDate, rollingWindow } from "@/lib/period";
 import type { WeekOption } from "@/lib/weeks";
 
 /** Flags of one attendance row joined as PALMS letters ("P", "PM", …). */
@@ -317,7 +317,7 @@ export async function planPalmsImport(
 export type PalmsAttendanceStats = {
   from: string;
   to: string;
-  /** Wednesday meetings inside the rolling window (≤ 26). */
+  /** Wednesday meetings inside the window (26 or 27 for the standard last 6 months). */
   meetingCount: number;
   groups: PalmsBucketGroup[];
   /** Distinct active members sitting in at least one bucket. */
@@ -325,35 +325,30 @@ export type PalmsAttendanceStats = {
 };
 
 /**
- * The `/palms` "Last 6 Months rolling period (26 weeks): Active members"
- * card: sum each active member's `absent` / `m` / `s` flags over the
- * Wednesday meetings of the rolling window (`rollingWindow(today)`) and
- * bucket them 3+ / 2 / 1 per letter (`bucketAttendance`). Inactive members
- * (case-insensitive name match against `members.is_inactive`) are dropped;
- * names without a member row count as active. `null` when the window has no
- * meetings at all.
+ * The `/palms` "Last 6 months (N weeks): Active members" card: sum each active member's `absent` / `m` / `s` flags
+ * over the meetings of the standard window (lib/period.ts: ends on the newest imported meeting, starts the day after
+ * the same date 6 months earlier — 26 or 27 meetings) and bucket them 3+ / 2 / 1 per letter (`bucketAttendance`).
+ * Inactive members (case-insensitive name match against `members.is_inactive`) are dropped; names without a member
+ * row count as active. `null` when the window has no meetings at all.
  */
-export function fetchPalmsAttendanceStats(
-  tenantId: string,
-  today: string = todayIso(),
-): Promise<PalmsAttendanceStats | null> {
-  return cachedSwr(`palms:stats:${tenantId}:${today}`, 60_000, () => computePalmsAttendanceStats(tenantId, today));
+export function fetchPalmsAttendanceStats(tenantId: string): Promise<PalmsAttendanceStats | null> {
+  return cachedSwr(`palms:stats:${tenantId}`, 60_000, () => computePalmsAttendanceStats(tenantId));
 }
 
-async function computePalmsAttendanceStats(
-  tenantId: string,
-  today: string,
-): Promise<PalmsAttendanceStats | null> {
-  const { from, to } = rollingWindow(today);
+async function computePalmsAttendanceStats(tenantId: string): Promise<PalmsAttendanceStats | null> {
   const sb = getSupabaseServer();
-  const { data: weekRows, error } = await sb
-    .from("bni_weeks")
-    .select("id")
-    .gte("meeting_date", from)
-    .lte("meeting_date", to)
-    .order("meeting_date", { ascending: true });
-  if (error) throw new Error(error.message);
-  const weekIds = (weekRows ?? []).map((w) => w.id);
+  // The tenant's imported meetings (slips or PALMS) decide the anchor — never "today".
+  const { data: batches, error: bErr } = await sb.from("import_batches").select("bni_week_id").eq("tenant_id", tenantId).not("bni_week_id", "is", null);
+  if (bErr) throw new Error(bErr.message);
+  const batchIds = [...new Set((batches ?? []).map((b) => b.bni_week_id as string))];
+  if (batchIds.length === 0) return null;
+  const { data: all, error: wErr } = await sb.from("bni_weeks").select("id,meeting_date").in("id", batchIds);
+  if (wErr) throw new Error(wErr.message);
+  const meetings = (all ?? []).filter((w) => w.meeting_date).map((w) => ({ id: w.id as string, date: String(w.meeting_date).slice(0, 10) }));
+  const win = rollingWindow(latestDate(meetings.map((m) => m.date)));
+  if (!win) return null;
+  const { from, to } = win;
+  const weekIds = meetings.filter((m) => inWindow(m.date, win)).map((m) => m.id);
   if (weekIds.length === 0) return null;
 
   const [rows, inactive] = await Promise.all([

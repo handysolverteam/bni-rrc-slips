@@ -3,7 +3,7 @@ import { whatsappShareUrl } from "@/lib/whatsapp";
 /** One member and how many visitors they brought in the chosen months. */
 export type RankEntry = { name: string; count: number };
 
-/** Per-month visitor counts: month key (`YYYY-MM`) -> inviter name -> visitors. */
+/** Per-period visitor counts: period key (a meeting date `YYYY-MM-DD`) -> inviter name -> visitors. */
 export type MonthCounts = Record<string, Record<string, number>>;
 
 /**

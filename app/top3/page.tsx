@@ -3,12 +3,11 @@ import MonthFilter from "@/components/MonthFilter";
 import MonthlyTop from "@/components/MonthlyTop";
 import NoAccess from "@/components/NoAccess";
 import { fetchMonthlyTop } from "@/lib/monthly-top";
+import { windowRange } from "@/lib/period";
 import type { MonthTop } from "@/lib/monthly-top-share";
 import { requirePageTenant } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
-
-const DEFAULT_MONTHS = 6;
 
 export default async function Top3Page({
   searchParams,
@@ -20,8 +19,13 @@ export default async function Top3Page({
   const sp = await searchParams;
 
   let all: MonthTop[] = [];
+  let windowMonths: MonthTop[] = [];
+  let win: Awaited<ReturnType<typeof fetchMonthlyTop>>["window"] = null;
   try {
-    all = await fetchMonthlyTop(guard.tenantId);
+    const data = await fetchMonthlyTop(guard.tenantId);
+    all = data.months;
+    windowMonths = data.windowMonths;
+    win = data.window;
   } catch {
     all = [];
   }
@@ -30,8 +34,9 @@ export default async function Top3Page({
     .split(",")
     .map((s) => s.trim())
     .filter((k) => known.has(k));
-  // Nothing picked = the last 6 months; picked months show exactly those.
-  const shown = picked.length > 0 ? all.filter((m) => picked.includes(m.key)) : all.slice(0, DEFAULT_MONTHS);
+  // Nothing picked = the standard last 6 months (lib/period.ts: 26 or 27 weeks ending on the newest meeting; the first
+  // month is clipped to the window start); picked months show those whole months.
+  const shown = picked.length > 0 ? all.filter((m) => picked.includes(m.key)) : windowMonths;
 
   return (
     <div>
@@ -41,7 +46,7 @@ export default async function Top3Page({
           <span className="count-badge">{shown.length} month(s)</span>
         </h1>
         <p className="sub muted">
-          {picked.length > 0 ? "Selected months" : `Last ${DEFAULT_MONTHS} months`} — TYFCB · Referrals · Visitors
+          {picked.length > 0 ? "Selected months" : win ? `Last ${win.months} months · ${windowRange(win)}` : "Last 6 months"} — TYFCB · Referrals · Visitors
         </p>
       </div>
 

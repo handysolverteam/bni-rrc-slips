@@ -1,7 +1,6 @@
 import Link from "next/link";
 import ColumnFilter from "@/components/ColumnFilter";
 import NoAccess from "@/components/NoAccess";
-import TrafficLightImport from "@/components/TrafficLightImport";
 import TrafficMonthPicker from "@/components/TrafficMonthPicker";
 import { multiParts } from "@/lib/list-filters";
 import { requirePageTenant } from "@/lib/server-auth";
@@ -47,7 +46,6 @@ export default async function TrafficLightsPage({
     if (c) q.set("light", c);
     return `/traffic-lights?${q.toString()}`;
   };
-  const mismatches = view.hasBni ? view.rows.filter((r) => r.bni && !r.bni.matches).length : 0;
 
   return (
     <div>
@@ -64,9 +62,6 @@ export default async function TrafficLightsPage({
       <div className="card report-controls">
         <div className="report-controls-row">
           {view.months.length > 0 ? <TrafficMonthPicker value={view.month} months={view.months} light={light} /> : null}
-          {view.month ? (
-            <TrafficLightImport month={view.month} hasBni={view.hasBni} filename={view.bniFilename} tableReady={view.bniTableReady} />
-          ) : null}
         </div>
         <div className="tl-chips">
           <Link href={chip("")} className={`tl-chip${light === "" ? " on" : ""}`}>
@@ -90,15 +85,15 @@ export default async function TrafficLightsPage({
 
       {view.missingAttendance > 0 ? (
         <div className="data-alert">
-          Attendance is missing for {view.missingAttendance} member(s) in this window (0 points for them) — import the full PALMS
-          attendance, or import BNI's Excel for this month to use its attendance.
+          PALMS attendance is missing for {view.missingAttendance} member(s) in this window (0 points for them) — import the full PALMS
+          attendance report on the Attendance screen.
         </div>
       ) : null}
-      {view.hasBni && mismatches > 0 ? (
-        <div className="data-alert">
-          {mismatches} member(s) differ from BNI's own total (see the BNI column) — usually a visitor credit or a week of attendance.
-        </div>
-      ) : null}
+      <p className="sub muted tl-source">
+        Attendance comes from the PALMS attendance import; CEU, 121, referrals, TYFCB and visitors from the slip audit report. Sponsors are
+        counted from the visitor slips (a visitor who is now a member credits whoever invited them). BNI may credit visitors for whom no
+        slip was filed, so visitors and sponsors can be lower than in BNI's own report.
+      </p>
 
       {view.rows.length === 0 ? (
         <div className="card empty-state">
@@ -129,24 +124,17 @@ export default async function TrafficLightsPage({
                   <th colSpan={2}>TYFCB</th>
                   <th colSpan={2}>Visitors</th>
                   <th colSpan={2}>Sponsors</th>
-                  {view.hasBni ? <th colSpan={2}>BNI's total</th> : null}
                 </tr>
                 <tr className="tl-sub">
                   {["Rate", "Score", "Rate", "Score", "Rate", "Score", "Rate", "Score", "Amount", "Score", "Count", "Score", "Count", "Score"].map((h, i) => (
                     <th key={i}>{h}</th>
                   ))}
-                  {view.hasBni ? (
-                    <>
-                      <th>Score</th>
-                      <th>Diff</th>
-                    </>
-                  ) : null}
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={view.hasBni ? 19 : 17} className="muted">
+                    <td colSpan={17} className="muted">
                       No member matches these filters.
                     </td>
                   </tr>
@@ -166,9 +154,8 @@ export default async function TrafficLightsPage({
                       <td>
                         <span className={`tl-dot tl-${r.color}`} title={LIGHT_LABEL[r.color]} /> <strong>{r.total}</strong>
                       </td>
-                      <td title={r.attendance.source === "bni" ? "From BNI's file" : r.attendance.source === "none" ? "Not imported" : "From PALMS attendance"}>
+                      <td title={r.attendance.source === "none" ? "No PALMS attendance imported" : "From PALMS attendance"}>
                         {pct(r.attendance.rate)}
-                        {r.attendance.source === "bni" ? <sup className="tl-src">BNI</sup> : null}
                       </td>
                       <td>{r.attendance.score}</td>
                       <td>{rate(r.ceu.rate)}</td>
@@ -179,23 +166,10 @@ export default async function TrafficLightsPage({
                       <td>{r.referrals.score}</td>
                       <td>{rupees(r.tyfcb.amount)}</td>
                       <td>{r.tyfcb.score}</td>
-                      <td title={r.visitors.source === "bni" ? `From BNI's file (slips show ${r.visitors.slips})` : "From the slips"}>
-                        {r.visitors.count}
-                        {r.visitors.source === "bni" ? <sup className="tl-src">BNI</sup> : null}
-                      </td>
+                      <td title="Visitor slips filed by this member">{r.visitors.count}</td>
                       <td>{r.visitors.score}</td>
-                      <td title={r.sponsors.source === "bni" ? "From BNI's file" : "No sponsor data — counted as 0"}>
-                        {r.sponsors.source === "bni" ? r.sponsors.count : "—"}
-                      </td>
+                      <td title="Visitors of this member who are now members">{r.sponsors.count}</td>
                       <td>{r.sponsors.score}</td>
-                      {view.hasBni ? (
-                        <>
-                          <td>{r.bni ? r.bni.total : "—"}</td>
-                          <td className={r.bni ? (r.bni.matches ? "tl-ok" : "tl-diff") : undefined}>
-                            {r.bni ? (r.bni.matches ? "✓" : `${r.total - r.bni.total > 0 ? "+" : ""}${r.total - r.bni.total}`) : "—"}
-                          </td>
-                        </>
-                      ) : null}
                     </tr>
                   ))
                 )}

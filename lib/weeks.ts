@@ -1,3 +1,5 @@
+import { inWindow, latestDate, rollingWindow, windowTitle } from "@/lib/period";
+
 export const MONTHS = [
   "January",
   "February",
@@ -26,14 +28,43 @@ export type WeekOption = {
   week_no?: number | null;
 };
 
-/** Header "BNI Week" column-filter options: "All weeks" first, then each week. */
+/**
+ * Special week-filter value meaning "the standard last 6 months" (lib/period.ts). It travels in the URL like a week id
+ * and is expanded to the real week ids on the server (`expandWeekToken`), so it always follows the newest import.
+ */
+export const LAST6_TOKEN = "last6m";
+
+/** The weeks (any order) inside the standard last-6-months window, anchored on the newest week in the list. */
+export function lastSixMonthsWeeks(weeks: WeekOption[]): WeekOption[] {
+  const win = rollingWindow(latestDate(weeks.map((w) => w.meeting_date)));
+  return win ? weeks.filter((w) => inWindow(w.meeting_date, win)) : [];
+}
+
+/** The "Last 6 months (27 weeks)" dropdown option — the same entry in EVERY week dropdown; null when no week is in the window. */
+export function lastSixMonthsOption(weeks: WeekOption[]): { value: string; label: string } | null {
+  const win = rollingWindow(latestDate(weeks.map((w) => w.meeting_date)));
+  const n = win ? weeks.filter((w) => inWindow(w.meeting_date, win)).length : 0;
+  return win && n > 0 ? { value: LAST6_TOKEN, label: windowTitle(win, n) } : null;
+}
+
+/** Week ids a filter value stands for: `last6m` -> the window's ids (comma list); anything else is returned unchanged. */
+export function expandWeekToken(value: string | null | undefined, weeks: WeekOption[]): string {
+  const v = (value ?? "").trim();
+  if (!v.split(",").map((x) => x.trim()).includes(LAST6_TOKEN)) return v;
+  return lastSixMonthsWeeks(weeks).map((w) => w.id).join(",");
+}
+
+/** Week options for a week dropdown WITHOUT its own "All" entry (the dropdown adds one): "Last 6 months" first, then each week. */
+export function weekChoiceOptions(weeks: WeekOption[]): { value: string; label: string }[] {
+  const last6 = lastSixMonthsOption(weeks);
+  return [...(last6 ? [last6] : []), ...weeks.map((w) => ({ value: w.id, label: w.label }))];
+}
+
+/** Header "BNI Week" column-filter options: "All weeks" first, then "Last 6 months (N weeks)", then each week. */
 export function weekFilterOptions(
   weeks: WeekOption[],
 ): { value: string; label: string }[] {
-  return [
-    { value: "all", label: "All weeks" },
-    ...weeks.map((w) => ({ value: w.id, label: w.label })),
-  ];
+  return [{ value: "all", label: "All weeks" }, ...weekChoiceOptions(weeks)];
 }
 
 export function buildWeekLabel(isoDate: string): string {

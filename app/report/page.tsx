@@ -20,6 +20,7 @@ import Link from "next/link";
 import ReportExportButtons from "@/components/ReportExportButtons";
 import ReportTabs from "@/components/ReportTabs";
 import FilterBar from "@/components/FilterBar";
+import { expandWeekToken, weekFilterOptions, type WeekOption } from "@/lib/weeks";
 import DataWarnings from "@/components/DataWarnings";
 
 export const dynamic = "force-dynamic";
@@ -52,7 +53,7 @@ function SectionTable({
   totalAmount?: number | null;
   colFilters: { from: string; to: string; detail: string };
   colOptions: { from: string[]; to: string[]; detail: string[] };
-  weeks: { id: string; label: string }[];
+  weeks: WeekOption[];
 }) {
   const cols = OPTIONAL_COLS.filter((c) => rows.some((r) => r[c.key].trim() !== ""));
   const baseCount = 5; // No, BNI Week, From, To, Type
@@ -84,7 +85,7 @@ function SectionTable({
                 <ColumnFilter
                   paramKey={`w_${sectionKey}`}
                   defaultValue={weekValue}
-                  options={[{ value: "all", label: "All weeks" }, ...weeks.map((w) => ({ value: w.id, label: w.label }))]}
+                  options={weekFilterOptions(weeks)}
                   label="BNI Week"
                   allLabel="Universal"
                 />
@@ -167,10 +168,12 @@ export default async function ReportPage({
     detail: sp[`cf_${key}_detail`] || "",
   });
   const allWeeks = weekId === "all";
-  // week holds one id, a comma-separated list, or "all" (multi-select box).
+  // week holds one id, a comma-separated list, "last6m" (the standard last 6 months) or "all" (multi-select box).
+  // `weekQ` = the real ids every query / export uses; `weekId` stays what the dropdowns show.
+  const weekQ = expandWeekToken(weekId, weeks);
   const weekIds = allWeeks
     ? []
-    : weekId.split(",").map((s) => s.trim()).filter(Boolean);
+    : weekQ.split(",").map((s) => s.trim()).filter(Boolean);
   const activeWeeks = weekIds
     .map((id) => weeks.find((w) => w.id === id))
     .filter((w): w is (typeof weeks)[number] => w !== undefined);
@@ -179,19 +182,19 @@ export default async function ReportPage({
       ? `${activeWeeks.length} meetings`
       : activeWeeks.map((w) => w.label).join(" + ");
 
-  const sectionsPromise = weekId
-    ? fetchReportSections(tenantId, weekId, q, {
+  const sectionsPromise = weekQ || allWeeks
+    ? fetchReportSections(tenantId, weekQ, q, {
         "one-to-one": colFor("one-to-one"),
         referral: colFor("referral"),
         tyfcb: colFor("tyfcb"),
         visitor: colFor("visitor"),
         ceu: colFor("ceu"),
       }, {
-        "one-to-one": sp["w_one-to-one"] || "",
-        referral: sp["w_referral"] || "",
-        tyfcb: sp["w_tyfcb"] || "",
-        visitor: sp["w_visitor"] || "",
-        ceu: sp["w_ceu"] || "",
+        "one-to-one": expandWeekToken(sp["w_one-to-one"] || "", weeks),
+        referral: expandWeekToken(sp["w_referral"] || "", weeks),
+        tyfcb: expandWeekToken(sp["w_tyfcb"] || "", weeks),
+        visitor: expandWeekToken(sp["w_visitor"] || "", weeks),
+        ceu: expandWeekToken(sp["w_ceu"] || "", weeks),
       })
     : Promise.resolve([]);
   const [sections, [fromOptions, toOptions, detailOptions], missing, unimported] = await Promise.all([
@@ -242,7 +245,7 @@ export default async function ReportPage({
         </div>
         <div className="report-head-actions">
           <ReportExportButtons
-            weekId={weekId}
+            weekId={weekQ}
             tab={tab}
             scopeLabel={allWeeks ? "all-weeks" : (weeksLabel || "week")}
           />

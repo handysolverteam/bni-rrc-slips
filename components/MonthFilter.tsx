@@ -10,10 +10,13 @@ export default function MonthFilter({
   basePath,
   value,
   months,
+  allLabel = "Last 6 months",
 }: {
   basePath: string;
   value: string;
   months: { key: string; label: string }[];
+  /** Text of the default (nothing picked) entry, e.g. "Last 6 months (27 weeks)". */
+  allLabel?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -23,9 +26,9 @@ export default function MonthFilter({
         <SearchSelect
           value={value}
           options={months.map((m) => ({ value: m.key, label: m.label }))}
-          placeholder="Last 6 months"
+          placeholder={allLabel}
           label="Months"
-          allLabel="Last 6 months"
+          allLabel={allLabel}
           multiple
           showClear={!!value}
           onChange={(v) => {

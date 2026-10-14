@@ -584,16 +584,13 @@ table.grid tfoot tr.sum-row td {
 .tl-chip:hover { background: var(--surface-hover); }
 .tl-chip.on { border-color: var(--accent-hover); background: var(--accent-soft); color: var(--accent-hover); }
 .tl-legend { font-size: 12px; margin-left: 6px; }
-.tl-import { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
 .tl-table th { text-align: center; white-space: nowrap; }
 .tl-table th.idx { text-align: center; }
 .tl-table td { text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tl-table td:nth-child(2), .tl-table th:nth-child(2) { text-align: left; }
 .tl-table tr.tl-sub th { font-weight: 600; font-size: 11.5px; opacity: 0.92; }
-.tl-src { font-size: 9px; font-weight: 700; margin-left: 3px; color: var(--accent-hover); }
 .tl-note { cursor: help; color: var(--muted); }
-.tl-ok { color: var(--green-ink); font-weight: 700; }
-.tl-diff { color: #d64545; font-weight: 700; }
+.tl-source { margin: 10px 0 14px; max-width: 980px; font-size: 12.5px; }
 
 /* Members table: editable Category input box. */
 .cat-edit { display: inline-flex; align-items: center; gap: 6px; width: 100%; }

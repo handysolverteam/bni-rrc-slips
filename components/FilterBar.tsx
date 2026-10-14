@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import SearchSelect from "@/components/SearchSelect";
-import type { WeekOption } from "@/lib/weeks";
+import { weekChoiceOptions, type WeekOption } from "@/lib/weeks";
 
 /**
  * Search also uses Apply-on-navigate; the week dropdown is a searchable
@@ -99,7 +99,7 @@ export default function FilterBar({
           <div className="week-row">
             <SearchSelect
               value={multi ? weekId : weekId.includes(",") ? "" : weekId}
-              options={weeks.map((w) => ({ value: w.id, label: w.label }))}
+              options={weekChoiceOptions(weeks)}
               placeholder={multi ? "Select weeks" : "All weeks"}
               label="Week"
               allLabel="All weeks"

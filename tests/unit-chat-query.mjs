@@ -153,6 +153,19 @@ check("prompt: default filters + always shown + informative", gemSrc.includes("D
 ee = m.executeSlipEntries({ type: "visitor", status: "any", chapter: "all", groupBy: "first" }, { ...index, entries: [{ t: "visitor", w: "w4", a: "Sunil  Bindra", b: "G1" }, { t: "visitor", w: "w4", a: "Sunil Bindra", b: "G2" }] });
 check("slip_entries groupBy: names intact and whitespace-normalised", ee.groups?.length === 1 && ee.groups[0].name === "Sunil Bindra" && ee.groups[0].count === 2, JSON.stringify(ee.groups));
 
+// the BNI window: 'last 6 months' = ends on the newest meeting, starts the day after the same date 6 months earlier
+{
+  const dates = ["2026-04-01", "2026-04-08", "2026-04-15", "2026-04-22", "2026-04-29", "2026-05-06", "2026-05-13", "2026-05-20", "2026-05-27", "2026-06-03", "2026-06-10", "2026-06-17", "2026-06-24", "2026-07-01", "2026-07-08", "2026-07-15", "2026-07-22", "2026-07-29", "2026-08-05", "2026-08-12", "2026-08-19", "2026-08-26", "2026-09-02", "2026-09-09", "2026-09-16", "2026-09-23", "2026-09-30", "2026-10-07"];
+  const wk = dates.map((d, i) => ({ id: "x" + i, label: "Week " + i, date: d })).reverse();
+  const big = { weeks: wk, rows: wk.map((w) => row(w.id, "k1", "Amit", { vis: 1 })), roster: [], entries: [], homeChapter: "BNI Influencers" };
+  const six = m.executeChapterQuery({ scope: { kind: "recent", months: 6 }, chapter: "all", status: "any", metrics: ["visitorsInvited"] }, big);
+  check("recent months 6 = 27 meetings, 8 Apr .. 7 Oct (the BNI window)", six.scope.weeks === 27 && six.scope.from === "2026-04-08" && six.scope.to === "2026-10-07", JSON.stringify(six.scope).slice(0, 160));
+  const w26 = m.executeChapterQuery({ scope: { kind: "recent", value: "6 months" }, chapter: "all", status: "any", metrics: ["visitorsInvited"] }, big);
+  check("a 'value' of '6 months' is the same window", w26.scope.weeks === 27);
+  const four = m.executeChapterQuery({ scope: { kind: "recent", weeks: 4 }, chapter: "all", status: "any", metrics: ["visitorsInvited"] }, big);
+  check("an explicit 'last 4 weeks' stays 4 meetings", four.scope.weeks === 4);
+}
+
 // filter guard: a filter the question gives no cue for is dropped
 const gsrc = readFileSync(new URL("../lib/chat/filter-guard.ts", import.meta.url), "utf8");
 const g = await import("data:text/javascript;base64," + Buffer.from(ts.transpileModule(gsrc, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText).toString("base64"));

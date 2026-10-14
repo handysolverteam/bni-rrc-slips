@@ -1,4 +1,5 @@
-import { lightFor, pointsFor, type LightColor } from "@/lib/traffic-light-score";
+import { anchorForMonth, inWindow, latestDate, rollingWindow } from "@/lib/period";
+import { attendancePoints, lightFor, pointsFor, type LightColor } from "@/lib/traffic-light-score";
 
 /** Collapse spaces + lower-case: the key every other screen uses for a member name. */
 export const nameKey = (n: string | null | undefined): string => String(n ?? "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -28,23 +29,15 @@ export function makeResolver(members: string[]): (name: string) => string | null
 
 export type Meeting = { id: string; date: string };
 
-/** First day of the 6-month window ending in `endMonth` (`YYYY-MM`): Apr–Sep or May–Oct, … */
-export function windowStart(endMonth: string): string {
-  const [y, m] = endMonth.split("-").map(Number);
-  const d = new Date(Date.UTC(y, m - 1 - 5, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`;
-}
-
-/** Last day (inclusive, as a sortable string bound) of `endMonth`. */
-export function windowEnd(endMonth: string): string {
-  return `${endMonth}-31`;
-}
-
-/** The meetings whose date falls in the 6 calendar months ending in `endMonth`. */
+/**
+ * The meetings in the standard "last 6 months" window (lib/period.ts: ends on the report's anchor date, starts the
+ * day after the same date 6 months earlier) for the report month `endMonth` (`YYYY-MM`). A finished month anchors on
+ * its last day (BNI's September report = 31 Mar – 30 Sep = 27 meetings); the running month on the newest meeting.
+ */
 export function windowMeetings(all: Meeting[], endMonth: string): Meeting[] {
-  const from = windowStart(endMonth);
-  const to = windowEnd(endMonth);
-  return all.filter((w) => w.date >= from && w.date <= to);
+  const anchor = anchorForMonth(endMonth, latestDate(all.map((m) => m.date)));
+  const w = rollingWindow(anchor);
+  return w ? all.filter((m) => inWindow(m.date, w)) : [];
 }
 
 export type SlipRows = {
@@ -54,26 +47,12 @@ export type SlipRows = {
   oneToOnes: { week: string; a: string; aOther?: boolean | null; b: string; bOther?: boolean | null }[];
   ceus: { week: string; name: string; credits: number }[];
   tyfcb: { week: string; name: string; amount: number }[];
-  visitors: { week: string; inviter: string | null }[];
+  visitors: { week: string; inviter: string | null; /** the visitor's own name */ name?: string | null }[];
   /** PALMS attendance cells: one row per (member, week), flags 0/1 (legacy rows may hold counts). */
   attendance: { week: string; name: string; present: number; absent: number; m: number; s: number; l: number }[];
 };
 
-/** One member's row in BNI's Traffic Lights Excel (the reference / override source). */
-export type BniRow = {
-  name: string;
-  total: number;
-  attendanceRate: number | null;
-  attendanceScore: number;
-  ceuRate: number | null;
-  oneToOneRate: number | null;
-  referralsRate: number | null;
-  tyfcb: number | null;
-  visitors: number;
-  sponsors: number;
-};
-
-export type Source = "slips" | "palms" | "bni" | "none";
+export type Source = "slips" | "palms" | "none";
 
 export type TrafficRow = {
   name: string;
@@ -86,12 +65,10 @@ export type TrafficRow = {
   oneToOne: { rate: number; score: number };
   referrals: { rate: number; score: number };
   tyfcb: { amount: number; score: number };
-  visitors: { count: number; score: number; source: Source; slips: number };
+  visitors: { count: number; score: number; source: Source };
   sponsors: { count: number; score: number; source: Source };
   total: number;
   color: LightColor;
-  /** BNI's own total for this member (when a BNI file is imported for the month). */
-  bni: { total: number; color: LightColor; matches: boolean } | null;
   /** Plain-language flags such as "attendance not imported". */
   notes: string[];
 };
@@ -99,9 +76,10 @@ export type TrafficRow = {
 export type TrafficInput = {
   /** Active members of the home chapter. */
   members: string[];
+  /** EVERY member of the home chapter (active or not): a visitor who is one of them was sponsored by their inviter. */
+  homeAll?: string[];
   meetings: Meeting[];
   slips: SlipRows;
-  bni: BniRow[];
 };
 
 const num = (v: unknown): number => {
@@ -110,10 +88,10 @@ const num = (v: unknown): number => {
 };
 
 /**
- * Score every member for the window. Sourcing (hybrid): attendance from PALMS attendance, CEU / 121 /
- * referrals / TYFCB from the slips, VISITORS and SPONSORS from BNI's Excel when one is imported for the
- * month (else visitors from the slips, sponsors 0). Rows flagged "other chapter" in the slips are another
- * person with the same name and are not counted.
+ * Score every member for the window, from OUR data only: attendance from the PALMS attendance import,
+ * CEU / 121 / referrals / TYFCB / visitors from the slip audit report, sponsors from the visitor slips (a
+ * visitor who is now a home-chapter member was sponsored by whoever invited them). Rows flagged "other
+ * chapter" in the slips are another person with the same name and are not counted.
  */
 export function buildTrafficRows(input: TrafficInput): TrafficRow[] {
   const inWin = new Set(input.meetings.map((m) => m.id));
@@ -135,6 +113,18 @@ export function buildTrafficRows(input: TrafficInput): TrafficRow[] {
   for (const r of slips.tyfcb) if (inWin.has(r.week)) bump(tyfcb, nameKey(r.name), num(r.amount));
   const visits = new Map<string, number>();
   for (const r of slips.visitors) if (inWin.has(r.week) && r.inviter) bump(visits, nameKey(r.inviter), 1);
+  // SPONSORS from the slips: a visitor in the window who is (now) a member of the home chapter was sponsored by
+  // the member who invited them; each sponsored member counts once.
+  const resolveHome = makeResolver(input.homeAll ?? input.members);
+  const sponsored = new Map<string, Set<string>>();
+  for (const r of slips.visitors) {
+    if (!inWin.has(r.week) || !r.inviter || !r.name) continue;
+    const who = resolveHome(r.name);
+    if (!who || who === nameKey(r.inviter)) continue;
+    const set = sponsored.get(nameKey(r.inviter)) ?? new Set<string>();
+    set.add(who);
+    sponsored.set(nameKey(r.inviter), set);
+  }
 
   type Att = { p: number; a: number; m: number; s: number; first: string };
   const dateOf = new Map(input.meetings.map((m) => [m.id, m.date]));
@@ -153,11 +143,6 @@ export function buildTrafficRows(input: TrafficInput): TrafficRow[] {
   }
 
   const resolve = makeResolver(input.members);
-  const bni = new Map<string, BniRow>();
-  for (const r of input.bni) {
-    const k = resolve(r.name);
-    if (k) bni.set(k, r);
-  }
   const attByMember = new Map<string, Att>();
   for (const [k, v] of att) {
     const mk = resolve(k);
@@ -170,56 +155,31 @@ export function buildTrafficRows(input: TrafficInput): TrafficRow[] {
     if (v.first < c.first) c.first = v.first;
     attByMember.set(mk, c);
   }
-  const haveBni = bni.size > 0;
 
   return input.members.map((name) => {
     const k = nameKey(name);
     const notes: string[] = [];
     const a = attByMember.get(k);
     const observed = a ? a.p + a.a + a.m + a.s : 0;
-    const bniRow = bni.get(k) ?? null;
 
-    // Weeks the rates are divided by (BNI prorates a member who joined part-way through the window):
-    //  1. BNI's file present -> the weeks its own rates imply (count / rate), the most faithful source;
-    //  2. else from the member's first PALMS attendance onward;
-    //  3. else the window's meetings.
-    const ref = refs.get(k) ?? 0;
-    const oto = otos.get(k) ?? 0;
-    const ceu = ceus.get(k) ?? 0;
-    const implied: number[] = [];
-    if (bniRow) {
-      for (const [count, r] of [[ref, bniRow.referralsRate], [oto, bniRow.oneToOneRate], [ceu, bniRow.ceuRate]] as [number, number | null][]) {
-        if (r && r > 0.0001 && count > 0) implied.push(Math.round(count / r));
-      }
-    }
-    implied.sort((x, y) => x - y);
-    const impliedWeeks = implied.length > 0 ? implied[Math.floor(implied.length / 2)] : null;
+    // Weeks the rates are divided by: BNI prorates a member who joined part-way through the window, so the
+    // weeks run from their first PALMS attendance onward; otherwise every meeting in the window.
     let weeks = reportWeeks;
-    if (impliedWeeks !== null && impliedWeeks >= 1 && impliedWeeks <= reportWeeks) {
-      weeks = impliedWeeks;
-      if (weeks < reportWeeks) notes.push(`part-year member: ${weeks} weeks (from BNI's rates)`);
-    } else if (a && observed > 0) {
+    if (a && observed > 0) {
       weeks = Math.max(1, input.meetings.filter((m) => m.date >= a.first).length);
       if (weeks < reportWeeks) notes.push(`part-year member: ${weeks} weeks since first attendance`);
     }
-    weeks = Math.max(1, weeks);
     const prorated = weeks < reportWeeks;
 
-    // PALMS attendance is used when it covers (nearly) every week; otherwise BNI's attendance if we have it.
-    const attComplete = !!a && observed > 0 && observed >= Math.floor(weeks * 0.9);
     let attendance: TrafficRow["attendance"];
-    if (a && observed > 0 && (attComplete || !bniRow || bniRow.attendanceRate === null)) {
+    if (a && observed > 0) {
       const attended = a.p + a.m + a.s;
       const rate = attended + a.a > 0 ? attended / (attended + a.a) : 0;
-      attendance = { rate, score: pointsFor("attendance", rate), source: "palms" };
-      if (!attComplete) notes.push(`PALMS attendance covers ${observed} of ${weeks} weeks`);
-    } else if (bniRow && bniRow.attendanceRate !== null) {
-      // BNI's own attendance score is taken as printed (it rounds a hair differently at the 96% line).
-      attendance = { rate: bniRow.attendanceRate, score: bniRow.attendanceScore, source: "bni" };
-      notes.push("attendance from BNI's file (PALMS attendance not imported for this member)");
+      attendance = { rate, score: attendancePoints(rate), source: "palms" };
+      if (observed < Math.floor(weeks * 0.9)) notes.push(`PALMS attendance covers ${observed} of ${weeks} weeks — import the full attendance`);
     } else {
       attendance = { rate: null, score: 0, source: "none" };
-      notes.push("attendance not imported — 0 points");
+      notes.push("no PALMS attendance imported — 0 points");
     }
 
     const rate = (n: number) => n / weeks;
@@ -228,14 +188,8 @@ export function buildTrafficRows(input: TrafficInput): TrafficRow[] {
     const refRate = rate(refs.get(k) ?? 0);
     const amount = tyfcb.get(k) ?? 0;
 
-    const slipVisitors = visits.get(k) ?? 0;
-    const useBniVisitors = !!bniRow;
-    const visitorCount = useBniVisitors ? bniRow!.visitors : slipVisitors;
-    if (useBniVisitors && bniRow!.visitors !== slipVisitors) notes.push(`visitors from BNI (${bniRow!.visitors}); slips show ${slipVisitors}`);
-    if (!useBniVisitors && haveBni) notes.push("not found in BNI's file");
-
-    const sponsorCount = bniRow ? bniRow.sponsors : 0;
-    const sponsorSource: Source = bniRow ? "bni" : "none";
+    const visitorCount = visits.get(k) ?? 0;
+    const sponsorCount = sponsored.get(k)?.size ?? 0;
 
     const parts = {
       attendance: attendance.score,
@@ -257,11 +211,10 @@ export function buildTrafficRows(input: TrafficInput): TrafficRow[] {
       oneToOne: { rate: otoRate, score: parts.oneToOne },
       referrals: { rate: refRate, score: parts.referrals },
       tyfcb: { amount, score: parts.tyfcb },
-      visitors: { count: visitorCount, score: parts.visitors, source: useBniVisitors ? "bni" : "slips", slips: slipVisitors },
-      sponsors: { count: sponsorCount, score: parts.sponsors, source: sponsorSource },
+      visitors: { count: visitorCount, score: parts.visitors, source: "slips" },
+      sponsors: { count: sponsorCount, score: parts.sponsors, source: "slips" },
       total,
       color: lightFor(total),
-      bni: bniRow ? { total: bniRow.total, color: lightFor(bniRow.total), matches: bniRow.total === total } : null,
       notes,
     };
   });

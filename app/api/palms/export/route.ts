@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { fetchPalmsMatrix, fetchPalmsWeekOptions, palmsWeekScope } from "@/lib/palms-view";
+import { expandWeekToken } from "@/lib/weeks";
 import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +28,8 @@ export async function GET(request: Request) {
       return Response.json({ error: "format must be xlsx, csv, pdf or json" }, { status: 400 });
     }
     const allWeeks = weekId === "all";
-    const weekIds = palmsWeekScope(weekId);
+    // A direct link may carry the "Last 6 months" token: expand it to the real week ids first.
+    const weekIds = palmsWeekScope(expandWeekToken(weekId, await fetchPalmsWeekOptions(ctx.tenantId)));
     if (!allWeeks && weekIds.length === 0) {
       return Response.json({ error: "week is required" }, { status: 400 });
     }

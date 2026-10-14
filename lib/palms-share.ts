@@ -15,7 +15,7 @@ const timesOf = (label: string): string => {
 };
 
 /**
- * WhatsApp text for the rolling 26-week "Active members" card: a bold heading,
+ * WhatsApp text for the "Last 6 months (N weeks)" "Active members" card: a bold heading,
  * one bold block per letter (Absent / Medical / Substitute) and a "• 3+ times
  * (2): names" line per non-empty bucket. Bold is WhatsApp's *asterisks*.
  */
@@ -26,7 +26,7 @@ export function buildPalmsStatsShare(
   groups: PalmsBucketGroup[],
 ): string {
   const head = [
-    "★ *Attendance — last 6 months (26 weeks)*",
+    `★ *Attendance — last 6 months (${meetingCount} week${meetingCount === 1 ? "" : "s"})*`,
     "Active members",
     `${fromLabel} – ${toLabel} · ${meetingCount} meeting${meetingCount === 1 ? "" : "s"}`,
   ].join("\n");

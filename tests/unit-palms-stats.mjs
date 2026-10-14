@@ -34,25 +34,9 @@ try {
 }
 
 if (pb) {
-  const { ROLLING_WEEKS, rollingWindow, bucketIndexFor, bucketAttendance, attendanceNameKey } = pb;
+  const { bucketIndexFor, bucketAttendance, attendanceNameKey } = pb;
 
-  // ---- rollingWindow -------------------------------------------------------
-  check("window is 26 weeks", ROLLING_WEEKS === 26, String(ROLLING_WEEKS));
-  check(
-    "window ends today, 181 days back",
-    eq(rollingWindow("2026-10-06"), { from: "2026-04-08", to: "2026-10-06" }),
-    JSON.stringify(rollingWindow("2026-10-06")),
-  );
-  check(
-    "window crosses the year boundary",
-    eq(rollingWindow("2026-02-02"), { from: "2025-08-05", to: "2026-02-02" }),
-    JSON.stringify(rollingWindow("2026-02-02")),
-  );
-  {
-    const { from, to } = rollingWindow("2026-10-06");
-    const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000;
-    check("window spans 182 days (26 weeks, inclusive)", days === 181, `${days} + 1`);
-  }
+  // The window itself (last 6 months = 26 or 27 meetings) is tested in tests/unit-period.mjs.
 
   // ---- bucketIndexFor ------------------------------------------------------
   check("0 letters -> no bucket", bucketIndexFor(0) === -1, String(bucketIndexFor(0)));

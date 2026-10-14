@@ -4,6 +4,8 @@ import autoTable from "jspdf-autotable";
 import { detailLabelFor, fetchReportSections, fromToLabelsFor, rowCells, totalRowCells, visibleColumns, type ReportSectionKey } from "@/lib/report-view";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
+import { getCachedWeekOptions } from "@/lib/server-weeks";
+import { expandWeekToken } from "@/lib/weeks";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +32,9 @@ export async function GET(request: Request) {
     if ("noAccess" in ctx) return forbidden();
 
     const url = new URL(request.url);
-    const weekId = url.searchParams.get("week") ?? "";
+    // The "Last 6 months" dropdown entry travels as a token (`last6m`): expand it to the real week ids first.
+    const weekOptions = await getCachedWeekOptions(ctx.tenantId);
+    const weekId = expandWeekToken(url.searchParams.get("week") ?? "", weekOptions);
     const tab = url.searchParams.get("tab") ?? "all";
     const q = url.searchParams.get("q") ?? "";
     const colFor = (key: string) => ({
@@ -48,11 +52,11 @@ export async function GET(request: Request) {
     // Per-table week overrides (w_<section>): a table uses its own scope
     // when set, otherwise the universal week above.
     const weekOverrides: Record<string, string> = {
-      "one-to-one": url.searchParams.get("w_one-to-one") ?? "",
-      referral: url.searchParams.get("w_referral") ?? "",
-      tyfcb: url.searchParams.get("w_tyfcb") ?? "",
-      visitor: url.searchParams.get("w_visitor") ?? "",
-      ceu: url.searchParams.get("w_ceu") ?? "",
+      "one-to-one": expandWeekToken(url.searchParams.get("w_one-to-one") ?? "", weekOptions),
+      referral: expandWeekToken(url.searchParams.get("w_referral") ?? "", weekOptions),
+      tyfcb: expandWeekToken(url.searchParams.get("w_tyfcb") ?? "", weekOptions),
+      visitor: expandWeekToken(url.searchParams.get("w_visitor") ?? "", weekOptions),
+      ceu: expandWeekToken(url.searchParams.get("w_ceu") ?? "", weekOptions),
     };
     const effOf = (key: string): string => weekOverrides[key]?.trim() || weekId;
     // The export carries the BNI Week column whenever rows can span

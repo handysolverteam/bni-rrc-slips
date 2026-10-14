@@ -5,6 +5,7 @@ import ImportPanel from "@/components/ImportPanel";
 import PalmsImportPanel from "@/components/PalmsImportPanel";
 import ColumnFilter from "@/components/ColumnFilter";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { LAST6_TOKEN, lastSixMonthsOption, lastSixMonthsWeeks } from "@/lib/weeks";
 
 type Batch = {
   id: string;
@@ -65,23 +66,33 @@ function HistoryTable({
   const [dateFilter, setDateFilter] = useState("");
   const [weekFilter, setWeekFilter] = useState("");
 
-  const weekOptions = useMemo(() => {
-    const seen: string[] = [];
+  // Week choices: "Last 6 months (N weeks)" first (the same entry as every other week dropdown), then each week label.
+  const { weekOptions, last6Labels } = useMemo(() => {
+    const dates = new Map<string, string | null>();
     for (const b of batches) {
       const label = b.bni_weeks?.label ?? "—";
-      if (!seen.includes(label)) seen.push(label);
+      if (!dates.has(label)) dates.set(label, b.bni_weeks?.meeting_date ?? null);
     }
-    return seen;
+    const weeks = [...dates].map(([label, meeting_date]) => ({ id: label, label, meeting_date }));
+    const last6 = lastSixMonthsOption(weeks);
+    return {
+      weekOptions: [...(last6 ? [last6] : []), ...weeks.map((w) => w.label)] as (string | { value: string; label: string })[],
+      last6Labels: new Set(lastSixMonthsWeeks(weeks).map((w) => w.label)),
+    };
   }, [batches]);
 
   const filtered = useMemo(
     () =>
       batches.filter((b) => {
-        if (weekFilter && !weekFilter.split(",").includes(b.bni_weeks?.label ?? "—")) return false;
+        if (weekFilter) {
+          const picked = weekFilter.split(",");
+          const label = b.bni_weeks?.label ?? "—";
+          if (!(picked.includes(LAST6_TOKEN) ? last6Labels.has(label) : picked.includes(label))) return false;
+        }
         if (dateFilter && localDateKey(b.created_at) !== dateFilter) return false;
         return true;
       }),
-    [batches, weekFilter, dateFilter],
+    [batches, weekFilter, dateFilter, last6Labels],
   );
 
   return (

@@ -59,6 +59,15 @@ export const MAX_POINTS: Record<MetricKey, number> = {
   sponsors: 5,
 };
 
+/**
+ * Attendance is scored on the WHOLE percent, rounded half-down: BNI gives 22 of 23 weeks (95.65%) the 96% tier
+ * but 14 of 16 (87.5%) not the 88% one — checked against every attendance row of its September '26 report.
+ */
+export function attendancePoints(rate: number): number {
+  if (!Number.isFinite(rate)) return 0;
+  return pointsFor("attendance", Math.ceil(rate * 100 - 0.5) / 100);
+}
+
 export function pointsFor(metric: MetricKey, value: number): number {
   let pts = 0;
   if (!Number.isFinite(value)) return 0;

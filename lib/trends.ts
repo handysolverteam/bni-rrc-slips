@@ -2,6 +2,7 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paged";
 import { cachedSwr } from "@/lib/cache";
 import { resolveHomeChapter } from "@/lib/member-chapters";
+import { rollingWindow, WINDOW_MONTHS } from "@/lib/period";
 
 export type TrendWeek = { id: string; date: string; label: string };
 /** `amounts` (TYFCB only): weekly rupee totals — plotted on the series' own tab,
@@ -25,22 +26,31 @@ const SERIES = [
  * for that week). Counts are raw slip rows — no owner weighting — so the
  * five series stay comparable.
  */
-/** The Wednesday meetings of the last `months` months (global calendar, cached 5 min). */
-export async function fetchTrendWeeks(months = 6): Promise<TrendWeek[]> {
+/**
+ * The Wednesday meetings of the standard "last `months` months" window (lib/period.ts: ends on the newest meeting
+ * on or before today, starts the day after the same date `months` months earlier — 26 or 27 meetings for 6 months;
+ * global calendar, cached 5 min).
+ */
+export async function fetchTrendWeeks(months = WINDOW_MONTHS): Promise<TrendWeek[]> {
   const day = new Date().toISOString().slice(0, 10);
   return cachedSwr(`trendweeks:${months}:${day}`, 5 * 60_000, async () => {
   const sb = getSupabaseServer();
-  const today = new Date();
-  const from = new Date();
-  from.setMonth(from.getMonth() - months);
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const { data: newest, error: nErr } = await sb
+    .from("bni_weeks")
+    .select("meeting_date")
+    .lte("meeting_date", day)
+    .order("meeting_date", { ascending: false })
+    .limit(1);
+  if (nErr) throw new Error(nErr.message);
+  const win = rollingWindow((newest ?? [])[0]?.meeting_date as string | undefined, months);
+  if (!win) return [];
   const { data, error } = await sb
     .from("bni_weeks")
     .select("id,label,meeting_date")
-    .gte("meeting_date", iso(from))
-    .lte("meeting_date", iso(today))
+    .gte("meeting_date", win.from)
+    .lte("meeting_date", win.to)
     .order("meeting_date", { ascending: true })
-    .limit(40);
+    .limit(60);
   if (error) throw new Error(error.message);
   const weeks = ((data ?? []) as { id: string; label: string; meeting_date: string | null }[])
     .filter((w) => w.meeting_date && new Date(`${w.meeting_date}T12:00:00Z`).getUTCDay() === 3)
@@ -49,7 +59,7 @@ export async function fetchTrendWeeks(months = 6): Promise<TrendWeek[]> {
   });
 }
 
-export function fetchSlipTrends(tenantId: string, months = 6): Promise<SlipTrends> {
+export function fetchSlipTrends(tenantId: string, months = WINDOW_MONTHS): Promise<SlipTrends> {
   return cachedSwr(`trends:${tenantId}:${months}`, 60_000, () => computeSlipTrends(tenantId, months));
 }
 

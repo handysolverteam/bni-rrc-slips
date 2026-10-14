@@ -5,6 +5,9 @@ import { createPortal } from "react-dom";
 
 export type ComboOption = string | { value: string; label: string };
 
+/** Values that stand for a whole set (every week / the last 6 months): picking one replaces the other picks. */
+const EXCLUSIVE = new Set(["all", "last6m"]);
+
 function norm(o: ComboOption): { value: string; label: string } {
   return typeof o === "string" ? { value: o, label: o } : o;
 }
@@ -50,8 +53,8 @@ export default function SearchSelect({
   const selectedSet = multiple
     ? new Set(
         value
-          ? value === "all"
-            ? ["all"]
+          ? EXCLUSIVE.has(value)
+            ? [value]
             : value.split(",").map((s) => s.trim()).filter(Boolean)
           : [],
       )
@@ -149,13 +152,13 @@ export default function SearchSelect({
       // "all" is exclusive: picking it clears specifics, picking a specific
       // week from an "all" selection starts a fresh specific set.
       const next = new Set(selectedSet);
-      if (v === "all") {
+      if (EXCLUSIVE.has(v)) {
         next.clear();
-        next.add("all");
+        next.add(v);
       } else if (next.has(v)) {
         next.delete(v);
       } else {
-        next.delete("all");
+        for (const x of EXCLUSIVE) next.delete(x);
         next.add(v);
       }
       onChange([...next].join(","));

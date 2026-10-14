@@ -590,7 +590,7 @@ try {
   check("attendance empty again after the batch delete", (await e2eRows()).length === 0,
     String((await e2eRows()).length));
 
-  // 14) rolling 26-week "Active members" breakdown card ----------------------
+  // 14) last-6-months "Active members" breakdown card ----------------------
   // Attendance is empty here, so the card sees exactly the rows seeded below:
   // one member per bucket (depth 1-4), a present-only control, and an
   // inactive member that must be filtered out entirely.
@@ -642,15 +642,14 @@ try {
     rowIns.error ? rowIns.error.message : `${bRows.length} rows`);
 
   const bm = await fetchPage("/palms");
-  const hi = bm.dec.indexOf("Last 6 Months");
+  const hi = bm.dec.indexOf("Last 6 months (");
   // Start a little before the heading text so the element's opening props
   // ("children":…) are inside the slice too.
   // The card ends where the week-filter card begins (it sits above the filters now).
   const endAt = hi >= 0 ? bm.dec.indexOf('"className":"card report-controls"', hi) : -1;
   const s = hi >= 0 ? bm.dec.slice(Math.max(0, hi - 100), endAt > hi ? endAt : undefined) : "";
-  check("stats card: heading rendered", hi >= 0 && s.includes(
-    '"children":"Last 6 Months rolling period (26 weeks): Active members"'));
-  check("stats card: window line renders", s.includes(" meeting(s)"));
+  check("stats card: heading rendered (Last 6 months (N weeks): Active members)", hi >= 0 && s.includes("weeks): Active members"));
+  check("stats card: window line renders", s.includes(" weeks"));
 
   const LABELS = [
     "3+ Absents", "2 Absents", "1 Absent",

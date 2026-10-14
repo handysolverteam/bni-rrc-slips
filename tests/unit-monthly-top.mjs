@@ -37,7 +37,7 @@ const groups = [
   { key: "substitute", buckets: [{ label: "1 Substitute", count: 0, names: [] }] },
 ];
 const pt = pm.buildPalmsStatsShare("10 Apr 2026", "8 Oct 2026", 26, groups);
-check("attendance share: bold heading + date line", pt.includes("*Attendance — last 6 months (26 weeks)*") && pt.includes("10 Apr 2026 – 8 Oct 2026 · 26 meetings"), pt);
+check("attendance share: bold heading + date line", pt.includes("*Attendance — last 6 months (26 weeks)*") && pt.includes("10 Apr 2026 – 8 Oct 2026 · 26 meetings") && pm.buildPalmsStatsShare("8 Apr 2026", "7 Oct 2026", 27, groups).includes("*Attendance — last 6 months (27 weeks)*"), pt);
 check("attendance share: one block per letter, bullets per bucket", pt.includes("✗ *Absent*\n• *3+ times* (2): Neha Goel, Rajiv Gupta\n• *1 time* (1): Viraj Bansal") && pt.includes("✚ *Medical*\n• *3+ times* (1): Abhay Goenka"), pt);
 check("attendance share: empty buckets and empty groups are left out", !pt.includes("2 times") && !pt.includes("Substitute"), pt);
 check("attendance share has no emoji", !astral.test(pt));
