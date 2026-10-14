@@ -41,5 +41,12 @@ check("share text uses no emoji (only BMP characters)", [...text].every((c) => c
 check("share: empty ranking says so", m.buildRankingShare("May 2026", [], []).includes("No visitors recorded."));
 check("share url is a wa.me link with encoded text", m.rankingShareUrl("a b\nc").startsWith("https://wa.me/?text=a%20b%0Ac"));
 
+// column filters: Member (names) + Visitors (typed terms)
+check("matchesCount: exact, comparison, range, list", m.matchesCount("3", 3) && !m.matchesCount("3", 4) && m.matchesCount(">2", 3) && !m.matchesCount(">2", 2) && m.matchesCount(">=2", 2) && m.matchesCount("<5", 4) && m.matchesCount("<=4", 4) && m.matchesCount("2-4", 3) && m.matchesCount("4-2", 3) && !m.matchesCount("2-4", 5) && m.matchesCount("1, 5", 5) && m.matchesCount("1 5", 1));
+check("matchesCount: blank matches all, junk matches nothing", m.matchesCount("", 7) && m.matchesCount("   ", 7) && !m.matchesCount("abc", 7) && !m.matchesCount(">x", 7));
+check("filterRanking: member names (case-insensitive) AND count", (() => { const f = m.filterRanking(r, ["sunil bindra", "Zed Ali"], ">3"); return f.length === 1 && f[0].name === "Zed Ali"; })());
+check("filterRanking: no filters returns everything, order kept", m.filterRanking(r, [], "").length === r.length && m.filterRanking(r, [], "")[0].name === r[0].name);
+check("filterRanking: unknown member -> empty", m.filterRanking(r, ["Nobody Here"], "").length === 0);
+
 console.log(`TOTAL: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
