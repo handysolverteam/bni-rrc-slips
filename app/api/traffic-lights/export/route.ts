@@ -4,7 +4,7 @@ import autoTable from "jspdf-autotable";
 import { multiParts } from "@/lib/list-filters";
 import { forbidden, getTenantContext, unauthorized } from "@/lib/server-auth";
 import { LIGHT_LABEL, type LightColor } from "@/lib/traffic-light-score";
-import { fetchTrafficData, trafficView } from "@/lib/traffic-lights";
+import { fetchTrafficData, rangeLabel, trafficView } from "@/lib/traffic-lights";
 
 export const dynamic = "force-dynamic";
 
@@ -20,15 +20,13 @@ const HEADERS = [
   "Referrals Given Rate", "Referrals Given Score", "TYFCB", "TYFCB Score", "Visitors", "Visitor Score", "Sponsors", "Sponsor Score",
 ];
 
-const MONTH_NAMES = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
-
 const safeFilePart = (s: string): string => s.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "report";
 const r4 = (n: number | null): number | null => (n === null ? null : Math.round(n * 10000) / 10000);
 
 /**
  * Traffic Lights export (xlsx / csv / pdf; json feeds the in-browser PDF). The sheet mirrors BNI's own "Member
- * Traffic Lights" workbook — title row, then Chapter · Name · Total Score · rate/score pairs — for the month and the
- * colour / name filters currently on screen (`?month=`, `?light=`, `?c_name=`).
+ * Traffic Lights" workbook — title row, then Chapter · Name · Total Score · rate/score pairs — for the imported range and the
+ * colour / name filters currently on screen (`?month=<from>_<to>`, `?light=`, `?c_name=`).
  */
 export async function GET(request: Request) {
   try {
@@ -49,12 +47,12 @@ export async function GET(request: Request) {
     const want = new Set(multiParts((url.searchParams.get("c_name") ?? "").trim()).map((n) => n.toLowerCase()));
     const rows = view.rows.filter((r) => (!light || r.color === light) && (want.size === 0 || want.has(r.name.toLowerCase())));
 
-    const [y, m] = view.month.split("-").map(Number);
-    const monthTitle = `${MONTH_NAMES[m - 1]} '${String(y).slice(2)}`;
+    const [fromIso, toIso] = view.month.split("_");
+    const monthTitle = rangeLabel(fromIso, toIso).toUpperCase();
     const chapter = data.homeName.replace(/^bni\s+/i, "").toUpperCase();
     const title = `MEMBER TRAFFIC LIGHTS OF ${chapter} CHAPTER FOR ${monthTitle}`;
     const chapterCell = data.homeName.replace(/^bni\s+/i, "");
-    const base = `traffic-lights-${safeFilePart(view.month)}${light ? `-${light}` : ""}`;
+    const base = `traffic-lights-${safeFilePart(toIso)}${light ? `-${light}` : ""}`;
 
     // One line per member, numbers as numbers (rates to 4 decimals like BNI's sheet).
     const line = (r: (typeof rows)[number]): (string | number | null)[] => [

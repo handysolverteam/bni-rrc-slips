@@ -33,6 +33,7 @@
 - **Open sign-in**: the first sign-in auto-grants the **Home Chapter**
   (`lib/tenant-grant.ts`, idempotent upsert) — no SQL per user. Membership in
   any *other* chapter stays a manual SQL insert.
+- **Traffic Lights = BNI's own reports** (2026-10-14): imported on `/import` ("Traffic Lights reports" panel) from the **Chapter Summary PALMS Report** + **Chapter Sponsor Report** into `traffic_palms_rows` / `traffic_sponsor_rows` (**`010_traffic_reports.sql` is NEW — the user runs it**); the slip tables are no longer used for that screen.
 - Migrations `001`–`007` are applied (**`008_member_aliases.sql` is NEW — the user runs it**: remembered member merges; `009_chat_owner_name.sql` is optional: chat owner names now come from the Firebase account itself) (006 = `member_attendance` for the PALMS
   Chapter Summary import, 007 = `palms_stats` for the PALMS-vs-slips
   comparison). No `DATABASE_URL` in `.env.local`, so the

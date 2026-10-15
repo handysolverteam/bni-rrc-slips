@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import ImportPanel from "@/components/ImportPanel";
 import PalmsImportPanel from "@/components/PalmsImportPanel";
+import TrafficImportPanel from "@/components/TrafficImportPanel";
 import ColumnFilter from "@/components/ColumnFilter";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { LAST6_TOKEN, lastSixMonthsOption, lastSixMonthsWeeks } from "@/lib/weeks";
@@ -301,6 +302,8 @@ export default function ImportPage() {
       <ImportPanel onImported={refreshHistory} />
 
       <PalmsImportPanel onImported={refreshHistory} />
+
+      <TrafficImportPanel />
 
       {deleteError ? <p className="preview-warn">Delete failed: {deleteError}</p> : null}
 

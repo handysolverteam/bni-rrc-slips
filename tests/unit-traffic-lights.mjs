@@ -1,6 +1,5 @@
-// Pure checks for the Traffic Lights screen: tier scoring (boundaries + REAL rows of BNI's September '26 report),
-// the 6-month window, name matching and the per-member assembly from OUR data only (proration, other-chapter
-// rows, visitors, sponsors derived from the visitor slips).
+// Pure checks for the Traffic Lights screen: tier scoring (boundaries + REAL rows of BNI's September '26 report) and the
+// per-member assembly from the two imported BNI reports (Chapter Summary PALMS Report + Chapter Sponsor Report).
 // Run: node tests/unit-traffic-lights.mjs
 import { readFileSync } from "node:fs";
 import ts from "typescript";
@@ -10,8 +9,7 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
 const asUrl = (js) => "data:text/javascript;base64," + Buffer.from(js).toString("base64");
 
 const score = await import(asUrl(ts.transpileModule(read("../lib/traffic-light-score.ts"), opts).outputText));
-const periodUrl = asUrl(ts.transpileModule(read("../lib/period.ts"), opts).outputText);
-const calcSrc = ts.transpileModule(read("../lib/traffic-light-calc.ts"), opts).outputText.replace('"@/lib/period"', JSON.stringify(periodUrl)).replace(
+const calcSrc = ts.transpileModule(read("../lib/traffic-light-calc.ts"), opts).outputText.replace(
   '"@/lib/traffic-light-score"',
   JSON.stringify(asUrl(ts.transpileModule(read("../lib/traffic-light-score.ts"), opts).outputText)),
 );
@@ -53,92 +51,67 @@ const totalOf = ([att, ceu, oto, ref, tyf, vis, spo]) =>
   P("attendance", att) + P("ceu", ceu) + P("oneToOne", oto) + P("referrals", ref) + P("tyfcb", tyf) + P("visitors", vis) + P("sponsors", spo);
 for (const [name, inputs, expected] of real) check(`BNI Sept '26 row reproduces: ${name} = ${expected}`, totalOf(inputs) === expected, `got ${totalOf(inputs)}`);
 
-// ---- window
-check("window = BNI's standard last 6 months: a finished month anchors on its last day, the running month on the newest meeting", true);
-const all = ["2026-03-25", "2026-03-31", "2026-04-01", "2026-09-30", "2026-10-07"].map((date, i) => ({ id: `w${i}`, date }));
-check("September report = 31 Mar..30 Sep; the running October report = 8 Apr..7 Oct", JSON.stringify(calc.windowMeetings(all, "2026-09").map((m) => m.date)) === JSON.stringify(["2026-03-31", "2026-04-01", "2026-09-30"]) && JSON.stringify(calc.windowMeetings(all, "2026-10").map((m) => m.date)) === JSON.stringify(["2026-09-30", "2026-10-07"]));
-
 // ---- names
 check("firstLastKey drops the middle initial", calc.firstLastKey("Ranjan K Sapra") === calc.firstLastKey("Ranjan  Sapra") && calc.firstLastKey("Dr. Hemesh Thakur") === "dr thakur" && calc.nameKey("  Neha   Goel ") === "neha goel");
 const resolver = calc.makeResolver(["Ranjan K Sapra", "Ashwani Kumar", "Amit Gupta", "Amit K Gupta"]);
 check("resolver: exact key, unique first+last, never an ambiguous or unknown name", resolver("ranjan  sapra") === "ranjan k sapra" && resolver("Ashwani Kumar") === "ashwani kumar" && resolver("Amit Gupta") === "amit gupta" && resolver("Amit R Gupta") === null && resolver("Nobody Here") === null);
 
-// ---- assembly
-const W = ["a", "b", "c", "d", "e", "f"].map((id, i) => ({ id, date: `2026-09-${String(i + 1).padStart(2, "0")}` }));
-const base = { referrals: [], oneToOnes: [], ceus: [], tyfcb: [], visitors: [], attendance: [] };
-const rep = (n, week, extra = {}) => Array.from({ length: n }, () => ({ week, from: "Amit Gupta", ...extra }));
-const slips = {
-  ...base,
-  // 6 referrals in 6 meetings = 1.0/week (+2 flagged other-chapter: another person with the same name)
-  referrals: [...W.map((w) => ({ week: w.id, from: "Amit Gupta" })), ...rep(2, "a", { fromOther: true })],
-  oneToOnes: [{ week: "a", a: "Amit Gupta", b: "Neha Goel" }, { week: "b", a: "Neha Goel", b: "Amit Gupta" }, { week: "c", a: "Amit Gupta", aOther: true, b: "Neha Goel" }],
-  ceus: [{ week: "a", name: "Amit Gupta", credits: 3 }],
-  tyfcb: [{ week: "a", name: "Amit Gupta", amount: 700000 }, { week: "z", name: "Amit Gupta", amount: 9e9 }],
-  visitors: [{ week: "a", inviter: "Amit Gupta" }, { week: "b", inviter: "amit  gupta" }, { week: "a", inviter: null }],
-  attendance: W.map((w) => ({ week: w.id, name: "Amit Gupta", present: 1, absent: 0, m: 0, s: 0, l: 0 })),
-};
-let rows = calc.buildTrafficRows({ members: ["Amit Gupta", "Neha Goel"], meetings: W, slips, bni: [] });
-const amit = rows.find((r) => r.name === "Amit Gupta");
-check("referrals per week: 6 in 6 meetings = 1.00, other-chapter rows skipped", amit.referrals.rate === 1 && amit.referrals.score === 20, JSON.stringify(amit.referrals));
-check("121: both sides count, an other-chapter side does not", amit.oneToOne.rate === 2 / 6 && amit.oneToOne.score === 5, JSON.stringify(amit.oneToOne));
-check("CEU / TYFCB / visitors come from the slips (window only, names normalised)", amit.ceu.rate === 0.5 && amit.ceu.score === 5 && amit.tyfcb.amount === 700000 && amit.tyfcb.score === 4 && amit.visitors.count === 2 && amit.visitors.source === "slips");
-check("full attendance -> 100% from PALMS, 10 points; no sponsor slips -> 0", amit.attendance.rate === 1 && amit.attendance.score === 10 && amit.attendance.source === "palms" && amit.sponsors.count === 0 && amit.sponsors.source === "slips");
-check("total + colour", amit.total === 10 + 5 + 5 + 20 + 4 + 10 + 0 && amit.color === "amber", `${amit.total}`);
-const neha = rows.find((r) => r.name === "Neha Goel");
-check("no attendance at all -> 0 points and a note, never a guess", neha.attendance.source === "none" && neha.attendance.score === 0 && neha.notes.some((n) => /no PALMS attendance imported/.test(n)));
+// ---- assembly from the imported BNI reports (Chapter Summary PALMS Report + Chapter Sponsor Report)
+const line = (o) => ({ name: "Amit Gupta", p: 0, a: 0, l: 0, m: 0, s: 0, rgi: 0, rgo: 0, visitors: 0, oneToOnes: 0, tyfcb: 0, ceu: 0, ...o });
+const RANGE = { from: "2026-03-31", to: "2026-10-14" };
+const build = (rows, sponsors = []) => calc.buildTrafficRows({ rows, sponsors, ...RANGE });
 
-// BNI's attendance rule: (weeks - absents) / weeks — leave counts as attended
+check("Wednesdays between 31 Mar and 14 Oct 2026 = 29", calc.wednesdaysBetween("2026-03-31", "2026-10-14") === 29 && calc.wednesdaysBetween("2026-10-14", "2026-03-31") === 0);
+
+// a real line of the 14 Oct 2026 PALMS report (Garima Agarwal): P24 A2 L0 M2 S1, RGI12 RGO7, V4, 1-2-1 25, TYFCB 181650, CEU 15
 {
-  const L = ["a", "b", "c", "d", "e", "f"].map((id, i) => ({ id, date: `2026-09-${String(i + 1).padStart(2, "0")}` }));
-  const letter = (week, over) => ({ week, name: "Neha Goel", present: 0, absent: 0, m: 0, s: 0, l: 0, ...over });
-  const att = [letter("a", { present: 1 }), letter("b", { present: 1 }), letter("c", { l: 1 }), letter("d", { m: 1 }), letter("e", { s: 1 }), letter("f", { absent: 1 })];
-  const r = calc.buildTrafficRows({ members: ["Neha Goel"], meetings: L, slips: { ...base, attendance: att } })[0];
-  check("attendance = (weeks - absents) / weeks: 1 absent in 6 weeks = 5/6 (leave counts as attended)", Math.abs(r.attendance.rate - 5 / 6) < 1e-9, String(r.attendance.rate));
-  const sixOfSix = calc.buildTrafficRows({ members: ["Neha Goel"], meetings: L, slips: { ...base, attendance: att.map((x) => ({ ...x, absent: 0 })).map((x, i) => (i === 5 ? { ...x, present: 1 } : x)) } })[0];
-  check("no absences -> 1", sixOfSix.attendance.rate === 1);
-  // BNI's chat example: 26 weeks = 23 P + 1 M + 1 S + 1 A -> 25/26 = 0.96
-  const W26 = Array.from({ length: 26 }, (_, i) => ({ id: "w" + i, date: `2026-04-${String((i % 28) + 1).padStart(2, "0")}` })).map((x, i) => ({ id: "w" + i, date: new Date(Date.UTC(2026, 3, 1 + i * 7)).toISOString().slice(0, 10) }));
-  const a26 = W26.map((w, i) => letter(w.id, i === 23 ? { m: 1 } : i === 24 ? { s: 1 } : i === 25 ? { absent: 1 } : { present: 1 }));
-  const r26 = calc.buildTrafficRows({ members: ["Neha Goel"], meetings: W26, slips: { ...base, attendance: a26 } })[0];
-  check("BNI's own example: 23 P + 1 M + 1 S + 1 A over 26 weeks = 25/26 = 0.9615 -> 96%", Math.abs(r26.attendance.rate - 25 / 26) < 1e-9 && r26.attendance.score === 10, String(r26.attendance.rate));
+  const g = build([line({ name: "Garima Agarwal", p: 24, a: 2, m: 2, s: 1, rgi: 12, rgo: 7, visitors: 4, oneToOnes: 25, tyfcb: 181650, ceu: 15 })])[0];
+  check("weeks = P + A + L + M + S = 29; attendance = (29 - 2) / 29", g.weeks === 29 && Math.abs(g.attendance.rate - 27 / 29) < 1e-12 && g.attendance.score === 5, `${g.weeks} ${g.attendance.rate}`);
+  check("rates per week: CEU 15/29, 121 25/29, referrals (RGI + RGO) 19/29", Math.abs(g.ceu.rate - 15 / 29) < 1e-12 && g.ceu.score === 10 && Math.abs(g.oneToOne.rate - 25 / 29) < 1e-12 && g.oneToOne.score === 15 && Math.abs(g.referrals.rate - 19 / 29) < 1e-12 && g.referrals.score === 10);
+  check("TYFCB amount + visitors straight from the report", g.tyfcb.amount === 181650 && g.tyfcb.score === 2 && g.visitors.count === 4 && g.visitors.score === 20);
+  check("total + colour: 5 + 10 + 15 + 10 + 2 + 20 + 0 = 62 -> amber", g.total === 62 && g.color === "amber", String(g.total));
+  check("a complete lettered run needs no note", g.notes.length === 0 || g.notes.every((n) => /lettered weeks/.test(n)));
 }
 
-// why a member has fewer lettered weeks than the window — the note must say which case it is
+// sponsors come from the Sponsor Report only
 {
-  const L = ["a", "b", "c", "d", "e", "f"].map((id, i) => ({ id, date: `2026-09-${String(i + 1).padStart(2, "0")}` }));
-  const run = (weeks) => calc.buildTrafficRows({ members: ["Neha Goel"], meetings: L, slips: { ...base, attendance: weeks.map((w) => ({ week: w, name: "Neha Goel", present: 1, absent: 0, m: 0, s: 0, l: 0 })) } })[0];
-  const joined = run(["c", "d", "e", "f"]);
-  check("note: first letters start late -> 'joined part-way'", joined.notes.some((n) => /joined part-way \(first PALMS letter 2026-09-03\)/.test(n)) && !joined.notes.some((n) => /no letter yet/.test(n)), joined.notes.join(" | "));
-  const lag = run(["a", "b", "c", "d"]);
-  check("note: newest meetings have no letter -> 'PALMS has no letter yet for the newest 2 meetings'", lag.notes.some((n) => /PALMS has no letter yet for the newest 2 meetings/.test(n)) && !lag.notes.some((n) => /joined/.test(n)), lag.notes.join(" | "));
-  const gap = run(["a", "b", "d", "e", "f"]);
-  check("note: a gap in the middle -> '1 blank week in between'", gap.notes.some((n) => /1 blank week in between/.test(n)) && !gap.notes.some((n) => /joined|no letter yet/.test(n)), gap.notes.join(" | "));
-  check("a complete run needs no note", run(["a", "b", "c", "d", "e", "f"]).notes.length === 0);
+  const members = [line({ name: "Pranati Bajaj", p: 20 }), line({ name: "Ranjan K Sapra", p: 20 }), line({ name: "Komal Gupta", p: 20 })];
+  const sponsors = [
+    { sponsor: "Pranati Bajaj", sponsored: "Dheeraj Parcha", applicationDate: "2026-07-07" }, // sponsored into ANOTHER chapter still counts
+    { sponsor: "Ranjan Sapra", sponsored: "Yoginder Kalra", applicationDate: "2026-05-20" }, // BNI prints no middle initial
+    { sponsor: "Ranjan Sapra", sponsored: "Piyush Puri", applicationDate: "2026-06-17" },
+    { sponsor: "Komal Gupta", sponsored: "Old Application", applicationDate: "2026-01-02" }, // before the range
+    { sponsor: "BNI Website", sponsored: "Annie Jain", applicationDate: "2026-03-31" }, // not a member
+  ];
+  const r = build(members, sponsors);
+  const by = (n) => r.find((x) => x.name === n).sponsors;
+  check("sponsors: counted per Sponsor Report row, other-chapter sponsored members included", by("Pranati Bajaj").count === 1 && by("Pranati Bajaj").score === 5);
+  check("sponsors: 'Ranjan Sapra' in the report is the member 'Ranjan K Sapra' (2 sponsored, 5 points)", by("Ranjan K Sapra").count === 2 && by("Ranjan K Sapra").score === 5);
+  check("sponsors: an application date outside the range does not count; a non-member sponsor is ignored", by("Komal Gupta").count === 0 && by("Komal Gupta").score === 0);
+  const none = build(members, null);
+  check("no Sponsor Report imported -> 0 sponsors for everybody", none.every((x) => x.sponsors.count === 0));
 }
 
-// part-year member: first attendance in meeting 3 of 6 -> 4 weeks
-const late = W.slice(2).map((w) => ({ week: w.id, name: "Neha Goel", present: 1, absent: 0, m: 0, s: 0, l: 0 }));
-rows = calc.buildTrafficRows({ members: ["Neha Goel"], meetings: W, slips: { ...base, attendance: late, ceus: [{ week: "c", name: "Neha Goel", credits: 2 }] }, bni: [] });
-check("joined part-way: rates are divided by the weeks since first attendance (4, not 6)", rows[0].weeks === 4 && rows[0].prorated && rows[0].ceu.rate === 0.5, JSON.stringify(rows[0].ceu));
-
-// sponsors + visitors from the visitor slips
-const spSlips = {
-  ...base,
-  visitors: [
-    { week: "a", inviter: "Amit Gupta", name: "Neha Goel" }, // Neha is a home member -> Amit sponsored her
-    { week: "b", inviter: "Amit Gupta", name: "neha  goel" }, // same sponsored member again: counts once
-    { week: "c", inviter: "Amit Gupta", name: "Someone Outside" }, // a plain visitor: no sponsor credit
-    { week: "d", inviter: "Amit Gupta", name: "Amit Gupta" }, // can't sponsor yourself
-    { week: "z", inviter: "Amit Gupta", name: "Pia Roy" }, // outside the window
-  ],
-};
-rows = calc.buildTrafficRows({ members: ["Amit Gupta", "Neha Goel"], homeAll: ["Amit Gupta", "Neha Goel", "Pia Roy"], meetings: W, slips: spSlips });
-const sp = rows.find((r) => r.name === "Amit Gupta");
-check("sponsors: a visitor who is a home member credits the inviter once (not self, not outside the window)", sp.sponsors.count === 1 && sp.sponsors.score === 5 && sp.sponsors.source === "slips", JSON.stringify(sp.sponsors));
-check("visitors: all four in-window visitor slips count, the out-of-window one does not", sp.visitors.count === 4 && sp.visitors.score === 20, JSON.stringify(sp.visitors));
-rows = calc.buildTrafficRows({ members: ["Amit Gupta", "Neha Goel"], homeAll: ["Amit Gupta", "Neha Goel", "Pia Roy"], meetings: W, slips: { ...spSlips, visitors: [{ week: "a", inviter: "Amit Gupta", name: "Pia Roy" }] } });
-check("sponsors: a visitor who is an INACTIVE home member still credits the inviter", rows.find((r) => r.name === "Amit Gupta").sponsors.count === 1);
-check("no BNI file anywhere: rows carry no 'bni' field", rows.every((r) => !("bni" in r)));
+// no letters at all: divide by the Wednesdays of the range, attendance 0 with a note
+{
+  const r = build([line({ name: "Neha Goel", oneToOnes: 29 })])[0];
+  check("no attendance letters: weeks = Wednesdays in the range, attendance rate null / 0 points, noted", r.weeks === 29 && r.attendance.rate === null && r.attendance.score === 0 && r.oneToOne.rate === 1 && r.notes.some((n) => /no attendance letters/.test(n)), JSON.stringify(r));
+}
+// joined part-way
+{
+  const r = build([line({ name: "Neha Goel", p: 12 })])[0];
+  check("12 lettered weeks of 29: rates use 12, attendance 100%, note explains", r.weeks === 12 && r.attendance.rate === 1 && r.notes.some((n) => /12 lettered weeks of 29/.test(n)), r.notes.join(" | "));
+}
+// attendance rule: leave / medical / substitute all count as attended
+{
+  const r = build([line({ name: "Neha Goel", p: 20, a: 1, l: 1, m: 2, s: 2 })])[0];
+  check("(weeks - absents) / weeks: 1 absent in 26 = 25/26 -> 96% -> 10 points", Math.abs(r.attendance.rate - 25 / 26) < 1e-12 && r.attendance.score === 10);
+}
+// sorting
+{
+  const r = calc.sortTrafficRows(build([line({ name: "B Low", p: 20 }), line({ name: "A High", p: 20, visitors: 6, oneToOnes: 40, rgi: 40, tyfcb: 2000000, ceu: 30 }), line({ name: "A Low", p: 20 })]));
+  check("highest score first, ties by name", r[0].name === "A High" && r[1].name === "A Low" && r[2].name === "B Low");
+}
 
 console.log(`TOTAL: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

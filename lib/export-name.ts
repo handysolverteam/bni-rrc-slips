@@ -64,10 +64,10 @@ export function reportDefaultName(opts: { scopeLabel: string; tab: string; query
   ]);
 }
 
-/** Traffic Lights: `traffic-lights_<YYYY-MM>[_<colour>][_member-<name>]` (the report month + the filters on screen). */
+/** Traffic Lights: `traffic-lights_<range end date>[_<colour>][_member-<name>]` (the imported range + the filters on screen). */
 export function trafficDefaultName(opts: { month: string; light?: string; nameFilter?: string }): string {
   const first = (opts.nameFilter ?? "").split(",")[0] ?? "";
-  return join(["traffic-lights", part(opts.month || "latest", 10), opts.light ? part(opts.light, 8) : "", first.trim() ? `member-${part(first, 28)}` : ""]);
+  return join(["traffic-lights", part((opts.month || "latest").split("_").pop() || "latest", 10), opts.light ? part(opts.light, 8) : "", first.trim() ? `member-${part(first, 28)}` : ""]);
 }
 
 /** Attendance: `attendance_<weeks>`. */

@@ -2,6 +2,7 @@ import Link from "next/link";
 import ColumnFilter from "@/components/ColumnFilter";
 import NoAccess from "@/components/NoAccess";
 import TrafficExportButtons from "@/components/TrafficExportButtons";
+import TrafficImportPanel from "@/components/TrafficImportPanel";
 import TrafficMonthPicker from "@/components/TrafficMonthPicker";
 import { multiParts } from "@/lib/list-filters";
 import { requirePageTenant } from "@/lib/server-auth";
@@ -59,13 +60,22 @@ export default async function TrafficLightsPage({
             <span className="count-badge">{rows.length} member(s)</span>
           </h1>
           <p className="sub muted">
-            {view.windowLabel} — active members of {data.homeName}, scored out of 100
+            {view.windowLabel} — {data.homeName}, scored out of 100
           </p>
         </div>
         <div className="report-head-actions">
           {view.rows.length > 0 ? <TrafficExportButtons month={view.month} light={light} nameFilter={nameFilter} /> : null}
         </div>
       </div>
+
+      {view.rows.length === 0 ? (
+        <TrafficImportPanel />
+      ) : (
+        <details className="tl-import">
+          <summary>Import or replace the BNI reports</summary>
+          <TrafficImportPanel />
+        </details>
+      )}
 
       <div className="card report-controls">
         <div className="report-controls-row">
@@ -94,21 +104,23 @@ export default async function TrafficLightsPage({
         </div>
       </div>
 
-      {view.missingAttendance > 0 ? (
+      {view.rows.length > 0 && !view.hasSponsorReport ? (
         <div className="data-alert">
-          PALMS attendance is missing for {view.missingAttendance} member(s) in this window (0 points for them) — import the full PALMS
-          attendance report on the Attendance screen.
+          No Chapter Sponsor Report is imported for this range, so every member shows 0 sponsors — import it on the Import screen.
         </div>
       ) : null}
       <p className="sub muted tl-source">
-        Attendance comes from the PALMS attendance import; CEU, 121, referrals, TYFCB and visitors from the slip audit report. Sponsors are
-        counted from the visitor slips (a visitor who is now a member credits whoever invited them). BNI may credit visitors for whom no
-        slip was filed, so visitors and sponsors can be lower than in BNI's own report.
+        Everything on this screen comes from BNI&apos;s own reports, imported on the Import screen: the Chapter Summary PALMS Report
+        (attendance, CEU, 121, referrals, TYFCB, visitors) and the Chapter Sponsor Report (sponsors).
       </p>
 
       {view.rows.length === 0 ? (
         <div className="card empty-state">
-          <p>No active members or no meetings imported yet.</p>
+          <p>
+            {view.needsMigration
+              ? "Run supabase/migrations/010_traffic_reports.sql in the Supabase SQL editor, then import the two BNI reports."
+              : "No Traffic Lights reports imported yet — import the Chapter Summary PALMS Report and the Chapter Sponsor Report on the Import screen."}
+          </p>
         </div>
       ) : (
         <div className="table-card">
@@ -167,7 +179,7 @@ export default async function TrafficLightsPage({
                       <td>
                         <span className={`tl-dot tl-${r.color}`} title={LIGHT_LABEL[r.color]} /> <strong>{r.total}</strong>
                       </td>
-                      <td title={r.attendance.source === "none" ? "No PALMS attendance imported" : "From PALMS attendance"}>
+                      <td title={r.weeks + " lettered weeks"}>
                         {pct(r.attendance.rate)}
                       </td>
                       <td>{r.attendance.score}</td>
@@ -179,9 +191,9 @@ export default async function TrafficLightsPage({
                       <td>{r.referrals.score}</td>
                       <td>{rupees(r.tyfcb.amount)}</td>
                       <td>{r.tyfcb.score}</td>
-                      <td title="Visitor slips filed by this member">{r.visitors.count}</td>
+                      <td title="V column of the PALMS report">{r.visitors.count}</td>
                       <td>{r.visitors.score}</td>
-                      <td title="Visitors of this member who are now members">{r.sponsors.count}</td>
+                      <td title="Members sponsored (Sponsor Report)">{r.sponsors.count}</td>
                       <td>{r.sponsors.score}</td>
                     </tr>
                   ))
