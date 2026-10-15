@@ -55,6 +55,7 @@ export default async function VisitorRankPage({
   // "Brought none" is about the whole window, so it only shows when no column filter narrows the table.
   const none = filtered ? [] : namesWithNone(data.pool, all);
   const total = ranking.reduce((s, r) => s + r.count, 0);
+  const max = ranking.reduce((m, r) => Math.max(m, r.count), 0);
   const shareText = buildRankingShare(filtered ? `${label} (filtered)` : label, ranking, none);
 
   return (
@@ -83,10 +84,41 @@ export default async function VisitorRankPage({
         </div>
       </div>
 
+      {ranking.length > 0 ? (
+        <div className="vr-stats">
+          <div className="vr-stat">
+            <span className="vr-stat-num">{ranking.length}</span>
+            <span className="vr-stat-label">member{ranking.length === 1 ? "" : "s"} brought visitors</span>
+          </div>
+          <div className="vr-stat">
+            <span className="vr-stat-num">{total}</span>
+            <span className="vr-stat-label">visitors in total</span>
+          </div>
+          <div className="vr-stat">
+            <span className="vr-stat-num">{(total / ranking.length).toFixed(1)}</span>
+            <span className="vr-stat-label">average per member</span>
+          </div>
+        </div>
+      ) : null}
+
       {none.length > 0 ? (
-        <p className="sub muted" style={{ margin: "0 0 14px" }}>
-          <strong>Brought none ({none.length} active member{none.length === 1 ? "" : "s"}):</strong> {none.join(", ")}
-        </p>
+        <div className="vr-none">
+          <div className="vr-none-head">
+            <span className="vr-none-title">
+              <span className="vr-none-dot" aria-hidden="true" /> Brought none
+            </span>
+            <span className="vr-none-count">
+              {none.length} active member{none.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <div className="vr-none-chips">
+            {none.map((n) => (
+              <span key={n} className="vr-chip">
+                {n}
+              </span>
+            ))}
+          </div>
+        </div>
       ) : null}
 
       <MultiSelectToggle />
@@ -122,7 +154,14 @@ export default async function VisitorRankPage({
                   <tr key={r.name}>
                     <td className="idx">{i + 1}</td>
                     <td>{r.name}</td>
-                    <td>{r.count}</td>
+                    <td>
+                      <span className="vr-count-cell">
+                        <b className="vr-count">{r.count}</b>
+                        <span className="vr-bar" aria-hidden="true">
+                          <span style={{ width: `${Math.max(4, Math.round((r.count / max) * 100))}%` }} />
+                        </span>
+                      </span>
+                    </td>
                   </tr>
                 ))
               )}
