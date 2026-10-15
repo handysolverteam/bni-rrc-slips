@@ -37,7 +37,8 @@ const links: NavItem[] = [
   { href: "/palms", label: "Attendance", exact: false },
   { href: "/top3", label: "Top 3", exact: false },
   { href: "/visitor-rank", label: "Visitor Rank", exact: false },
-  { href: "/traffic-lights", label: "Traffic Lights", exact: false },
+  // Traffic Lights is hidden from the top bar for now; the page still opens at /traffic-lights.
+  // { href: "/traffic-lights", label: "Traffic Lights", exact: false },
   { href: "/chat", label: "Chat", exact: false },
 ];
 
