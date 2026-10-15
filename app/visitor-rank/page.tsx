@@ -83,6 +83,12 @@ export default async function VisitorRankPage({
         </div>
       </div>
 
+      {none.length > 0 ? (
+        <p className="sub muted" style={{ margin: "0 0 14px" }}>
+          <strong>Brought none ({none.length} active member{none.length === 1 ? "" : "s"}):</strong> {none.join(", ")}
+        </p>
+      ) : null}
+
       <MultiSelectToggle />
 
       <div className="table-card">
@@ -133,12 +139,6 @@ export default async function VisitorRankPage({
           </table>
         </div>
       </div>
-
-      {none.length > 0 ? (
-        <p className="sub muted" style={{ marginTop: 14 }}>
-          <strong>Brought none ({none.length} active member{none.length === 1 ? "" : "s"}):</strong> {none.join(", ")}
-        </p>
-      ) : null}
     </div>
   );
 }
