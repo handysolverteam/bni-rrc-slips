@@ -7,6 +7,8 @@ export type ComboOption = string | { value: string; label: string };
 
 /** Values that stand for a whole set (every week / the last 6 months): picking one replaces the other picks. */
 const EXCLUSIVE = new Set(["all", "last6m"]);
+/** A date-range value (`range:from..to`) also stands for a whole set of weeks: it never combines with other picks. */
+const isExclusive = (v: string): boolean => EXCLUSIVE.has(v) || v.startsWith("range:");
 
 function norm(o: ComboOption): { value: string; label: string } {
   return typeof o === "string" ? { value: o, label: o } : o;
@@ -53,7 +55,7 @@ export default function SearchSelect({
   const selectedSet = multiple
     ? new Set(
         value
-          ? EXCLUSIVE.has(value)
+          ? isExclusive(value)
             ? [value]
             : value.split(",").map((s) => s.trim()).filter(Boolean)
           : [],
@@ -152,13 +154,13 @@ export default function SearchSelect({
       // "all" is exclusive: picking it clears specifics, picking a specific
       // week from an "all" selection starts a fresh specific set.
       const next = new Set(selectedSet);
-      if (EXCLUSIVE.has(v)) {
+      if (isExclusive(v)) {
         next.clear();
         next.add(v);
       } else if (next.has(v)) {
         next.delete(v);
       } else {
-        for (const x of EXCLUSIVE) next.delete(x);
+        for (const x of [...next]) if (isExclusive(x)) next.delete(x);
         next.add(v);
       }
       onChange([...next].join(","));

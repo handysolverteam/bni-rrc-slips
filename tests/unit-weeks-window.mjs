@@ -36,5 +36,23 @@ check("expandWeekToken: last6m -> the 27 real ids (comma list)", w.expandWeekTok
 check("expandWeekToken: ordinary values are untouched", w.expandWeekToken("all", weeks) === "all" && w.expandWeekToken("id3,id4", weeks) === "id3,id4" && w.expandWeekToken("", weeks) === "" && w.expandWeekToken(undefined, weeks) === "");
 check("expandWeekToken: the token mixed with ids still expands (the dropdown keeps it exclusive)", w.expandWeekToken("id0,last6m", weeks).split(",").length === 27);
 
+// ---- date range filter (`range:<from>..<to>` in the week parameter)
+check("rangeToken: both ends, one end, reversed pair swapped, invalid -> empty", w.rangeToken("2026-04-01", "2026-09-30") === "range:2026-04-01..2026-09-30" && w.rangeToken("2026-04-01", "") === "range:2026-04-01.." && w.rangeToken("", "2026-09-30") === "range:..2026-09-30" && w.rangeToken("2026-09-30", "2026-04-01") === "range:2026-04-01..2026-09-30" && w.rangeToken("", "") === "" && w.rangeToken("nope", "2026-13") === "");
+check("parseRangeToken: round trip, open ends, and non-range values -> null", JSON.stringify(w.parseRangeToken("range:2026-04-01..2026-09-30")) === JSON.stringify({ from: "2026-04-01", to: "2026-09-30" }) && w.parseRangeToken("range:..2026-09-30").from === "" && w.parseRangeToken("range:2026-04-01..").to === "" && w.parseRangeToken("all") === null && w.parseRangeToken("last6m") === null && w.parseRangeToken("range:garbage") === null && w.parseRangeToken(undefined) === null);
+check("findRangeToken: finds the token inside a comma list", w.findRangeToken("id1,range:2026-04-01..2026-09-30") === "range:2026-04-01..2026-09-30" && w.findRangeToken("id1,id2") === null);
+check("weeksInRange: meeting dates inside the range, both ends included", w.weeksInRange(weeks, "2026-04-01", "2026-04-29").map((x) => x.meeting_date).join() === "2026-04-01,2026-04-08,2026-04-15,2026-04-22,2026-04-29");
+check("weeksInRange: open ends", w.weeksInRange(weeks, "2026-09-23", "").length === 3 && w.weeksInRange(weeks, "", "2026-04-08").length === 2 && w.weeksInRange(weeks, "", "").length === weeks.length);
+check("weeksInRange: weeks without a meeting date never match", w.weeksInRange([{ id: "x", label: "x", meeting_date: null }], "", "").length === 0);
+check("expandWeekToken: a range -> the ids of the weeks inside it (Apr..Sep 2026 = 27 weeks)", w.expandWeekToken("range:2026-04-01..2026-09-30", weeks).split(",").length === 27 && w.expandWeekToken("range:2026-04-01..2026-09-30", weeks).split(",")[0] === "id0");
+check("expandWeekToken: a range with no imported week -> the id that matches nothing (never an empty string = 'everything')", w.expandWeekToken("range:2030-01-01..2030-02-01", weeks) === w.NO_WEEK_ID && /^[0-9a-f-]{36}$/.test(w.NO_WEEK_ID));
+check("expandWeekToken: the range wins over other picks in the same value", w.expandWeekToken("id0,range:2026-04-01..2026-04-08", weeks) === "id0,id1".split(",").slice(0, 2).join(","));
+check("rangeTitle: both ends, one day, open ends", w.rangeTitle("2026-04-15", "2026-10-14") === "15 Apr 2026 – 14 Oct 2026" && w.rangeTitle("2026-04-15", "2026-04-15") === "15 Apr 2026" && w.rangeTitle("2026-04-15", "") === "From 15 Apr 2026" && w.rangeTitle("", "2026-10-14") === "Until 14 Oct 2026");
+check("weekBounds: first and last meeting date", JSON.stringify(w.weekBounds(weeks)) === JSON.stringify({ min: "2026-04-01", max: "2026-10-07" }) && JSON.stringify(w.weekBounds([])) === JSON.stringify({ min: "", max: "" }));
+{
+  const tok = "range:2026-04-01..2026-04-29";
+  const withRange = w.weekChoiceOptions(weeks, tok);
+  check("the dropdowns list the active range first (so the box can show it)", withRange[0].value === tok && withRange[0].label === "1 Apr 2026 – 29 Apr 2026" && withRange.length === c.length + 1 && w.weekChoiceOptions(weeks).length === c.length && w.weekFilterOptions(weeks, tok)[1].value === tok);
+}
+
 console.log(`TOTAL: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

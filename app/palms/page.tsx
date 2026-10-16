@@ -8,7 +8,8 @@ import PalmsExportButtons from "@/components/PalmsExportButtons";
 import PalmsImportPanel from "@/components/PalmsImportPanel";
 import PalmsStatsShare from "@/components/PalmsStatsShare";
 import { buildPalmsStatsShare } from "@/lib/palms-share";
-import { expandWeekToken, LAST6_TOKEN } from "@/lib/weeks";
+import DateRangeFilter from "@/components/DateRangeFilter";
+import { expandWeekToken, findRangeToken, LAST6_TOKEN, parseRangeToken, rangeTitle, weekBounds } from "@/lib/weeks";
 import { requirePageTenant } from "@/lib/server-auth";
 import {
   fetchPalmsAttendanceStats,
@@ -42,8 +43,9 @@ export default async function PalmsPage({
   // exports get the real week ids.
   const last6 = (sp.week ?? "").split(",").map((x) => x.trim()).includes(LAST6_TOKEN);
   const weekIds = palmsWeekScope(expandWeekToken(sp.week, weeks)); // default scope = every week with attendance
+  const rangeTok = findRangeToken(sp.week); // a From / To date range (expanded to the weeks inside it above)
   const allWeeks = weekIds.length === 0 && !last6;
-  const weekId = last6 ? LAST6_TOKEN : allWeeks ? "all" : weekIds.join(",");
+  const weekId = last6 ? LAST6_TOKEN : rangeTok ? rangeTok : allWeeks ? "all" : weekIds.join(",");
   const exportWeek = allWeeks ? "all" : weekIds.join(",");
 
   const [matrix, record, stats] = await Promise.all([
@@ -51,7 +53,12 @@ export default async function PalmsPage({
     fetchPalmsImportRecord(tenantId),
     fetchPalmsAttendanceStats(tenantId),
   ]);
-  const scopeLabel = palmsScopeLabel(weeks, weekIds, "All weeks");
+  const dateRange = parseRangeToken(rangeTok);
+  const inRangeWeeks = dateRange ? weekIds.filter((id) => weeks.some((w) => w.id === id)).length : 0;
+  const scopeLabel = dateRange
+    ? `${rangeTitle(dateRange.from, dateRange.to)} · ${inRangeWeeks} meeting${inRangeWeeks === 1 ? "" : "s"}`
+    : palmsScopeLabel(weeks, weekIds, "All weeks");
+  const bounds = weekBounds(weeks);
   // Member column filter (dropdown; several names with the Multi-select checkbox): narrows the matrix rows.
   const memberFilter = (sp.c_member ?? "").trim();
   const wantMembers = new Set(multiParts(memberFilter).map((n) => n.toLowerCase()));
@@ -117,6 +124,7 @@ export default async function PalmsPage({
             hideSearch
             includeAllOption
           />
+          <DateRangeFilter paramKey="week" min={bounds.min} max={bounds.max} />
           <span className="muted">
             P Present · A Absent · M Medical · S Substitute · L Leave
           </span>

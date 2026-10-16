@@ -1,7 +1,7 @@
 import { createTtlCache, sharedState } from "./cache";
 import { latestImportedWeekId } from "./report-view";
 import { getSupabaseServer } from "./supabase/server";
-import { expandWeekToken, isoWeekNumber, LAST6_TOKEN, type WeekOption } from "./weeks";
+import { expandWeekToken, findRangeToken, isoWeekNumber, LAST6_TOKEN, type WeekOption } from "./weeks";
 
 // Week options change only on import: cache per process for 5 minutes,
 // keyed by tenant (sharedState keeps ONE instance across page and
@@ -99,7 +99,7 @@ export const clearWeekOptionsCache = (): void => {
  * comma-separated multi-select) wins over the legacy `?week=` param (kept
  * for direct links); neither set falls back to the default (latest imported)
  * week. `weekFilter` is the value to show in the header column filter
- * ("all" | one id | comma-separated ids | "last6m" | "" when nothing resolves).
+ * ("all" | one id | comma-separated ids | "last6m" | "range:from..to" | "" when nothing resolves).
  */
 export async function listWeekScope(
   tenantId: string,
@@ -107,6 +107,12 @@ export async function listWeekScope(
 ): Promise<{ weekId: string; weekFilter: string }> {
   const param = sp.c_bni_week ?? sp.week;
   if (param === "all") return { weekId: "", weekFilter: "all" };
+  // A date range (`range:from..to`): the weeks whose meeting date is inside; none inside = a week id that matches nothing.
+  const range = findRangeToken(param);
+  if (range) {
+    const weeks = await getCachedWeekOptions(tenantId);
+    return { weekId: expandWeekToken(range, weeks), weekFilter: range };
+  }
   const ids = (param || "").split(",").map((s) => s.trim()).filter(Boolean);
   // "Last 6 months" (the same entry in every week dropdown): the filter keeps the token for display, the query gets the real ids.
   if (ids.includes(LAST6_TOKEN)) {

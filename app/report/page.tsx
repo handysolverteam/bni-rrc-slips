@@ -20,7 +20,8 @@ import Link from "next/link";
 import ReportExportButtons from "@/components/ReportExportButtons";
 import ReportTabs from "@/components/ReportTabs";
 import FilterBar from "@/components/FilterBar";
-import { expandWeekToken, weekFilterOptions, type WeekOption } from "@/lib/weeks";
+import DateRangeFilter from "@/components/DateRangeFilter";
+import { expandWeekToken, findRangeToken, parseRangeToken, rangeTitle, weekBounds, weekFilterOptions, type WeekOption } from "@/lib/weeks";
 import DataWarnings from "@/components/DataWarnings";
 
 export const dynamic = "force-dynamic";
@@ -181,6 +182,12 @@ export default async function ReportPage({
     activeWeeks.length > 3
       ? `${activeWeeks.length} meetings`
       : activeWeeks.map((w) => w.label).join(" + ");
+  // A From / To date range shows its dates (then the meetings inside it).
+  const dateRange = parseRangeToken(findRangeToken(weekId));
+  const headLabel = dateRange
+    ? `${rangeTitle(dateRange.from, dateRange.to)} · ${activeWeeks.length} meeting${activeWeeks.length === 1 ? "" : "s"}`
+    : weeksLabel;
+  const bounds = weekBounds(weeks);
 
   const sectionsPromise = weekQ || allWeeks
     ? fetchReportSections(tenantId, weekQ, q, {
@@ -241,13 +248,13 @@ export default async function ReportPage({
             Week Report
             <span className="count-badge">{total} slip(s)</span>
           </h1>
-          {allWeeks ? <p className="sub muted">All weeks</p> : weeksLabel ? <p className="sub muted">{weeksLabel}</p> : null}
+          {allWeeks ? <p className="sub muted">All weeks</p> : headLabel ? <p className="sub muted">{headLabel}</p> : null}
         </div>
         <div className="report-head-actions">
           <ReportExportButtons
             weekId={weekQ}
             tab={tab}
-            scopeLabel={allWeeks ? "all-weeks" : (weeksLabel || "week")}
+            scopeLabel={allWeeks ? "all-weeks" : (headLabel || "week")}
           />
         </div>
       </div>
@@ -290,6 +297,7 @@ export default async function ReportPage({
             includeAllOption
             hideSearch
           />
+          <DateRangeFilter paramKey="week" min={bounds.min} max={bounds.max} />
           {hasFilters || !allWeeks ? (
             <span className="clear-right">
               <Link href={clearHref}>

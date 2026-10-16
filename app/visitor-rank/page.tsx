@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ColumnFilter from "@/components/ColumnFilter";
+import DateRangeFilter from "@/components/DateRangeFilter";
 import MonthFilter from "@/components/MonthFilter";
 import MultiSelectToggle from "@/components/MultiSelectToggle";
 import NoAccess from "@/components/NoAccess";
@@ -7,6 +8,7 @@ import VisitorRankShare from "@/components/VisitorRankShare";
 import { multiParts } from "@/lib/list-filters";
 import { requirePageTenant } from "@/lib/server-auth";
 import { inWindow, windowForDates, windowLabel, windowTitle } from "@/lib/period";
+import { findRangeToken, parseRangeToken, rangeTitle, weekBounds } from "@/lib/weeks";
 import { fetchVisitorRanking } from "@/lib/visitor-ranking";
 import { buildRankingShare, filterRanking, mergeRanking, namesWithNone } from "@/lib/visitor-ranking-share";
 
@@ -36,10 +38,20 @@ export default async function VisitorRankPage({
   // Nothing picked = the standard "last 6 months" window (lib/period.ts: ends on the newest meeting, 26 or 27
   // weeks); picked months are summed exactly, meeting by meeting.
   const win = windowForDates(data.dates);
-  const keys = picked.length > 0 ? data.dates.filter((d) => picked.includes(d.slice(0, 7))) : win ? data.dates.filter((d) => inWindow(d, win)) : [];
+  // A From / To date range (`?range=range:from..to`) wins over the months: the meetings whose date is inside it.
+  const dateRange = parseRangeToken(findRangeToken(sp.range));
+  const keys = dateRange
+    ? data.dates.filter((d) => (!dateRange.from || d >= dateRange.from) && (!dateRange.to || d <= dateRange.to))
+    : picked.length > 0
+      ? data.dates.filter((d) => picked.includes(d.slice(0, 7)))
+      : win
+        ? data.dates.filter((d) => inWindow(d, win))
+        : [];
+  const bounds = weekBounds(data.dates.map((d) => ({ id: d, label: d, meeting_date: d })));
   const windowName = win ? windowTitle(win, keys.length) : "Last 6 months";
-  const label =
-    picked.length > 0
+  const label = dateRange
+    ? `${rangeTitle(dateRange.from, dateRange.to)} (${keys.length} weeks)`
+    : picked.length > 0
       ? months.filter((m) => picked.includes(m.key)).length === 1
         ? (months.find((m) => picked.includes(m.key))?.label ?? "Selected month")
         : `${picked.length} months (${keys.length} weeks)`
@@ -66,15 +78,16 @@ export default async function VisitorRankPage({
           <span className="count-badge">{ranking.length} member(s)</span>
         </h1>
         <p className="sub muted">
-          {picked.length > 0 ? `Selected months · ${keys.length} weeks` : win ? `${windowTitle(win, keys.length)} · ${windowLabel(win, keys.length)}` : "Last 6 months"} — visitors brought, least to most
+          {dateRange ? `${rangeTitle(dateRange.from, dateRange.to)} · ${keys.length} weeks` : picked.length > 0 ? `Selected months · ${keys.length} weeks` : win ? `${windowTitle(win, keys.length)} · ${windowLabel(win, keys.length)}` : "Last 6 months"} — visitors brought, least to most
         </p>
       </div>
 
       <div className="card report-controls">
         <div className="report-controls-row">
           <MonthFilter basePath="/visitor-rank" value={picked.join(",")} months={months.map((m) => ({ key: m.key, label: m.label }))} allLabel={windowName} />
+          <DateRangeFilter paramKey="range" clearKeys={["month"]} min={bounds.min} max={bounds.max} />
           {ranking.length > 0 ? <VisitorRankShare text={shareText} /> : null}
-          {picked.length > 0 || filtered ? (
+          {picked.length > 0 || dateRange || filtered ? (
             <span className="clear-right">
               <Link href="/visitor-rank">
                 <button type="button">Clear all</button>

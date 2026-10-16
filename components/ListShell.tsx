@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import SlipsTable from "@/components/SlipsTable";
+import DateRangeFilter from "@/components/DateRangeFilter";
 import FilterBar from "@/components/FilterBar";
 import MultiSelectToggle from "@/components/MultiSelectToggle";
 import type { ComboOption } from "@/components/SearchSelect";
-import type { WeekOption } from "@/lib/weeks";
+import { findRangeToken, parseRangeToken, rangeTitle, weekBounds, weekChoiceOptions, type WeekOption } from "@/lib/weeks";
 
 type Col = { key: string; label: string };
 
@@ -61,6 +62,10 @@ export default function ListShell({
   const search = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const activeWeek = weeks.find((w) => w.id === weekId);
+  // A date range lives in the same parameter as the week filter (the header filter writes c_bni_week, old links `week`).
+  const activeRange = findRangeToken(search.get("c_bni_week") ?? search.get("week"));
+  const range = parseRangeToken(activeRange);
+  const bounds = weekBounds(weeks);
   const weekCount = weekId.split(",").map((s) => s.trim()).filter(Boolean).length;
   const go = (url: string) => startTransition(() => router.push(url));
   // Keep every active filter (q, week, c_* columns) across pagination.
@@ -95,7 +100,11 @@ export default function ListShell({
           </span>
         </h1>
         {sub ? <p className="sub muted">{sub}</p> : null}
-        {activeWeek ? (
+        {range ? (
+          <p className="sub muted">
+            Filtered to {rangeTitle(range.from, range.to)} · {weekCount} week{weekCount === 1 ? "" : "s"}
+          </p>
+        ) : activeWeek ? (
           <p className="sub muted">
             Filtered to {activeWeek.label}
           </p>
@@ -113,6 +122,9 @@ export default function ListShell({
           hideSearch
           onNavigate={go}
         />
+        {weeks.length > 0 ? (
+          <DateRangeFilter paramKey="c_bni_week" readKeys={["c_bni_week", "week"]} clearKeys={["week"]} min={bounds.min} max={bounds.max} />
+        ) : null}
         {q || weekId || activeToggle?.checked || Object.keys(columnFilters).length > 0 ? (
           <Link href={basePath}>
             <button type="button">Clear all</button>
@@ -129,7 +141,7 @@ export default function ListShell({
           filterable={filterable}
           textFilters={textFilters}
           initialFilters={columnFilters}
-          filterOptions={filterOptions}
+          filterOptions={activeRange && filterOptions.bni_week ? { ...filterOptions, bni_week: [...weekChoiceOptions([], activeRange), ...filterOptions.bni_week] } : filterOptions}
           indexStart={(page - 1) * pageSize}
           loading={isPending}
           activeToggle={

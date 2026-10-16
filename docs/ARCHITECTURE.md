@@ -102,3 +102,4 @@ bni-rrc-slips/
 - **Backfill**: migration 004 creates one default tenant and assigns every existing row to it (single-tenant data preserved, no loss); memberships for existing users are added by the operator with one SQL insert per user (uid shown by the no-access screen).
 - Denormalized `*_name` columns alongside fks stay, so grids render exactly like screenshots even when the member is other-chapter text.
 - Pagination server-side with `range()`; queries keep their existing shape — tenant filter is one extra `.eq` per query (no query-builder rewrite).
+- **Date range filter (2026-10-16)**: no new query shapes — a `range:<from>..<to>` week-filter value is expanded to week ids by the shared `expandWeekToken` / `listWeekScope`, so the slip lists, Slip Report, Attendance and exports keep their `applyWeekFilter` / `in(bni_week_id, …)` queries; only the UI gained `DateRangeFilter`.
