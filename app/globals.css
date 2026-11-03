@@ -1548,6 +1548,14 @@ button.wa-btn { background: #25d366; }
 button.wa-btn:hover:not(:disabled),
 button.wa-btn:focus-visible { background: #3ee07c; box-shadow: 0 2px 8px rgba(30, 169, 82, 0.35); }
 button.wa-btn:active:not(:disabled) { background: #1fbf5b; }
+/* Copy button beside a WhatsApp button. */
+.share-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+button.copy-btn {
+  background: var(--surface); color: var(--ink); border: 1px solid var(--field); font-weight: 700;
+  border-radius: 10px; padding: 8px 12px; cursor: pointer; box-shadow: none;
+}
+button.copy-btn:hover:not(:disabled), button.copy-btn:focus-visible { background: var(--accent-soft); color: var(--accent-hover); border-color: var(--accent-hover); }
+button.copy-btn.done, button.copy-btn.done:hover:not(:disabled) { background: var(--green-soft); color: var(--green-ink, var(--green)); border-color: var(--green); }
 .num-parts { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; }
 .num-part { display: inline-flex; align-items: baseline; gap: 5px; }
 .num-unit { font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: 0; }

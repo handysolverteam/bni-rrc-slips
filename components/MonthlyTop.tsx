@@ -1,7 +1,8 @@
 "use client";
 
+import CopyButton from "@/components/CopyButton";
 import type { MonthTop, TopEntry } from "@/lib/monthly-top-share";
-import { allShareUrl, monthShareUrl } from "@/lib/monthly-top-share";
+import { allShareUrl, buildAllShare, buildMonthShare, monthShareUrl } from "@/lib/monthly-top-share";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
@@ -44,9 +45,12 @@ export default function MonthlyTop({ months }: { months: MonthTop[] }) {
         </h2>
         <div className="top3-head-actions">
           {months.length > 1 ? (
-            <button type="button" className="wa-btn" onClick={() => openWa(allShareUrl(months))}>
-              Share all on WhatsApp
-            </button>
+            <span className="share-actions">
+              <button type="button" className="wa-btn" onClick={() => openWa(allShareUrl(months))}>
+                Share all on WhatsApp
+              </button>
+              <CopyButton text={buildAllShare(months)} label="Copy all" />
+            </span>
           ) : null}
         </div>
       </div>
@@ -54,9 +58,12 @@ export default function MonthlyTop({ months }: { months: MonthTop[] }) {
         <section key={m.key} className="top3-month" aria-label={m.label}>
           <div className="top3-month-head">
             <h3>{m.label}</h3>
-            <button type="button" className="wa-btn" onClick={() => openWa(monthShareUrl(m))}>
-              Send on WhatsApp
-            </button>
+            <span className="share-actions">
+              <button type="button" className="wa-btn" onClick={() => openWa(monthShareUrl(m))}>
+                Send on WhatsApp
+              </button>
+              <CopyButton text={buildMonthShare(m)} />
+            </span>
           </div>
           <div className="top3-grid">
             <List title="TYFCB (amount)" stat="tyfcb" list={m.tyfcb} fmt={rupees} />
