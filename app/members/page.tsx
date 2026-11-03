@@ -5,7 +5,7 @@ import { homeChapterNameOf } from "@/lib/new-members";
 import NoAccess from "@/components/NoAccess";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { distinctValues } from "@/lib/distinct";
-import { applyColumnFilter, multiParts } from "@/lib/list-filters";
+import { applyColumnFilter, HOME_CHAPTER_VALUE, homeChapterOption, multiParts } from "@/lib/list-filters";
 import { requirePageTenant } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
@@ -46,13 +46,15 @@ export default async function MembersPage({
     if (v) columnFilters[k] = v;
   }
   const chapterV = (sp.c_chapter || "").trim();
+  const homeName = await homeChapterNameOf(tenantId);
   let chapterIds: string[] = [];
   if (chapterV) {
     const { data: chapters } = await sb
       .from("chapters")
       .select("id, name")
       .eq("tenant_id", tenantId);
-    const names = multiParts(chapterV).map((s) => s.toLowerCase());
+    // "Home Chapter (<name>)" in the dropdown = the home chapter's own name.
+    const names = multiParts(chapterV).map((s) => (s === HOME_CHAPTER_VALUE ? homeName : s).trim().toLowerCase());
     chapterIds = (chapters ?? [])
       .filter((c) => names.includes(String(c.name ?? "").trim().toLowerCase()))
       .map((c) => c.id);
@@ -84,7 +86,7 @@ const memberEq: [string, unknown][] = [];
       distinctValues(tenantId, "members", "company", memberEq),
       distinctValues(tenantId, "members", "phone", memberEq),
     ]).then(([chapter, name, category, company, phone]) => ({
-      chapter,
+      chapter: [homeChapterOption(homeName), ...chapter],
       name,
       category,
       company,
