@@ -8,7 +8,7 @@ Import a weekly BNI `Report` XLS (columns: From, To, Slip Type, Inside/Outside, 
 2. App POSTs the file to `/api/import/report`.
 3. Server parses, upserts members/weeks, inserts slips, returns `{ imported, skipped, errors }`.
 4. User browses 6 read-only paginated screens:
-   - `/members` — Bni Member (Active, Name, Chapter, Category, Company, Phone — Category/Company/Phone are plain input boxes saved only by a **Save** button (or Enter) that appears once the text changed — never on blur or while typing; the Active column is the active/inactive toggle). The header shows the **active/inactive counts** under the title plus an **Active checkbox filter** (`?active=1`) that lists only active members.
+   - `/members` — Bni Member (Active, Name, Chapter, Category, Company, Phone — Category/Company/Phone are plain input boxes saved only by a **Save** button (or Enter) that appears once the text changed — never on blur or while typing; the Active column is the active/inactive toggle). **(2026-11-04)** An **Email** column (read-only, with a type-in filter) follows Phone. The header shows the **active/inactive counts** under the title plus an **Active checkbox filter** (`?active=1`) that lists only active members.
    - `/referrals` — Slip Referrals (BNI Week, Referral From, Referral To, Other Member's Chapter, Inside/Outside)
    - `/one-to-ones` — Slip 121 (BNI Week, Initiated By, Met With, Other Member's Chapter, Photo Proof, Gains Shared)
    - `/visitors` — Slip Visitors (Full Name, Company, Invited By, BNI Week, Email, Phone, Attending, etc.)

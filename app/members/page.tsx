@@ -138,10 +138,11 @@ const memberEq: [string, unknown][] = [];
         { key: "category", label: "Category" },
         { key: "company", label: "Company" },
         { key: "phone", label: "Phone" },
+        { key: "email", label: "Email" },
       ]}
       rows={rows}
-      filterable={["name", "chapter", "category", "company", "phone"]}
-      textFilters={["category", "company", "phone"]}
+      filterable={["name", "chapter", "category", "company", "phone", "email"]}
+      textFilters={["category", "company", "phone", "email"]}
       columnFilters={columnFilters}
       filterOptions={filterOptions}
     />
