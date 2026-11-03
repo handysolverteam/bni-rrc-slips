@@ -1,13 +1,11 @@
+import { Suspense } from "react";
 import CollapseCard from "@/components/CollapseCard";
-import ColumnFilter from "@/components/ColumnFilter";
-import MultiSelectToggle from "@/components/MultiSelectToggle";
-import { multiParts } from "@/lib/list-filters";
 import FilterBar from "@/components/FilterBar";
 import NoAccess from "@/components/NoAccess";
 import PalmsExportButtons from "@/components/PalmsExportButtons";
 import PalmsImportPanel from "@/components/PalmsImportPanel";
-import PalmsStatsShare from "@/components/PalmsStatsShare";
-import { buildPalmsStatsShare } from "@/lib/palms-share";
+import { PalmsMatrixSection, PalmsMemberCount, PalmsStatsCard } from "@/components/PalmsAsync";
+import { PalmsMatrixSkeleton, PalmsStatsSkeleton } from "@/components/Skeletons";
 import DateRangeFilter from "@/components/DateRangeFilter";
 import { expandWeekToken, findRangeToken, LAST6_TOKEN, parseRangeToken, rangeTitle, weekBounds } from "@/lib/weeks";
 import { requirePageTenant } from "@/lib/server-auth";
@@ -21,12 +19,6 @@ import {
 } from "@/lib/palms-view";
 
 export const dynamic = "force-dynamic";
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const dayLabel = (iso: string) => {
-  const [y, m, d] = iso.split("-");
-  return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
-};
 
 export default async function PalmsPage({
   searchParams,
@@ -48,11 +40,14 @@ export default async function PalmsPage({
   const weekId = last6 ? LAST6_TOKEN : rangeTok ? rangeTok : allWeeks ? "all" : weekIds.join(",");
   const exportWeek = allWeeks ? "all" : weekIds.join(",");
 
-  const [matrix, record, stats] = await Promise.all([
-    fetchPalmsMatrix(tenantId, weekIds),
-    fetchPalmsImportRecord(tenantId),
-    fetchPalmsAttendanceStats(tenantId),
-  ]);
+  // The two slow queries START here but are not awaited: the matrix, the member count and the summary card are streamed in
+  // by <Suspense> (components/PalmsAsync.tsx) while everything else is already on screen. The no-op catch only keeps an
+  // early rejection from being "unhandled" before a Suspense child reads the promise (which still throws for the error boundary).
+  const matrixPromise = fetchPalmsMatrix(tenantId, weekIds);
+  const statsPromise = fetchPalmsAttendanceStats(tenantId);
+  matrixPromise.catch(() => undefined);
+  statsPromise.catch(() => undefined);
+  const record = await fetchPalmsImportRecord(tenantId);
   const dateRange = parseRangeToken(rangeTok);
   const inRangeWeeks = dateRange ? weekIds.filter((id) => weeks.some((w) => w.id === id)).length : 0;
   const scopeLabel = dateRange
@@ -61,9 +56,6 @@ export default async function PalmsPage({
   const bounds = weekBounds(weeks);
   // Member column filter (dropdown; several names with the Multi-select checkbox): narrows the matrix rows.
   const memberFilter = (sp.c_member ?? "").trim();
-  const wantMembers = new Set(multiParts(memberFilter).map((n) => n.toLowerCase()));
-  const memberRows = wantMembers.size > 0 ? matrix.rows.filter((r) => wantMembers.has(r.name.toLowerCase())) : matrix.rows;
-  const colSpan = 2 + matrix.weeks.length;
 
   return (
     <div>
@@ -71,7 +63,9 @@ export default async function PalmsPage({
         <div className="page-head">
           <h1>
             Attendance
-            <span className="count-badge">{memberRows.length} member(s)</span>
+            <Suspense fallback={<span className="count-badge">…</span>}>
+              <PalmsMemberCount promise={matrixPromise} memberFilter={memberFilter} />
+            </Suspense>
           </h1>
           <p className="sub muted">{scopeLabel}</p>
         </div>
@@ -80,38 +74,11 @@ export default async function PalmsPage({
         </div>
       </div>
 
-      <PalmsImportPanel hasData={matrix.hasAttendance} record={record} />
+      <PalmsImportPanel hasData={weeks.length > 0} record={record} />
 
-      {stats && stats.total > 0 ? (
-        <div className="card">
-          <div className="palms-stats-head">
-            <div>
-              <h2 className="palms-stats-title">Last 6 months ({stats.meetingCount} weeks): Active members</h2>
-              <p className="sub muted">
-                {dayLabel(stats.from)} – {dayLabel(stats.to)} · {stats.meetingCount} weeks
-              </p>
-            </div>
-            <PalmsStatsShare
-              text={buildPalmsStatsShare(dayLabel(stats.from), dayLabel(stats.to), stats.meetingCount, stats.groups)}
-            />
-          </div>
-          <div className="palms-stats-groups">
-            {stats.groups.map((g) => (
-              <div className="palms-stats-group" key={g.key}>
-                {g.buckets.map((b) => (
-                  <div className="palms-stats-bucket" key={b.label}>
-                    <div className="palms-stats-bucket-head">
-                      <span>{b.label}</span>
-                      <span className="count-badge">{b.count}</span>
-                    </div>
-                    {b.count > 0 ? <div className="palms-stats-names">{b.names.join(", ")}</div> : null}
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
+      <Suspense fallback={<PalmsStatsSkeleton />}>
+        <PalmsStatsCard promise={statsPromise} />
+      </Suspense>
 
       <div className="card report-controls">
         <div className="report-controls-row">
@@ -131,53 +98,10 @@ export default async function PalmsPage({
         </div>
       </div>
 
-      <CollapseCard label={`Attendance matrix · ${memberRows.length} member(s)`}>
-        <MultiSelectToggle />
-        <div className="table-card">
-          <div className="table-scroll">
-            <table className="grid">
-              <thead>
-                <tr>
-                  <th className="idx">Sr. No.</th>
-                  <th>
-                    <ColumnFilter
-                      paramKey="c_member"
-                      defaultValue={memberFilter}
-                      options={matrix.rows.map((r) => r.name).sort((a, b) => a.localeCompare(b))}
-                      label="Member"
-                    />
-                  </th>
-                  {matrix.weeks.map((w) => (
-                    <th key={w.id} title={w.label} className="plm-h">
-                      {w.header}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {memberRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={colSpan} className="muted">
-                      {matrix.rows.length > 0 ? "No member matches this filter." : "No PALMS attendance imported yet — upload a file above."}
-                    </td>
-                  </tr>
-                ) : (
-                  memberRows.map((r, ri) => (
-                    <tr key={r.name}>
-                      <td className="idx">{ri + 1}</td>
-                      <td>{r.name}</td>
-                      {r.cells.map((cell, i) => (
-                        <td key={matrix.weeks[i]?.id ?? i} className={cell ? `plm plm-${cell[0].toLowerCase()}` : undefined}>
-                          {cell}
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      <CollapseCard label="Attendance matrix">
+        <Suspense fallback={<PalmsMatrixSkeleton />}>
+          <PalmsMatrixSection promise={matrixPromise} memberFilter={memberFilter} />
+        </Suspense>
       </CollapseCard>
     </div>
   );

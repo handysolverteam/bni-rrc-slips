@@ -1,4 +1,6 @@
 import ListShell from "@/components/ListShell";
+import { homeChapterNameOf } from "@/lib/new-members";
+import { homeChapterOption } from "@/lib/list-filters";
 import NoAccess from "@/components/NoAccess";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getCachedWeekOptions, listWeekScope } from "@/lib/server-weeks";
@@ -57,6 +59,8 @@ export default async function OneToOnesPage({
     bni_week: (r.bni_weeks as { label: string } | null)?.label ?? "",
   }));
 
+  const homeName = await homeChapterNameOf(tenantId);
+
   return (
     <ListShell
       title="Slip 121"
@@ -78,7 +82,7 @@ export default async function OneToOnesPage({
       rows={rows}
       filterable={["bni_week", "initiated_by_name", "met_with_name", "other_chapter_member"]}
       columnFilters={columnFilters}
-      filterOptions={{ ...baseOptions, bni_week: weekFilterOptions(weeks) }}
+      filterOptions={{ ...baseOptions, other_chapter_member: [homeChapterOption(homeName), ...baseOptions.other_chapter_member], bni_week: weekFilterOptions(weeks) }}
     />
   );
 }

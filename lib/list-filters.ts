@@ -12,10 +12,26 @@ export function multiParts(value: string): string[] {
   return value.split(",").map((s) => decodeCommas(s.trim())).filter(Boolean);
 }
 
+/**
+ * Header-filter value of the chapter columns ("Other Member's Chapter", "Thanking Member's Chapter") that stands for
+ * "the HOME chapter": those cells are blank when the other person belongs to the home chapter.
+ */
+export const HOME_CHAPTER_VALUE = "__home__";
+
+/** The first option of a chapter column's filter: "Home Chapter (BNI Influencers)". */
+export const homeChapterOption = (homeName: string): { value: string; label: string } => ({
+  value: HOME_CHAPTER_VALUE,
+  label: homeName.trim() ? `Home Chapter (${homeName.trim()})` : "Home Chapter",
+});
+
 type Filterable = {
   ilike(column: string, pattern: string): unknown;
   in(column: string, values: (string | number)[]): unknown;
+  or(filters: string): unknown;
 };
+
+/** A value inside a PostgREST `in.(…)` list: double-quoted, so commas / parentheses in chapter names are safe. */
+const quoteForIn = (v: string): string => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 
 type WeekFilterable = {
   eq(column: string, value: unknown): unknown;
@@ -26,7 +42,8 @@ type WeekFilterable = {
  * Apply a column filter value to a query. A single value keeps the old fuzzy
  * ilike match; several (comma-separated) values OR-match exactly via IN —
  * multi picks come from distinct-value dropdowns, where options are exact
- * values.
+ * values. The HOME_CHAPTER_VALUE pick matches the blank cells (NULL or ''),
+ * alone or OR-ed with the other picked values.
  */
 export function applyColumnFilter<Q extends Filterable>(
   query: Q,
@@ -34,6 +51,12 @@ export function applyColumnFilter<Q extends Filterable>(
   value: string,
 ): Q {
   const parts = multiParts(value);
+  if (parts.includes(HOME_CHAPTER_VALUE)) {
+    const rest = parts.filter((p) => p !== HOME_CHAPTER_VALUE);
+    const conds = [`${column}.is.null`, `${column}.eq.`];
+    if (rest.length > 0) conds.push(`${column}.in.(${rest.map(quoteForIn).join(",")})`);
+    return query.or(conds.join(",")) as Q;
+  }
   if (parts.length === 1) return query.ilike(column, `%${parts[0]}%`) as Q;
   return query.in(column, parts) as Q;
 }

@@ -703,3 +703,68 @@ export function PalmsSkeleton() {
     </div>
   );
 }
+
+/** Streaming fallback of the Attendance matrix: a skeleton table (Member + a few week columns). */
+export function PalmsMatrixSkeleton() {
+  return (
+    <div className="table-card" aria-busy="true">
+      <div className="table-scroll">
+        <table className="grid">
+          <thead>
+            <tr>
+              <th className="idx">
+                <span className="th-label">Sr. No.</span>
+              </th>
+              {PALMS_LABELS.map((c) => (
+                <th key={c}>
+                  <span className="th-label">{c}</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: 10 }, (_, i) => (
+              <tr key={i}>
+                <td className="idx">
+                  <Bar h={18} w={22} r={4} center />
+                </td>
+                {PALMS_LABELS.map((c, j) => (
+                  <td key={c}>
+                    <Bar h={18} w={`${CELL_W[(i + j) % CELL_W.length]}%`} r={4} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** Streaming fallback of the "Last 6 months: Active members" card. */
+export function PalmsStatsSkeleton() {
+  return (
+    <div className="card" aria-busy="true">
+      <div className="palms-stats-title">
+        <Bar w={340} h={18} r={4} />
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <Bar w={220} h={13} r={4} />
+      </div>
+      <div className="palms-stats-groups">
+        {[0, 1, 2].map((g) => (
+          <div className="palms-stats-group" key={g}>
+            {[0, 1, 2].map((b) => (
+              <div key={b}>
+                <Bar w={150} h={14} r={4} />
+                <div style={{ height: 6 }} />
+                <Bar w={210} h={12} r={4} />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
