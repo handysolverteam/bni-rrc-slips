@@ -1,6 +1,7 @@
 "use client";
 
 import CopyButton from "@/components/CopyButton";
+import EmailShare from "@/components/EmailShare";
 import type { MonthTop, TopEntry } from "@/lib/monthly-top-share";
 import { competitionRanks } from "@/lib/ties";
 import { allShareUrl, buildAllShare, buildMonthShare, monthShareUrl } from "@/lib/monthly-top-share";
@@ -53,6 +54,7 @@ export default function MonthlyTop({ months }: { months: MonthTop[] }) {
                 Share all on WhatsApp
               </button>
               <CopyButton text={buildAllShare(months)} label="Copy all" />
+              <EmailShare text={buildAllShare(months)} subject="Top 3 - all months" />
             </span>
           ) : null}
         </div>
@@ -66,6 +68,7 @@ export default function MonthlyTop({ months }: { months: MonthTop[] }) {
                 Send on WhatsApp
               </button>
               <CopyButton text={buildMonthShare(m)} />
+              <EmailShare text={buildMonthShare(m)} subject={`Top 3 - ${m.label}`} />
             </span>
           </div>
           <div className="top3-grid">

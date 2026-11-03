@@ -1,6 +1,7 @@
 "use client";
 
 import CopyButton from "@/components/CopyButton";
+import EmailShare from "@/components/EmailShare";
 import { palmsStatsShareUrl } from "@/lib/palms-share";
 
 /** Opens WhatsApp with the rolling-period summary prefilled; the member picks
@@ -16,6 +17,7 @@ export default function PalmsStatsShare({ text }: { text: string }) {
         Send on WhatsApp
       </button>
       <CopyButton text={text} />
+      <EmailShare text={text} subject="Attendance summary" />
     </span>
   );
 }

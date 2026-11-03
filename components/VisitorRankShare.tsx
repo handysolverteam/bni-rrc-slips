@@ -1,6 +1,7 @@
 "use client";
 
 import CopyButton from "@/components/CopyButton";
+import EmailShare from "@/components/EmailShare";
 import { rankingShareUrl } from "@/lib/visitor-ranking-share";
 
 /** One-click WhatsApp share of the ranking: opens wa.me with the text prefilled — the member picks the
@@ -16,6 +17,7 @@ export default function VisitorRankShare({ text }: { text: string }) {
         Share on WhatsApp
       </button>
       <CopyButton text={text} />
+      <EmailShare text={text} subject="Visitor ranking" />
     </span>
   );
 }

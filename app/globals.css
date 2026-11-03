@@ -1664,3 +1664,13 @@ button.copy-btn.done, button.copy-btn.done:hover:not(:disabled) { background: va
 .export-name-row { display: flex; align-items: center; gap: 8px; margin: 12px 0 4px; }
 .export-name-row input { flex: 1 1 auto; min-width: 0; }
 .export-name-ext { font-weight: 700; color: var(--muted); }
+
+/* Email share picker (components/EmailShare.tsx) */
+.email-share-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.email-share-card { background: var(--card, #1f1b18); color: inherit; border: 1px solid var(--border, #3a332d); border-radius: 14px; padding: 16px; width: min(520px, 100%); max-height: 85vh; display: flex; flex-direction: column; gap: 10px; }
+.email-share-card h3 { margin: 0; }
+.email-share-find { width: 100%; }
+.email-share-list { overflow-y: auto; border: 1px solid var(--border, #3a332d); border-radius: 10px; padding: 4px; min-height: 120px; }
+.email-share-row { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; padding: 6px 8px; cursor: pointer; align-items: center; }
+.email-share-row .muted { grid-column: 2; font-size: 12px; }
+.email-share-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
