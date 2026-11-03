@@ -181,4 +181,26 @@ check("guard: another chapter named in the question is kept", gd({ chapter: "Alc
 check("guard: another chapter NOT named in the question is dropped to home", gd({ chapter: "Alchemist" }, "Top givers in October").chapter === "home");
 check("guard: follow-up inherits the cue from the history text", gd({ status: "active" }, "How many did they bring? inactive members only").status === "inactive");
 
+// ---- ties at the cut-off of topN (chapter_query rows + slip_entries groups)
+{
+  const tw = [{ id: "t1", label: "Week T1", date: "2026-10-07" }];
+  const tr = (key, name, over) => row("t1", key, name, over);
+  const troster = ["a", "b", "c", "d", "e", "f", "g"].map((k) => ({ key: k, name: k.toUpperCase(), chapter: "BNI Influencers", home: true, active: true, category: null }));
+  const run = (idx, args) => m.executeChapterQuery(args, idx);
+  const tindex = {
+    entries: [],
+    weeks: tw,
+    rows: [tr("a", "A", { vis: 5 }), tr("b", "B", { vis: 4 }), tr("c", "C", { vis: 3 }), tr("d", "D", { vis: 3 }), tr("e", "E", { vis: 3 }), tr("f", "F", { vis: 2 })],
+    roster: troster,
+    homeChapter: "BNI Influencers",
+  };
+  const res = run(tindex, { scope: { kind: "all" }, metrics: ["visitorsInvited"], orderBy: "visitorsInvited desc", topN: 3 });
+  check("chapter_query topN 3: Monica-style tie — C, D and E all on 3 are listed (5 rows)", res.rows.map((r) => r.name).join() === "A,B,C,D,E", JSON.stringify(res.rows.map((r) => r.name)));
+  check("it says how many were added because of the tie", res.tiedAtCutoff === 2 && /2 more members share the value/.test(res.tieNote) && res.rowCount === 7, JSON.stringify([res.tiedAtCutoff, res.tieNote, res.rowCount]));
+  const plain = run(tindex, { scope: { kind: "all" }, metrics: ["visitorsInvited"], orderBy: "visitorsInvited desc", topN: 2 });
+  check("no tie at the cut-off: exactly topN rows and no tie note", plain.rows.length === 2 && plain.tiedAtCutoff === undefined && plain.tieNote === undefined);
+  const zero = run({ ...tindex, rows: [tr("a", "A", { vis: 5 })] }, { scope: { kind: "all" }, metrics: ["visitorsInvited"], orderBy: "visitorsInvited desc", topN: 3, includeZero: true });
+  check("a cut-off value of 0 never pulls in the zero-activity roster", zero.rows.length === 3 && zero.tiedAtCutoff === undefined, String(zero.rows.length));
+}
+
 console.log(`TOTAL: ${pass} passed, ${fail} failed`);

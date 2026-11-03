@@ -11,6 +11,20 @@
 
 export type QueryWeek = { id: string; label: string; date: string };
 
+/**
+ * First `n` of a best-first list plus everyone tied with the n-th on `value` — "top 3" is three PLACES. A cut-off value of 0
+ * never extends (nobody did anything). Same rule as lib/ties.ts; kept here because this module has no imports (tests compile it alone).
+ */
+function withTies<T>(sorted: T[], n: number, value: (item: T) => number): T[] {
+  if (n <= 0) return [];
+  if (sorted.length <= n) return sorted.slice();
+  const cut = value(sorted[n - 1]);
+  if (!Number.isFinite(cut) || cut === 0) return sorted.slice(0, n);
+  let end = n;
+  while (end < sorted.length && value(sorted[end]) === cut) end++;
+  return sorted.slice(0, end);
+}
+
 /** One sparse member × week activity row (only members with activity appear). */
 export type QueryRow = {
   w: string; // week id
@@ -526,7 +540,10 @@ export function executeChapterQuery(args: unknown, index: QueryIndex): Record<st
   });
   const topN = Math.min(150, Math.max(1, Math.floor(Number(a.topN)) || 20));
 
-  const rows = entries.slice(0, topN).map((e) => {
+  // Everyone tied with the last listed member on the sort metric is included too.
+  const shown = withTies(entries, topN, (e) => e[field as MetricField]);
+  const tiedExtra = Math.max(0, shown.length - topN);
+  const rows = shown.map((e) => {
     const row: Record<string, unknown> = { name: e.name };
     for (const m of metrics) row[m] = e[METRIC_TO_FIELD[m]];
     return row;
@@ -563,7 +580,10 @@ export function executeChapterQuery(args: unknown, index: QueryIndex): Record<st
     totals,
     rows, // topN rows after orderBy
     metrics,
-    ...(entries.length > topN ? { note: `Showing ${topN} of ${entries.length}; raise topN (max 150) to list more.` } : {}),
+    ...(tiedExtra > 0
+      ? { tiedAtCutoff: tiedExtra, tieNote: `${tiedExtra} more member${tiedExtra === 1 ? "" : "s"} share the value of the last listed one and are included — name them all.` }
+      : {}),
+    ...(entries.length > shown.length ? { note: `Showing ${shown.length} of ${entries.length}; raise topN (max 150) to list more.` } : {}),
   };
 }
 
@@ -662,7 +682,7 @@ export function executeSlipEntries(args: unknown, index: QueryIndex): Record<str
             cur.totalAmount += e.amt ?? 0;
             g.set(name.toLowerCase(), cur);
           }
-          return [...g.values()].sort((x, y) => y.count - x.count || x.name.localeCompare(y.name)).slice(0, 50);
+          return withTies([...g.values()].sort((x, y) => y.count - x.count || x.name.localeCompare(y.name)), 50, (x) => x.count);
         })()
       : null;
   return {

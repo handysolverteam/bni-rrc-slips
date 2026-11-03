@@ -1,3 +1,4 @@
+import { competitionRanks, withTies } from "@/lib/ties";
 import { whatsappShareUrl } from "@/lib/whatsapp";
 
 /** One ranked member in a month's top list. */
@@ -13,8 +14,8 @@ export type MonthTop = {
   visitor: TopEntry[];
 };
 
-/** Top `n` names by summed value (desc, then name). Blank names are ignored;
- *  names merge case-insensitively and keep their first spelling. */
+/** Top `n` names by summed value (desc, then name) — plus everyone tied with the last one (lib/ties.ts). Blank names are
+ *  ignored; names merge case-insensitively and keep their first spelling. */
 export function rankTop(rows: { name: string | null | undefined; value: number }[], n = 3): TopEntry[] {
   const sums = new Map<string, TopEntry>();
   for (const r of rows) {
@@ -25,10 +26,8 @@ export function rankTop(rows: { name: string | null | undefined; value: number }
     if (prev) prev.value += r.value;
     else sums.set(k, { name, value: r.value });
   }
-  return [...sums.values()]
-    .filter((e) => e.value > 0)
-    .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name))
-    .slice(0, n);
+  const sorted = [...sums.values()].filter((e) => e.value > 0).sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+  return withTies(sorted, n, (e) => e.value);
 }
 
 const rupees = (v: number) => `₹${Math.round(v).toLocaleString("en-IN")}`;
@@ -41,7 +40,9 @@ const rupees = (v: number) => `₹${Math.round(v).toLocaleString("en-IN")}`;
  * arrive intact.
  */
 function block(icon: string, title: string, list: TopEntry[], fmt: (v: number) => string): string {
-  const lines = list.length > 0 ? list.map((e, i) => `${i + 1}. ${e.name} — ${fmt(e.value)}`) : ["No data"];
+  // Members tied on a value share a rank (1, 2, 2).
+  const ranks = competitionRanks(list.map((e) => e.value));
+  const lines = list.length > 0 ? list.map((e, i) => `${ranks[i]}. ${e.name} — ${fmt(e.value)}`) : ["No data"];
   return [`${icon} *${title}*`, ...lines].join("\n");
 }
 

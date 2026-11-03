@@ -1,7 +1,9 @@
 // Pure checks for lib/monthly-top-share.ts (ranking + WhatsApp text), run via source regex-free eval.
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+const tiesSrc = readFileSync(new URL("../lib/ties.ts", import.meta.url), "utf8");
 const src = readFileSync(new URL("../lib/monthly-top-share.ts", import.meta.url), "utf8")
+  .replace('import { competitionRanks, withTies } from "@/lib/ties";', tiesSrc)
   .replace('import { whatsappShareUrl } from "@/lib/whatsapp";', 'const whatsappShareUrl = (t) => "https://wa.me/?text=" + encodeURIComponent(t);');
 const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText;
 const m = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
@@ -15,6 +17,14 @@ const top = m.rankTop([
 check("merges names case-insensitively and sums", top[0].name === "Amit" && top[0].value === 12 || top[0].name === "Bina");
 check("top 3 only, blanks and zeros dropped", top.length === 3 && !top.some((t) => t.name === "Zero" || t.name === ""), JSON.stringify(top));
 check("ties break by name", m.rankTop([{ name: "B", value: 1 }, { name: "A", value: 1 }])[0].name === "A");
+// ---- ties at the cut-off: "top 3" = three places, everybody tied on the last one is listed
+const tied = m.rankTop([{ name: "Monica", value: 5 }, { name: "Vaini", value: 4 }, { name: "Shaifali", value: 3 }, { name: "Himanshu", value: 3 }, { name: "Rahul", value: 3 }, { name: "Neha", value: 2 }]);
+check("everybody tied with the 3rd place is shown (Shaifali, Himanshu and Rahul on 3), the 4th place is not", tied.map((t) => t.name).join() === "Monica,Vaini,Himanshu,Rahul,Shaifali", tied.map((t) => t.name).join());
+check("no tie at the cut-off: still exactly 3", m.rankTop([{ name: "A", value: 9 }, { name: "B", value: 8 }, { name: "C", value: 7 }, { name: "D", value: 6 }]).length === 3);
+check("ties are decided on the SUMMED value (same member twice)", m.rankTop([{ name: "A", value: 3 }, { name: "a", value: 2 }, { name: "B", value: 5 }, { name: "C", value: 5 }, { name: "D", value: 9 }]).map((t) => t.name).join() === "D,A,B,C");
+const tieMonth = { key: "2026-09", label: "September 2026", tyfcb: [], referral: [], visitor: tied };
+const tieText = m.buildMonthShare(tieMonth);
+check("share text numbers tied members with the same rank (1, 2, 3, 3, 3)", tieText.includes("1. Monica — 5") && tieText.includes("2. Vaini — 4") && tieText.includes("3. Himanshu — 3") && tieText.includes("3. Rahul — 3") && tieText.includes("3. Shaifali — 3") && !tieText.includes("4. "), tieText);
 const month = { key: "2026-04", label: "April 2026", tyfcb: [{ name: "Amit", value: 1234567 }], referral: [{ name: "Bina", value: 9 }], visitor: [] };
 const text = m.buildMonthShare(month);
 check("share text: bold title, numbered rows, rupee amount", text.includes("*Top 3 · April 2026*") && text.includes("1. Amit — ₹12,34,567") && text.includes("₹ *TYFCB — amount received*"), text);

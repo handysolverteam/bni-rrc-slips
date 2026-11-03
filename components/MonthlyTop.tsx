@@ -2,11 +2,14 @@
 
 import CopyButton from "@/components/CopyButton";
 import type { MonthTop, TopEntry } from "@/lib/monthly-top-share";
+import { competitionRanks } from "@/lib/ties";
 import { allShareUrl, buildAllShare, buildMonthShare, monthShareUrl } from "@/lib/monthly-top-share";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
 function List({ title, stat, list, fmt }: { title: string; stat: string; list: TopEntry[]; fmt: (v: number) => string }) {
+  // Members tied on a value share the medal (🥇 🥈 🥈 …); everyone tied with the last place is listed.
+  const ranks = competitionRanks(list.map((e) => e.value));
   return (
     <div className="top3-col" data-stat={stat}>
       <h3>{title}</h3>
@@ -17,7 +20,7 @@ function List({ title, stat, list, fmt }: { title: string; stat: string; list: T
           {list.map((e, i) => (
             <li key={e.name}>
               <span className="top3-medal" aria-hidden="true">
-                {MEDALS[i]}
+                {MEDALS[ranks[i] - 1] ?? ""}
               </span>
               <span className="top3-name">{e.name}</span>
               <strong>{fmt(e.value)}</strong>
