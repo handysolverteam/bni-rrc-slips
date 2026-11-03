@@ -21,6 +21,9 @@ import ReportExportButtons from "@/components/ReportExportButtons";
 import ReportTabs from "@/components/ReportTabs";
 import FilterBar from "@/components/FilterBar";
 import DateRangeFilter from "@/components/DateRangeFilter";
+import type { ComboOption } from "@/components/SearchSelect";
+import { homeChapterOption } from "@/lib/list-filters";
+import { homeChapterNameOf } from "@/lib/new-members";
 import { expandWeekToken, findRangeToken, parseRangeToken, rangeTitle, weekBounds, weekFilterOptions, type WeekOption } from "@/lib/weeks";
 import DataWarnings from "@/components/DataWarnings";
 
@@ -53,7 +56,7 @@ function SectionTable({
   weekValue: string;
   totalAmount?: number | null;
   colFilters: { from: string; to: string; detail: string };
-  colOptions: { from: string[]; to: string[]; detail: string[] };
+  colOptions: { from: string[]; to: string[]; detail: ComboOption[] };
   weeks: WeekOption[];
 }) {
   const cols = OPTIONAL_COLS.filter((c) => rows.some((r) => r[c.key].trim() !== ""));
@@ -228,7 +231,9 @@ export default async function ReportPage({
     fetchMissingMeetingFiles(tenantId),
     fetchUnimportedData(tenantId, weekIds),
   ]);
-  const colOptions = { from: fromOptions, to: toOptions, detail: detailOptions };
+  // The chapter column's filter starts with "Home Chapter (<name>)" = the blank cells.
+  const homeName = await homeChapterNameOf(tenantId);
+  const colOptions = { from: fromOptions, to: toOptions, detail: [homeChapterOption(homeName), ...detailOptions] as ComboOption[] };
   const visible = tab === "all" ? sections : sections.filter((s) => s.key === tab);
   const total = sections.reduce((n, s) => n + s.metricCount, 0);
   const hasFilters =

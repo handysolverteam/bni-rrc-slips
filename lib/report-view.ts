@@ -1,6 +1,6 @@
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paged";
-import { decodeCommas } from "@/lib/list-filters";
+import { decodeCommas, matchesChapterFilter } from "@/lib/list-filters";
 import { createTtlCache, sharedState } from "@/lib/cache";
 
 export type ReportSectionKey = "one-to-one" | "referral" | "tyfcb" | "visitor" | "ceu";
@@ -225,7 +225,7 @@ export async function fetchReportSections(
       if (needle && !`${r.from} ${r.to} ${r.detail}`.toLowerCase().includes(needle)) return false;
       if (!matchAny(r.from, cf.from)) return false;
       if (!matchAny(r.to, cf.to)) return false;
-      if (!matchAny(r.detail, cf.detail)) return false;
+      if (!matchesChapterFilter(r.detail, cf.detail)) return false;
       return true;
     });
     return kept.map((r, i) => ({ ...r, count: i + 1 }));

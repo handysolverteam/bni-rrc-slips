@@ -30,6 +30,16 @@ type Filterable = {
   or(filters: string): unknown;
 };
 
+/**
+ * In-memory twin of the HOME_CHAPTER_VALUE handling, for rows that are already loaded (the Slip Report): `terms` are the
+ * lower-cased picks; the home pick matches a blank cell, any other pick matches when the cell contains it.
+ */
+export function matchesChapterFilter(cell: string, terms: string[]): boolean {
+  if (terms.length === 0) return true;
+  const hay = cell.trim().toLowerCase();
+  return terms.some((t) => (t === HOME_CHAPTER_VALUE ? hay === "" : hay.includes(t)));
+}
+
 /** A value inside a PostgREST `in.(…)` list: double-quoted, so commas / parentheses in chapter names are safe. */
 const quoteForIn = (v: string): string => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 

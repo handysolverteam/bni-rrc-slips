@@ -34,5 +34,11 @@ const comma = f.encodeCommas("Pratham, Gurgaon, India"); // how a chapter name w
 check("a chapter name with commas stays ONE value inside the quoted IN list", JSON.stringify(run(`__home__,${comma},Stars`)) === JSON.stringify([["or", 'other_chapter_member.is.null,other_chapter_member.eq.,other_chapter_member.in.("Pratham, Gurgaon, India","Stars")']]));
 check("quotes and backslashes in a value are escaped", run('__home__,Say "hi"\\x')[0][1].endsWith('.in.("Say \\"hi\\"\\\\x")'), run('__home__,Say "hi"\\x')[0][1]);
 
+// ---- in-memory twin (Slip Report rows)
+check("matchesChapterFilter: no picks keeps every row", f.matchesChapterFilter("", []) && f.matchesChapterFilter("Pratham, Gurgaon, India", []));
+check("matchesChapterFilter: Home Chapter = blank cell only", f.matchesChapterFilter("", ["__home__"]) && f.matchesChapterFilter("   ", ["__home__"]) && !f.matchesChapterFilter("Pratham, Gurgaon, India", ["__home__"]));
+check("matchesChapterFilter: Home + another chapter = blank OR contains (case-insensitive)", f.matchesChapterFilter("", ["__home__", "pratham"]) && f.matchesChapterFilter("Pratham, Gurgaon, India", ["__home__", "pratham"]) && !f.matchesChapterFilter("Stars, Gurgaon, India", ["__home__", "pratham"]));
+check("matchesChapterFilter: ordinary picks keep the 'contains' match", f.matchesChapterFilter("Stars, Gurgaon, India", ["stars"]) && !f.matchesChapterFilter("", ["stars"]));
+
 console.log(`TOTAL: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
