@@ -768,3 +768,39 @@ export function PalmsStatsSkeleton() {
     </div>
   );
 }
+
+/** Attendance: the scope line under the title while the week list loads. */
+export function PalmsScopeLineSkeleton() {
+  return (
+    <p className="sub muted">
+      <Bar w={240} h={18} r={4} />
+    </p>
+  );
+}
+
+/** Attendance: the PALMS import panel while its record loads. */
+export function PalmsImportSkeleton() {
+  return (
+    <div className="card" aria-busy="true">
+      <PanelSkeleton title="PALMS Report (6 months)" toggle="− Minimize" />
+    </div>
+  );
+}
+
+/** Attendance: the week / date filter card while the week list loads. */
+export function PalmsControlsSkeleton() {
+  return (
+    <div className="card report-controls" aria-busy="true">
+      <div className="report-controls-row">
+        <form className="filter-form">
+          <span className="combo">
+            <span className="combo-field" style={{ height: 39 }}>
+              <Bar w={210} h={16} r={4} />
+            </span>
+          </span>
+        </form>
+        <span className="muted">P Present · A Absent · M Medical · S Substitute · L Leave</span>
+      </div>
+    </div>
+  );
+}

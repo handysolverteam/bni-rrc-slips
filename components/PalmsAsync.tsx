@@ -1,9 +1,14 @@
 import ColumnFilter from "@/components/ColumnFilter";
+import DateRangeFilter from "@/components/DateRangeFilter";
+import FilterBar from "@/components/FilterBar";
 import MultiSelectToggle from "@/components/MultiSelectToggle";
+import PalmsExportButtons from "@/components/PalmsExportButtons";
+import PalmsImportPanel from "@/components/PalmsImportPanel";
 import PalmsStatsShare from "@/components/PalmsStatsShare";
 import { multiParts } from "@/lib/list-filters";
 import { buildPalmsStatsShare } from "@/lib/palms-share";
-import type { PalmsAttendanceStats, PalmsMatrix } from "@/lib/palms-view";
+import { palmsScopeLabel, palmsWeekScope, type PalmsAttendanceStats, type PalmsMatrix } from "@/lib/palms-view";
+import { expandWeekToken, findRangeToken, LAST6_TOKEN, parseRangeToken, rangeTitle, weekBounds, type WeekOption } from "@/lib/weeks";
 
 /**
  * The slow parts of the Attendance screen, as async server components. The page starts their queries WITHOUT awaiting them
@@ -16,6 +21,77 @@ const dayLabel = (iso: string) => {
   const [y, m, d] = iso.split("-");
   return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
 };
+
+/** What the `?week=` value stands for, resolved against the weeks that have attendance. */
+export type PalmsScope = {
+  weeks: WeekOption[];
+  /** Real week ids ([] = every week). */
+  weekIds: string[];
+  /** What the week dropdown shows ("all", "last6m", a range token or the ids). */
+  weekId: string;
+  /** What the export gets ("all" or the ids). */
+  exportWeek: string;
+  allWeeks: boolean;
+  scopeLabel: string;
+  bounds: { min: string; max: string };
+};
+
+export function resolvePalmsScope(weekParam: string | undefined, weeks: WeekOption[]): PalmsScope {
+  // "last6m" = the standard last 6 months (the same entry in every week dropdown): the box keeps the token, queries and
+  // exports get the real week ids.
+  const last6 = (weekParam ?? "").split(",").map((x) => x.trim()).includes(LAST6_TOKEN);
+  const weekIds = palmsWeekScope(expandWeekToken(weekParam, weeks)); // default scope = every week with attendance
+  const rangeTok = findRangeToken(weekParam); // a From / To date range (expanded to the weeks inside it above)
+  const allWeeks = weekIds.length === 0 && !last6;
+  const dateRange = parseRangeToken(rangeTok);
+  const inRange = dateRange ? weekIds.filter((id) => weeks.some((w) => w.id === id)).length : 0;
+  return {
+    weeks,
+    weekIds,
+    weekId: last6 ? LAST6_TOKEN : rangeTok ? rangeTok : allWeeks ? "all" : weekIds.join(","),
+    exportWeek: allWeeks ? "all" : weekIds.join(","),
+    allWeeks,
+    scopeLabel: dateRange ? `${rangeTitle(dateRange.from, dateRange.to)} · ${inRange} meeting${inRange === 1 ? "" : "s"}` : palmsScopeLabel(weeks, weekIds, "All weeks"),
+    bounds: weekBounds(weeks),
+  };
+}
+
+/** The scope line under the title. */
+export async function PalmsScopeLine({ scopePromise }: { scopePromise: Promise<PalmsScope> }) {
+  return <p className="sub muted">{(await scopePromise).scopeLabel}</p>;
+}
+
+/** XLSX / CSV / PDF buttons of the scope on screen. */
+export async function PalmsExportSection({ scopePromise }: { scopePromise: Promise<PalmsScope> }) {
+  const s = await scopePromise;
+  return <PalmsExportButtons weekId={s.exportWeek} scopeLabel={s.allWeeks ? "All weeks" : s.scopeLabel || "palms"} />;
+}
+
+/** The PALMS import panel (needs the last import record and whether any attendance exists). */
+export async function PalmsImportSection({
+  recordPromise,
+  weeksPromise,
+}: {
+  recordPromise: Promise<{ filename: string; importedAt: string } | null>;
+  weeksPromise: Promise<WeekOption[]>;
+}) {
+  const [record, weeks] = await Promise.all([recordPromise, weeksPromise]);
+  return <PalmsImportPanel hasData={weeks.length > 0} record={record} />;
+}
+
+/** The week dropdown + From / To calendars card. */
+export async function PalmsControls({ scopePromise }: { scopePromise: Promise<PalmsScope> }) {
+  const s = await scopePromise;
+  return (
+    <div className="card report-controls">
+      <div className="report-controls-row">
+        <FilterBar basePath="/palms" q="" weekId={s.weekId} weeks={s.weeks} searchPlaceholder="" hideSearch includeAllOption />
+        <DateRangeFilter paramKey="week" min={s.bounds.min} max={s.bounds.max} />
+        <span className="muted">P Present · A Absent · M Medical · S Substitute · L Leave</span>
+      </div>
+    </div>
+  );
+}
 
 /** The matrix rows left after the Member column filter (names, several with the Multi-select checkbox). */
 function visibleRows(matrix: PalmsMatrix, memberFilter: string) {
