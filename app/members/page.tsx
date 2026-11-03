@@ -135,10 +135,10 @@ const memberEq: [string, unknown][] = [];
         ...[{ key: "active", label: "Active" }],
         { key: "name", label: "Name" },
         { key: "chapter", label: "Chapter" },
+        { key: "email", label: "Email" },
         { key: "category", label: "Category" },
         { key: "company", label: "Company" },
         { key: "phone", label: "Phone" },
-        { key: "email", label: "Email" },
       ]}
       rows={rows}
       filterable={["name", "chapter", "category", "company", "phone", "email"]}
