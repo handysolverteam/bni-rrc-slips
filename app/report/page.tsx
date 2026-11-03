@@ -59,7 +59,9 @@ function SectionTable({
   colOptions: { from: string[]; to: string[]; detail: ComboOption[] };
   weeks: WeekOption[];
 }) {
-  const cols = OPTIONAL_COLS.filter((c) => rows.some((r) => r[c.key].trim() !== ""));
+  // An optional column shows when a row has a value — and always while its own filter is set (a filter like "Home Chapter"
+  // leaves only blank cells; hiding the column would hide the dropdown needed to change or clear it).
+  const cols = OPTIONAL_COLS.filter((c) => rows.some((r) => r[c.key].trim() !== "") || (c.key === "detail" && colFilters.detail.trim() !== ""));
   const baseCount = 5; // No, BNI Week, From, To, Type
   const fromTo = fromToLabelsFor(sectionKey);
   // Sum column: TYFCB Amount for money sections, CEU Credits for the CEU section.

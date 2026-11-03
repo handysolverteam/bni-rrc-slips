@@ -39,6 +39,14 @@ export default function ColumnFilter({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  // While this filter's navigation loads, dim the table it sits in (a table-wide cue; the spinner beside the box is tiny).
+  useEffect(() => {
+    const host = wrapRef.current?.closest(".table-card");
+    if (!host) return;
+    host.classList.toggle("is-loading", isPending);
+    return () => host.classList.remove("is-loading");
+  }, [isPending]);
   const [typed, setTyped] = useState(() => decodeCommas(defaultValue));
   const lastApplied = useRef(defaultValue);
   // Text mode: the URL value is the source of truth after navigation (Clear all, back button).
@@ -102,7 +110,7 @@ export default function ColumnFilter({
 
   if (text) {
     return (
-      <span className="col-filter-wrap" onClick={(e) => e.stopPropagation()}>
+      <span className="col-filter-wrap" ref={wrapRef} onClick={(e) => e.stopPropagation()}>
         <span className={`combo${typed ? " has-value" : ""}`}>
           <span className="combo-label" aria-hidden="true">{label}</span>
           <span className="combo-field">
@@ -135,7 +143,7 @@ export default function ColumnFilter({
   }
 
   return (
-    <span className="col-filter-wrap" onClick={(e) => e.stopPropagation()}>
+    <span className="col-filter-wrap" ref={wrapRef} onClick={(e) => e.stopPropagation()}>
       <SearchSelect
         value={defaultValue}
         options={list}

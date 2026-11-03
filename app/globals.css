@@ -608,6 +608,9 @@ table.grid tfoot tr.sum-row td {
   padding: 4px 11px; border-radius: 999px; background: var(--panel); border: 1px solid var(--field);
   font-size: 12.5px; font-weight: 600; color: var(--ink); white-space: nowrap;
 }
+/* A table whose column filter is loading: dimmed until the new rows arrive. */
+.table-card { transition: opacity 0.15s ease; }
+.table-card.is-loading { opacity: 0.5; pointer-events: none; }
 /* Date range filter (From / To calendars) next to the week filter. The labels float on the field's top border like the
    other filters', so the calendars, the Clear button and the neighbouring boxes all centre on one line. */
 .date-range { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
