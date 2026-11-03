@@ -59,8 +59,8 @@ export default function EmailShare({ text, subject }: { text: string; subject: s
               <button type="button" className="copy-btn" onClick={() => setPicked(new Set([...picked, ...shown.map((p) => p.email)]))}>
                 Select all{needle ? " shown" : ""}
               </button>
-              <button type="button" className="copy-btn" onClick={() => setPicked(new Set())}>
-                Clear
+              <button type="button" className="copy-btn" onClick={() => setPicked(new Set(needle ? [...picked].filter((e) => !shown.some((p) => p.email === e)) : []))}>
+                Deselect all{needle ? " shown" : ""}
               </button>
               <span className="muted">{picked.size} selected</span>
             </div>
