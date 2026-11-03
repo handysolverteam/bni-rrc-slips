@@ -1,11 +1,13 @@
 import Link from "next/link";
 import MonthFilter from "@/components/MonthFilter";
 import MonthlyTop from "@/components/MonthlyTop";
+import TopFilters from "@/components/TopFilters";
 import NoAccess from "@/components/NoAccess";
-import { fetchMonthlyTop } from "@/lib/monthly-top";
+import { buildMonthlyTop, fetchTopSource, type MonthlyTopData, type TopSource } from "@/lib/monthly-top";
 import { windowRange } from "@/lib/period";
 import type { MonthTop } from "@/lib/monthly-top-share";
 import { requirePageTenant } from "@/lib/server-auth";
+import { describeTopFilter, isDefaultTopFilter, parseTopFilter } from "@/lib/top-filter";
 
 export const dynamic = "force-dynamic";
 
@@ -20,15 +22,25 @@ export default async function Top3Page({
 
   let all: MonthTop[] = [];
   let windowMonths: MonthTop[] = [];
-  let win: Awaited<ReturnType<typeof fetchMonthlyTop>>["window"] = null;
+  let win: MonthlyTopData["window"] = null;
+  let source: TopSource | null = null;
   try {
-    const data = await fetchMonthlyTop(guard.tenantId);
+    source = await fetchTopSource(guard.tenantId);
+  } catch {
+    source = null;
+  }
+  // Member filters: default = ACTIVE members of the HOME chapter (the chat's rule); "all" lifts a restriction.
+  const chapters = source?.chapters ?? [];
+  const homeChapterId = source?.homeChapterId ?? null;
+  const filter = parseTopFilter({ status: sp.status, chapter: sp.chapter }, homeChapterId, chapters.map((c) => c.id));
+  if (source) {
+    const data = buildMonthlyTop(source, filter);
     all = data.months;
     windowMonths = data.windowMonths;
     win = data.window;
-  } catch {
-    all = [];
   }
+  const defaultFilter = isDefaultTopFilter(filter, homeChapterId);
+  const filterText = describeTopFilter(filter, (id) => chapters.find((c) => c.id === id)?.name ?? "chapter");
   const known = new Set(all.map((m) => m.key));
   const picked = (sp.month ?? "")
     .split(",")
@@ -48,6 +60,7 @@ export default async function Top3Page({
         <p className="sub muted">
           {picked.length > 0 ? "Selected months" : win ? `Last ${win.months} months · ${windowRange(win)}` : "Last 6 months"} — TYFCB · Referrals · Visitors
         </p>
+        <p className="sub muted">{filterText}</p>
       </div>
 
       <div className="card report-controls">
@@ -56,8 +69,14 @@ export default async function Top3Page({
             basePath="/top3"
             value={picked.join(",")}
             months={all.map((m) => ({ key: m.key, label: m.label }))}
+            keepParams={["status", "chapter"]}
           />
-          {picked.length > 0 ? (
+          <TopFilters
+            statusValue={filter.statuses ? filter.statuses.join(",") : "all"}
+            chapterValue={filter.chapters ? filter.chapters.join(",") : "all"}
+            chapters={chapters}
+          />
+          {picked.length > 0 || !defaultFilter ? (
             <span className="clear-right">
               <Link href="/top3">
                 <button type="button">Clear all</button>
