@@ -41,7 +41,7 @@ export default async function MembersPage({
   if (q) query = query.ilike("name", `%${q}%`);
   if (activeOnly) query = query.eq("is_inactive", false);
   const columnFilters: Record<string, string> = {};
-  for (const k of ["name", "category", "company", "phone"]) {
+  for (const k of ["name", "email", "category", "company", "phone"]) {
     const v = (sp[`c_${k}`] || "").trim();
     if (v) columnFilters[k] = v;
   }
