@@ -5,7 +5,7 @@ import { homeChapterNameOf } from "@/lib/new-members";
 import NoAccess from "@/components/NoAccess";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { distinctValues } from "@/lib/distinct";
-import { applyColumnFilter, HOME_CHAPTER_VALUE, homeChapterOption, multiParts } from "@/lib/list-filters";
+import { applyColumnFilter, CROSS_CHAPTER_VALUE, crossChapterOption, HOME_CHAPTER_VALUE, homeChapterOption, multiParts } from "@/lib/list-filters";
 import { requirePageTenant } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
@@ -54,9 +54,16 @@ export default async function MembersPage({
       .select("id, name")
       .eq("tenant_id", tenantId);
     // "Home Chapter (<name>)" in the dropdown = the home chapter's own name.
-    const names = multiParts(chapterV).map((s) => (s === HOME_CHAPTER_VALUE ? homeName : s).trim().toLowerCase());
+    const picks = multiParts(chapterV);
+    const names = picks.map((s) => (s === HOME_CHAPTER_VALUE ? homeName : s).trim().toLowerCase());
+    const homeKey = homeName.trim().toLowerCase();
+    // "Cross Chapter" = every chapter except the home chapter; with Home Chapter too it is everyone (no restriction).
+    const cross = picks.includes(CROSS_CHAPTER_VALUE);
     chapterIds = (chapters ?? [])
-      .filter((c) => names.includes(String(c.name ?? "").trim().toLowerCase()))
+      .filter((c) => {
+        const n = String(c.name ?? "").trim().toLowerCase();
+        return cross ? picks.includes(HOME_CHAPTER_VALUE) || n !== homeKey : names.includes(n);
+      })
       .map((c) => c.id);
     columnFilters.chapter = chapterV;
   }
@@ -86,7 +93,7 @@ const memberEq: [string, unknown][] = [];
       distinctValues(tenantId, "members", "company", memberEq),
       distinctValues(tenantId, "members", "phone", memberEq),
     ]).then(([chapter, name, category, company, phone]) => ({
-      chapter: [homeChapterOption(homeName), ...chapter],
+      chapter: [homeChapterOption(homeName), crossChapterOption(), ...chapter],
       name,
       category,
       company,

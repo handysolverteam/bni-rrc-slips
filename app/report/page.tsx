@@ -22,7 +22,7 @@ import ReportTabs from "@/components/ReportTabs";
 import FilterBar from "@/components/FilterBar";
 import DateRangeFilter from "@/components/DateRangeFilter";
 import type { ComboOption } from "@/components/SearchSelect";
-import { homeChapterOption } from "@/lib/list-filters";
+import { crossChapterOption, homeChapterOption } from "@/lib/list-filters";
 import { homeChapterNameOf } from "@/lib/new-members";
 import { expandWeekToken, findRangeToken, parseRangeToken, rangeTitle, weekBounds, weekFilterOptions, type WeekOption } from "@/lib/weeks";
 import DataWarnings from "@/components/DataWarnings";
@@ -235,7 +235,7 @@ export default async function ReportPage({
   ]);
   // The chapter column's filter starts with "Home Chapter (<name>)" = the blank cells.
   const homeName = await homeChapterNameOf(tenantId);
-  const colOptions = { from: fromOptions, to: toOptions, detail: [homeChapterOption(homeName), ...detailOptions] as ComboOption[] };
+  const colOptions = { from: fromOptions, to: toOptions, detail: [homeChapterOption(homeName), crossChapterOption(), ...detailOptions] as ComboOption[] };
   const visible = tab === "all" ? sections : sections.filter((s) => s.key === tab);
   const total = sections.reduce((n, s) => n + s.metricCount, 0);
   const hasFilters =

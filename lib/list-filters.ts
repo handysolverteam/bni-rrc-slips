@@ -24,6 +24,12 @@ export const homeChapterOption = (homeName: string): { value: string; label: str
   label: homeName.trim() ? `Home Chapter (${homeName.trim()})` : "Home Chapter",
 });
 
+/** Header-filter value that stands for "every OTHER chapter": the cells that are NOT blank (the person is in another chapter). */
+export const CROSS_CHAPTER_VALUE = "__cross__";
+
+/** The second option of a chapter column's filter: "Cross Chapter" (all chapters except the home chapter). */
+export const crossChapterOption = (): { value: string; label: string } => ({ value: CROSS_CHAPTER_VALUE, label: "Cross Chapter" });
+
 type Filterable = {
   ilike(column: string, pattern: string): unknown;
   in(column: string, values: (string | number)[]): unknown;
@@ -37,7 +43,8 @@ type Filterable = {
 export function matchesChapterFilter(cell: string, terms: string[]): boolean {
   if (terms.length === 0) return true;
   const hay = cell.trim().toLowerCase();
-  return terms.some((t) => (t === HOME_CHAPTER_VALUE ? hay === "" : hay.includes(t)));
+  if (terms.includes(HOME_CHAPTER_VALUE) && terms.includes(CROSS_CHAPTER_VALUE)) return true; // home + other = everything
+  return terms.some((t) => (t === HOME_CHAPTER_VALUE ? hay === "" : t === CROSS_CHAPTER_VALUE ? hay !== "" : hay.includes(t)));
 }
 
 /** A value inside a PostgREST `in.(…)` list: double-quoted, so commas / parentheses in chapter names are safe. */
@@ -61,6 +68,10 @@ export function applyColumnFilter<Q extends Filterable>(
   value: string,
 ): Q {
   const parts = multiParts(value);
+  if (parts.includes(CROSS_CHAPTER_VALUE)) {
+    if (parts.includes(HOME_CHAPTER_VALUE)) return query; // home + cross = every row
+    return query.or(`and(${column}.not.is.null,${column}.neq.)`) as Q; // cross covers any specific chapter picked with it
+  }
   if (parts.includes(HOME_CHAPTER_VALUE)) {
     const rest = parts.filter((p) => p !== HOME_CHAPTER_VALUE);
     const conds = [`${column}.is.null`, `${column}.eq.`];

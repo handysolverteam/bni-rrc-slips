@@ -40,5 +40,9 @@ check("matchesChapterFilter: Home Chapter = blank cell only", f.matchesChapterFi
 check("matchesChapterFilter: Home + another chapter = blank OR contains (case-insensitive)", f.matchesChapterFilter("", ["__home__", "pratham"]) && f.matchesChapterFilter("Pratham, Gurgaon, India", ["__home__", "pratham"]) && !f.matchesChapterFilter("Stars, Gurgaon, India", ["__home__", "pratham"]));
 check("matchesChapterFilter: ordinary picks keep the 'contains' match", f.matchesChapterFilter("Stars, Gurgaon, India", ["stars"]) && !f.matchesChapterFilter("", ["stars"]));
 
+check("Cross Chapter alone = non-blank cells", JSON.stringify(run("__cross__"))===JSON.stringify([["or","and(other_chapter_member.not.is.null,other_chapter_member.neq.)"]]));
+check("Home + Cross = no filter", run("__home__,__cross__").length===0);
+check("matchesChapterFilter: Cross = any non-blank cell", f.matchesChapterFilter("Stars, Gurgaon",["__cross__"]) && !f.matchesChapterFilter("",["__cross__"]) && f.matchesChapterFilter("",["__home__","__cross__"]));
+
 console.log(`TOTAL: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

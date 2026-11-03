@@ -1,6 +1,6 @@
 import ListShell from "@/components/ListShell";
 import { homeChapterNameOf } from "@/lib/new-members";
-import { homeChapterOption } from "@/lib/list-filters";
+import { crossChapterOption, homeChapterOption } from "@/lib/list-filters";
 import NoAccess from "@/components/NoAccess";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getCachedWeekOptions, listWeekScope } from "@/lib/server-weeks";
@@ -119,7 +119,7 @@ export default async function TyfcbPage({
       rows={rows}
       filterable={["bni_week", "member_name", "amount", "other_chapter_member"]}
       columnFilters={columnFilters}
-      filterOptions={{ ...baseOptions, other_chapter_member: [homeChapterOption(homeName), ...baseOptions.other_chapter_member], bni_week: weekFilterOptions(weeks) }}
+      filterOptions={{ ...baseOptions, other_chapter_member: [homeChapterOption(homeName), crossChapterOption(), ...baseOptions.other_chapter_member], bni_week: weekFilterOptions(weeks) }}
     />
   );
 }
