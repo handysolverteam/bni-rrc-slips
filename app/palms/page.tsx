@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import CollapseCard from "@/components/CollapseCard";
+import PalmsMatrixCard from "@/components/PalmsMatrixCard";
 import NoAccess from "@/components/NoAccess";
 import {
   PalmsControls,
@@ -46,8 +46,10 @@ export default async function PalmsPage({
   const recordPromise = fetchPalmsImportRecord(tenantId);
   const statsPromise = fetchPalmsAttendanceStats(tenantId);
   const scopePromise = weeksPromise.then((weeks) => resolvePalmsScope(sp.week, weeks));
-  const matrixPromise = scopePromise.then((s) => fetchPalmsMatrix(tenantId, s.weekIds));
-  for (const p of [weeksPromise, recordPromise, statsPromise, scopePromise, matrixPromise]) p.catch(() => undefined);
+  // The matrix is the heavy part and starts collapsed: it is only read once the card is expanded (?matrix=1).
+  const matrixOpen = sp.matrix === "1";
+  const matrixPromise = matrixOpen ? scopePromise.then((s) => fetchPalmsMatrix(tenantId, s.weekIds)) : null;
+  for (const p of [weeksPromise, recordPromise, statsPromise, scopePromise, matrixPromise]) p?.catch(() => undefined);
   // Member column filter (dropdown; several names with the Multi-select checkbox): narrows the matrix rows.
   const memberFilter = (sp.c_member ?? "").trim();
 
@@ -57,9 +59,11 @@ export default async function PalmsPage({
         <div className="page-head">
           <h1>
             Attendance
-            <Suspense fallback={<span className="count-badge">…</span>}>
-              <PalmsMemberCount promise={matrixPromise} memberFilter={memberFilter} />
-            </Suspense>
+            {matrixPromise ? (
+              <Suspense fallback={<span className="count-badge">…</span>}>
+                <PalmsMemberCount promise={matrixPromise} memberFilter={memberFilter} />
+              </Suspense>
+            ) : null}
           </h1>
           <Suspense fallback={<PalmsScopeLineSkeleton />}>
             <PalmsScopeLine scopePromise={scopePromise} />
@@ -84,11 +88,13 @@ export default async function PalmsPage({
         <PalmsControls scopePromise={scopePromise} />
       </Suspense>
 
-      <CollapseCard label="Attendance matrix">
-        <Suspense fallback={<PalmsMatrixSkeleton />}>
-          <PalmsMatrixSection promise={matrixPromise} memberFilter={memberFilter} />
-        </Suspense>
-      </CollapseCard>
+      <PalmsMatrixCard label="Attendance matrix" open={matrixOpen}>
+        {matrixPromise ? (
+          <Suspense fallback={<PalmsMatrixSkeleton />}>
+            <PalmsMatrixSection promise={matrixPromise} memberFilter={memberFilter} />
+          </Suspense>
+        ) : null}
+      </PalmsMatrixCard>
     </div>
   );
 }
