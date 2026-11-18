@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { buildChatShare, whatsappShareUrl } from "@/lib/whatsapp";
+import { buildChatShare, buildFullChatText, whatsappShareUrl } from "@/lib/whatsapp";
 
 type Attachment = { name: string; mime: string };
 type TagRef = { text: string };
@@ -147,6 +147,7 @@ export default function ChatBox({
   const [pending, setPending] = useState<PendingFile[]>([]);
   const [menu, setMenu] = useState<{ i: number; top: number; left: number } | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "done" | "fail">("idle");
+  const [chatCopy, setChatCopy] = useState<"idle" | "done" | "fail">("idle");
   const [reply, setReply] = useState<{ sender: "user" | "ai"; text: string } | null>(null);
   const [flashIdx, setFlashIdx] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -466,6 +467,22 @@ export default function ChatBox({
             }
           >
             Share chat
+          </button>
+          <button
+            type="button"
+            disabled={!share.text}
+            title="Copy the whole conversation to the clipboard"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(buildFullChatText(messages, chatTitle ?? ""));
+                setChatCopy("done");
+              } catch {
+                setChatCopy("fail");
+              }
+              setTimeout(() => setChatCopy("idle"), 2000);
+            }}
+          >
+            {chatCopy === "done" ? "Copied ✓" : chatCopy === "fail" ? "Copy failed" : "Copy chat"}
           </button>
           {sessionId && canManage ? (
             <button type="button" onClick={() => setConfirmingClear(true)} disabled={busy}>

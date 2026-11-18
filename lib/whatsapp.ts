@@ -47,6 +47,20 @@ function renderTurn(m: ShareMessage): string {
     .join("\n");
 }
 
+/** The ENTIRE conversation as plain text for the clipboard (same layout as the share, but never shortened). "" for a greeting-only chat. */
+export function buildFullChatText(messages: ShareMessage[], title = ""): string {
+  const turns = messages
+    .filter((m) => !(m.sender === "ai" && m.text.trim().startsWith(GREETING_PREFIX)))
+    .map(renderTurn);
+  if (turns.length === 0) return "";
+  const heading = title.trim();
+  return (heading && heading !== "New chat" ? `${heading}
+
+` : "") + turns.join("
+
+");
+}
+
 /**
  * Whole conversation as WhatsApp text: optional chat-title header, one
  * `You:` / `Slips AI:` block per turn. Only a transcript past
