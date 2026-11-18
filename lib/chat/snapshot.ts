@@ -380,7 +380,7 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
 
   // CEU credits per member and week.
   for (const r of ceuRes) {
-    const q = qrowOf(r.bni_week_id, key(r.member_name), r.member_name.replace(/s+/g, " ").trim());
+    const q = qrowOf(r.bni_week_id, key(r.member_name), r.member_name.replace(/\s+/g, " ").trim());
     if (q) q.ceu += amount(r.credits);
   }
 

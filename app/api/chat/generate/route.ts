@@ -75,6 +75,8 @@ export async function POST(request: Request) {
       index,
       body.history ?? [],
       attachments.value,
+      0,
+      ctx.tenantId,
     );
 
     if (!result.text || !result.text.trim()) {

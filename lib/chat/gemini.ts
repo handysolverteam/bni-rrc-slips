@@ -1,5 +1,6 @@
 import type { SlipsSnapshot } from "./snapshot";
 import { guardFilters } from "./filter-guard";
+import { REFERENCE_TOOL, executeReference } from "./reference-tool";
 import {
   CHAPTER_QUERY_TOOL,
   SLIP_ENTRIES_TOOL,
@@ -213,6 +214,7 @@ function buildSystemInstruction(snapshot: SlipsSnapshot): string {
             `NAMES IN SEVERAL CHAPTERS: these names are members of more than one chapter, so when asked which chapter one of them belongs to, answer with ALL the chapters listed here (never only one): ${multi.map((m) => `${m.name} → ${m.chapters!.join(" and ")}`).join("; ")}.`,
           ];
     })(),
+    "REFERENCE DATA: the chapter_reference TOOL holds what the snapshot does not — member contact details (topic contacts: email, phone, company, category; a member with email null has none on file), the imported BNI Traffic Lights (topic traffic_lights: score out of 100, colour, per-metric scores; say which imported range it covers), the Chapter Sponsor Report (topic sponsors) and the weekly totals BNI's own PALMS report states (topic palms_totals). Call it for those questions instead of saying the data is unavailable. Contact lists default to the home chapter; name every row and give the count.",
     "ATTACHMENTS: the latest user turn may include image/PDF inline parts and/or extracted spreadsheet text parts. Answer faithfully from what an attachment actually shows — describe images/PDFs precisely; answer spreadsheet questions from the extracted text (it is capped, so say so if asked beyond it). When a question mixes an attachment with chapter slips data, use both. Never claim an attachment is missing when one was provided, and never invent attachment contents.",
     "",
     "---LIVE DATA SNAPSHOT---",
@@ -282,7 +284,7 @@ async function callModel(
         temperature,
       },
     };
-    if (useTools) payload.tools = [{ functionDeclarations: [CHAPTER_QUERY_TOOL, SLIP_ENTRIES_TOOL] }];
+    if (useTools) payload.tools = [{ functionDeclarations: [CHAPTER_QUERY_TOOL, SLIP_ENTRIES_TOOL, REFERENCE_TOOL] }];
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-goog-api-key": apiKey },
@@ -309,11 +311,15 @@ async function callModel(
   }
 }
 
-function executeToolCall(call: { name: string; args: unknown }, index: QueryIndex, cueText = ""): unknown {
-  if (call.name !== CHAPTER_QUERY_TOOL.name && call.name !== SLIP_ENTRIES_TOOL.name) {
+async function executeToolCall(call: { name: string; args: unknown }, index: QueryIndex, cueText = "", tenantId = ""): Promise<unknown> {
+  if (call.name !== CHAPTER_QUERY_TOOL.name && call.name !== SLIP_ENTRIES_TOOL.name && call.name !== REFERENCE_TOOL.name) {
     return { error: `Unknown tool: ${call.name}` };
   }
   try {
+    if (call.name === REFERENCE_TOOL.name) {
+      if (!tenantId) return { error: "reference data unavailable" };
+      return await executeReference(call.args, tenantId, index.homeChapter);
+    }
     if (call.name === SLIP_ENTRIES_TOOL.name) return executeSlipEntries(call.args, index);
     return executeChapterQuery(guardFilters(call.args, cueText, index.homeChapter), index);
   } catch (error) {
@@ -335,6 +341,7 @@ export async function askGemini(
   history: ChatHistoryMessage[] = [],
   attachments: ChatAttachment[] = [],
   temperature = 0,
+  tenantId = "",
 ): Promise<GeminiResult> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) return { text: null, detail: "missing GEMINI_API_KEY" };
@@ -412,13 +419,15 @@ Filters applied: ${lastBasis ?? "none (whole chapter totals — all members, act
     // Execute every requested call and hand the results back for the next round.
     // The model turn echoes each raw part verbatim (thoughtSignature included).
     const modelParts = calls.map((c) => c.part);
-    const responseParts = calls.map((c) => {
-      const result = executeToolCall(c, index, cueText);
-      usedTool = true;
-      const b = (result as { basis?: { filtersSummary?: string } } | null)?.basis;
-      if (b?.filtersSummary) lastBasis = b.filtersSummary;
-      return { functionResponse: { name: c.name, response: { json: result } } };
-    });
+    const responseParts = await Promise.all(
+      calls.map(async (c) => {
+        const result = await executeToolCall(c, index, cueText, tenantId);
+        usedTool = true;
+        const b = (result as { basis?: { filtersSummary?: string } } | null)?.basis;
+        if (b?.filtersSummary) lastBasis = b.filtersSummary;
+        return { functionResponse: { name: c.name, response: { json: result } } };
+      }),
+    );
     contents.push({ role: "model", parts: modelParts });
     contents.push({ role: "user", parts: responseParts });
   }
