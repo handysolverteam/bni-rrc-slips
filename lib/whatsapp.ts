@@ -54,11 +54,7 @@ export function buildFullChatText(messages: ShareMessage[], title = ""): string 
     .map(renderTurn);
   if (turns.length === 0) return "";
   const heading = title.trim();
-  return (heading && heading !== "New chat" ? `${heading}
-
-` : "") + turns.join("
-
-");
+  return (heading && heading !== "New chat" ? heading + "\n\n" : "") + turns.join("\n\n");
 }
 
 /**
