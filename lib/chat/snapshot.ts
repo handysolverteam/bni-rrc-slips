@@ -140,7 +140,8 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
   // NOTE: fetchAllRows, never .limit() — Supabase returns at most 1000 rows
   // per request, and the DB is already past the old hand-picked caps
   // (500 members / 60 weeks), which silently hid data from the AI.
-  const [membersRows, weeksRows, refRes, otoRes, tyfcbRes, visRes] = await Promise.all([
+  const [membersRows, weeksRows, refRes, otoRes, tyfcbRes, visRes, ceuRes] = await Promise.all([
+    // (ceuRes = CEU credits per member and week, the chat's `ceuCredits` metric)
     fetchAllRows<{
       name: string;
       category: string | null;
@@ -190,6 +191,11 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
     fetchAllRows<{ bni_week_id: string | null; full_name: string; invited_by_name: string | null }>(
       "slip_visitors",
       "bni_week_id,full_name,invited_by_name",
+      { eq: [["tenant_id", tenantId]], order: { column: "id" }, pageSize: 1000 },
+    ),
+    fetchAllRows<{ bni_week_id: string | null; member_name: string; credits: number | string | null }>(
+      "slip_ceus",
+      "bni_week_id,member_name,credits",
       { eq: [["tenant_id", tenantId]], order: { column: "id" }, pageSize: 1000 },
     ),
   ]);
@@ -278,7 +284,7 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
     const id = `${weekId}|${memberKey}`;
     let row = qrows.get(id);
     if (!row) {
-      row = { w: weekId, m: memberKey, n: name, rg: 0, ri: 0, ro: 0, rr: 0, oto: 0, vis: 0, te: 0, ta: 0, pr: 0, ab: 0, md: 0, su: 0, lv: 0 };
+      row = { w: weekId, m: memberKey, n: name, rg: 0, ri: 0, ro: 0, rr: 0, oto: 0, vis: 0, te: 0, ta: 0, pr: 0, ab: 0, md: 0, su: 0, lv: 0, ceu: 0 };
       qrows.set(id, row);
     }
     return row;
@@ -370,6 +376,12 @@ export async function getSlipsData(tenantId: string): Promise<SlipsData> {
     }
     const b = bucketOf(r.bni_week_id);
     if (b) b.stat.visitors += 1;
+  }
+
+  // CEU credits per member and week.
+  for (const r of ceuRes) {
+    const q = qrowOf(r.bni_week_id, key(r.member_name), r.member_name.replace(/s+/g, " ").trim());
+    if (q) q.ceu += amount(r.credits);
   }
 
   // PALMS attendance per member and week (legacy rows carry counts in present/absent).

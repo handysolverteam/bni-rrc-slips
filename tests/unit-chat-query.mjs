@@ -22,7 +22,7 @@ const weeks = [
   { id: "w1", label: "Week 1", date: "2026-03-04" }, // far back: outside 6 months
 ];
 const row = (w, key, name, over = {}) => ({
-  w, m: key, n: name, rg: 0, ri: 0, ro: 0, rr: 0, oto: 0, vis: 0, te: 0, ta: 0, pr: 0, ab: 0, md: 0, su: 0, lv: 0, ...over,
+  w, m: key, n: name, rg: 0, ri: 0, ro: 0, rr: 0, oto: 0, vis: 0, te: 0, ta: 0, pr: 0, ab: 0, md: 0, su: 0, lv: 0, ceu: 0, ...over,
 });
 const roster = [
   { key: "amit", name: "Amit", chapter: "BNI Influencers", home: true, active: true, category: null },

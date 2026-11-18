@@ -43,6 +43,7 @@ export type QueryRow = {
   md: number; // PALMS: medical
   su: number; // PALMS: substitute
   lv: number; // PALMS: leave
+  ceu: number; // CEU credits
 };
 
 /** Every member of the tenant (zero-activity members included), so "who did NOT ..." works. */
@@ -90,6 +91,7 @@ export const METRIC_TO_FIELD = {
   attendanceMedical: "md",
   attendanceSubstitute: "su",
   attendanceLeave: "lv",
+  ceuCredits: "ceu",
 } as const;
 
 export type MetricKey = keyof typeof METRIC_TO_FIELD;
