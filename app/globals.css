@@ -1654,6 +1654,12 @@ button.copy-btn.done, button.copy-btn.done:hover:not(:disabled) { background: va
 .chat-sidebar .chat-groups { margin-top: 18px; gap: 18px; }
 .chat-sidebar .chat-group-title { margin: 0; padding: 0 12px; line-height: 1.2; }
 .chat-sidebar .chat-group ul { margin-top: 6px; }
+/* Each account's heading gets its own colour (cycling) so the sections are easy to tell apart */
+.chat-sidebar .chat-group { --grp: #e8693a; }
+.chat-sidebar .chat-group:nth-child(4n+2) { --grp: #1fa593; }
+.chat-sidebar .chat-group:nth-child(4n+3) { --grp: #4b86ec; }
+.chat-sidebar .chat-group:nth-child(4n+4) { --grp: #a064e8; }
+.chat-sidebar .chat-group-title { margin: 0 8px; padding: 5px 10px; border-left: 4px solid var(--grp); border-radius: 6px; background: color-mix(in srgb, var(--grp) 18%, transparent); color: var(--grp); font-weight: 700; letter-spacing: 0.05em; }
 
 /* Sr. No. column on every table */
 .grid th.idx, .grid td.idx { width: 64px; min-width: 56px; text-align: center; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
