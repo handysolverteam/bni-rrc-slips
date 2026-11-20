@@ -154,10 +154,30 @@ export default function ChatBox({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const chipsRef = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
   // Set when THIS box created its session: the sessionId prop change that
   // follows must not trigger a history reload (it would wipe the reply
   // currently being generated).
   const justCreated = useRef(false);
+
+  // Fill the window: the box is as tall as the space from its top edge to the bottom of the window (24px margin),
+  // measured, not guessed, so neither a cut-off bottom nor unused space is left. --chat-h also sizes the chat list.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || maximized) {
+      if (el) el.style.height = "";
+      return;
+    }
+    const fit = () => {
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      const h = Math.max(480, Math.round(window.innerHeight - top - 24));
+      el.style.height = `${h}px`;
+      document.documentElement.style.setProperty("--chat-h", `${h}px`);
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [maximized]);
 
   // Suggestion chips: show only as many as fit in ONE row (the rest wrap below the first row and are hidden),
   // re-measured when the suggestions change and whenever the chat box is resized.
@@ -462,7 +482,7 @@ export default function ChatBox({
   const share = buildChatShare(messages, chatTitle ?? "");
 
   return (
-    <div className={`chat-wrap${maximized ? " chat-maximized" : ""}`}>
+    <div ref={wrapRef} className={`chat-wrap${maximized ? " chat-maximized" : ""}`}>
       <div className="chat-toolbar">
         <span className="muted">
           {loadingHistory ? "Loading history…" : `${messages.length} message(s)`}

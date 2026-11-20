@@ -1140,7 +1140,7 @@ button.danger:hover:not(:disabled) { background: var(--red-soft); }
 .chat-sidebar {
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: var(--shadow); padding: 14px; position: sticky; top: calc(var(--header-h) + 14px);
-  max-height: calc(100vh - 250px); max-height: calc(100dvh - 250px); overflow-y: auto;
+  max-height: var(--chat-h, calc(100dvh - 250px)); overflow-y: auto;
 }
 .chat-sidebar p { margin: 12px 2px 0; }
 .chat-sidebar ul { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
