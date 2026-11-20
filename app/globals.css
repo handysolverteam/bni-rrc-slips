@@ -947,7 +947,7 @@ button.danger:hover:not(:disabled) { background: var(--red-soft); }
 
 /* ---------- Chat ---------- */
 .chat-card { padding: 0; overflow: hidden; }
-.chat-wrap { display: flex; flex-direction: column; height: 68vh; min-height: 480px; }
+.chat-wrap { display: flex; flex-direction: column; height: 78vh; min-height: 540px; }
 /* Form controls (textarea/buttons) default to the browser's own font —
    everything typed or shown in the chat box uses the app font instead. */
 .chat-wrap button,
@@ -1140,7 +1140,7 @@ button.danger:hover:not(:disabled) { background: var(--red-soft); }
 .chat-sidebar {
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: var(--shadow); padding: 14px; position: sticky; top: calc(var(--header-h) + 14px);
-  max-height: 72vh; overflow-y: auto;
+  max-height: 80vh; overflow-y: auto;
 }
 .chat-sidebar p { margin: 12px 2px 0; }
 .chat-sidebar ul { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
