@@ -11,7 +11,7 @@ import { LIGHT_LABEL, type LightColor } from "@/lib/traffic-light-score";
 export const REFERENCE_TOOL = {
   name: "chapter_reference",
   description:
-    "Reference data not in the snapshot. topic 'contacts' = members' email / phone / company / category / chapter / active (use for 'what is X's email', 'who has no email', 'list members with emails'); 'traffic_lights' = the imported BNI Traffic Lights (score out of 100, colour green/amber/red/grey, per-metric scores; use for 'who is red', 'Traffic Light of X'); 'sponsors' = the imported Chapter Sponsor Report (who sponsored whom, application date); 'palms_totals' = the totals BNI's own PALMS report states per meeting week (RGI, RGO, RRI, RRO, visitors, 121s, TYFCB, CEU).",
+    "Reference data not in the snapshot. topic 'contacts' = members' email / phone / company / category / chapter / power team / active (use for 'what is X's email', 'who has no email', 'list members with emails'); 'traffic_lights' = the imported BNI Traffic Lights (score out of 100, colour green/amber/red/grey, per-metric scores; use for 'who is red', 'Traffic Light of X'); 'sponsors' = the imported Chapter Sponsor Report (who sponsored whom, application date); 'palms_totals' = the totals BNI's own PALMS report states per meeting week (RGI, RGO, RRI, RRO, visitors, 121s, TYFCB, CEU).",
   parameters: {
     type: "object",
     properties: {
@@ -19,6 +19,7 @@ export const REFERENCE_TOOL = {
       members: { type: "array", items: { type: "string" }, description: "Member names (partial, case-insensitive). When given, no other member filter applies." },
       status: { type: "string", enum: ["active", "inactive", "any"], description: "contacts only. DEFAULT 'any'; use 'active' only when asked for active members." },
       chapter: { type: "string", description: "contacts only. DEFAULT 'home' (the Home Chapter); 'all' only when other chapters are asked for." },
+      powerTeam: { type: "string", description: "contacts only: keep members of this power team (partial name, e.g. 'B To B', 'Construction'). Each contacts row carries powerTeam (null = none)." },
       hasEmail: { type: "boolean", description: "contacts only: true = only members WITH an email, false = only members WITHOUT one." },
       light: { type: "string", enum: ["green", "amber", "red", "grey"], description: "traffic_lights only: keep one colour." },
       period: { type: "string", description: "traffic_lights / sponsors: an imported range as 'YYYY-MM-DD_YYYY-MM-DD'. Default = the newest imported range; the result lists every available range." },
@@ -38,6 +39,7 @@ type MemberDb = {
   company: string | null;
   category: string | null;
   is_inactive: boolean | null;
+  power_teams: { name: string } | { name: string }[] | null;
   chapters: { name: string } | { name: string }[] | null;
 };
 
@@ -49,16 +51,18 @@ export async function executeReference(args: unknown, tenantId: string, homeChap
   const nameOk = (name: string): boolean => wanted.length === 0 || wanted.some((w) => lc(name).includes(w));
 
   if (topic === "contacts") {
-    const rows = await fetchAllRows<MemberDb>("members", "name,email,phone,company,category,is_inactive,chapters(name)", {
+    const rows = await fetchAllRows<MemberDb>("members", "name,email,phone,company,category,is_inactive,chapters(name),power_teams(name)", {
       eq: [["tenant_id", tenantId]],
       order: { column: "id" },
     });
     const status = a.status === "active" || a.status === "inactive" ? a.status : "any";
     const allChapters = lc(a.chapter) === "all";
     const named = wanted.length > 0;
+    const powerTeam = lc(a.powerTeam);
     const list = rows
       .map((m) => {
         const rel = Array.isArray(m.chapters) ? m.chapters[0] : m.chapters;
+        const team = Array.isArray(m.power_teams) ? m.power_teams[0] : m.power_teams;
         return {
           name: m.name.replace(/\s+/g, " ").trim(),
           email: present(m.email) ? m.email!.trim() : null,
@@ -66,12 +70,14 @@ export async function executeReference(args: unknown, tenantId: string, homeChap
           company: present(m.company) ? m.company!.trim() : null,
           category: present(m.category) ? m.category!.trim() : null,
           chapter: rel?.name ?? null,
+          powerTeam: team?.name ?? null,
           active: m.is_inactive !== true,
         };
       })
       .filter((m) => nameOk(m.name))
       .filter((m) => named || allChapters || lc(m.chapter) === lc(homeChapter))
       .filter((m) => named || status === "any" || (status === "active" ? m.active : !m.active))
+      .filter((m) => !powerTeam || lc(m.powerTeam).includes(powerTeam))
       .filter((m) => (typeof a.hasEmail === "boolean" ? (m.email !== null) === a.hasEmail : true))
       .sort((x, y) => x.name.localeCompare(y.name));
     return {

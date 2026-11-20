@@ -35,7 +35,7 @@ export default async function MembersPage({
   const sb = getSupabaseServer();
   let query = sb
     .from("members")
-    .select("*, chapters(name)", { count: "exact" })
+    .select("*, chapters(name), power_teams(name)", { count: "exact" })
     .eq("tenant_id", tenantId)
     .order("name");
   if (q) query = query.ilike("name", `%${q}%`);
@@ -67,6 +67,15 @@ export default async function MembersPage({
       .map((c) => c.id);
     columnFilters.chapter = chapterV;
   }
+  // Power Team filter (dropdown; several teams with Multi-select): resolve the picked team names to ids.
+  const teamV = (sp.c_power_team || "").trim();
+  let teamIds: string[] = [];
+  if (teamV) {
+    const { data: teams } = await sb.from("power_teams").select("id, name").eq("tenant_id", tenantId);
+    const want = multiParts(teamV).map((t) => t.trim().toLowerCase());
+    teamIds = (teams ?? []).filter((t) => want.includes(String(t.name ?? "").trim().toLowerCase())).map((t) => t.id);
+    columnFilters.power_team = teamV;
+  }
   // Rows AND the header counts below must reflect the same filters, so the
   // chain lives here once: q, then the column filters (chapter resolves to
   // ids, the rest pass through applyColumnFilter).
@@ -74,9 +83,10 @@ export default async function MembersPage({
     let out = b;
     if (q) out = out.ilike("name", `%${q}%`);
     for (const [k, v] of Object.entries(columnFilters)) {
-      if (k === "chapter") continue;
+      if (k === "chapter" || k === "power_team") continue;
       out = applyColumnFilter(out, k, v);
     }
+    if (teamV) out = out.in("power_team_id", teamIds.length > 0 ? teamIds : ["00000000-0000-0000-0000-000000000000"]);
     if (chapterV) out = out.in("chapter_id", chapterIds.length > 0 ? chapterIds : ["00000000-0000-0000-0000-000000000000"]);
     return out;
   };
@@ -92,12 +102,14 @@ const memberEq: [string, unknown][] = [];
       distinctValues(tenantId, "members", "category", memberEq),
       distinctValues(tenantId, "members", "company", memberEq),
       distinctValues(tenantId, "members", "phone", memberEq),
-    ]).then(([chapter, name, category, company, phone]) => ({
+      distinctValues(tenantId, "power_teams", "name"),
+    ]).then(([chapter, name, category, company, phone, powerTeam]) => ({
       chapter: [homeChapterOption(homeName), crossChapterOption(), ...chapter],
       name,
       category,
       company,
       phone,
+      power_team: powerTeam,
     })),
     // Header counts follow the current filters; the Active toggle only
     // swaps the wording to "N active".
@@ -108,10 +120,12 @@ const memberEq: [string, unknown][] = [];
   ]);
   const rows = ((data ?? []) as Record<string, unknown>[]).map((m) => {
     const rel = m.chapters as { name?: string } | { name?: string }[] | null;
+    const team = m.power_teams as { name?: string } | { name?: string }[] | null;
     return {
       ...m,
       active: m.is_inactive !== true,
       chapter: (Array.isArray(rel) ? rel[0]?.name : rel?.name) ?? "",
+      power_team: (Array.isArray(team) ? team[0]?.name : team?.name) ?? "",
     };
   });
 
@@ -136,12 +150,13 @@ const memberEq: [string, unknown][] = [];
         { key: "name", label: "Name" },
         { key: "chapter", label: "Chapter" },
         { key: "email", label: "Email" },
+        { key: "power_team", label: "Power team" },
         { key: "category", label: "Category" },
         { key: "company", label: "Company" },
         { key: "phone", label: "Phone" },
       ]}
       rows={rows}
-      filterable={["name", "chapter", "category", "company", "phone", "email"]}
+      filterable={["name", "chapter", "power_team", "category", "company", "phone", "email"]}
       textFilters={["category", "company", "phone", "email"]}
       columnFilters={columnFilters}
       filterOptions={filterOptions}
