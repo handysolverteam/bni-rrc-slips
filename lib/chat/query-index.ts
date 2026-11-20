@@ -166,6 +166,7 @@ export const CHAPTER_QUERY_TOOL = {
         type: "string",
         description: "Metric to sort by, '-' or 'DESC' for descending (default '-referralsGiven'). Use '+metric' / 'ASC' for least-to-most.",
       },
+      bands: { type: "array", items: { type: "number" }, description: "Group ALL matching members into value bands of the orderBy metric. Pass the bands' INCLUSIVE upper edges in ascending order, e.g. [10, 25, 50, 100] = 0–10, 11–25, 26–50, 51–100, above 100 (for TYFCB use rupees: [0, 1000000, 5000000, 10000000]). The result then carries bands[] with the member count and members of every band — copy those headings, counts and lists as they are; never band the members yourself." },
       topN: { type: "integer", description: "Max rows to return (default 20, max 150). For 'list all ...' questions pass 150 and read rowCount for the true total." },
     },
     required: ["scope"],
@@ -467,7 +468,7 @@ export function executeChapterQuery(args: unknown, index: QueryIndex): Record<st
   const namedLookup = memberFilters.length > 0;
   // DEFAULT filters: the home chapter's ACTIVE members. 'all' lifts the chapter filter, status 'any' lifts the
   // status filter. A lookup that names members is never filtered.
-  const chapterRaw = /^(all|any|every)(s+chapters?)?$/i.test(chapterArg) ? "" : chapterArg || (namedLookup ? "" : "home");
+  const chapterRaw = /^(all|any|every)(\s+chapters?)?$/i.test(chapterArg) ? "" : chapterArg || (namedLookup ? "" : "home");
   const homeWords = /^(home|our|my|this)(\s+chapter)?$/i;
   const wantHome =
     homeWords.test(chapterRaw) || (chapterRaw !== "" && chapterKeyOf(chapterRaw) === chapterKeyOf(index.homeChapter));
@@ -542,6 +543,31 @@ export function executeChapterQuery(args: unknown, index: QueryIndex): Record<st
   });
   const topN = Math.min(150, Math.max(1, Math.floor(Number(a.topN)) || 20));
 
+  // Value bands over ALL matching members (done here so the heading counts are exact, never counted by the model).
+  const edges = (Array.isArray(a.bands) ? a.bands : []).map(Number).filter((n) => Number.isFinite(n)).sort((x, y) => x - y);
+  const bandField = field as MetricField;
+  const fmtN = (n: number): string => n.toLocaleString("en-IN");
+  const bands = edges.length
+    ? [...edges, Infinity].map((hi, i) => {
+        const lo = i === 0 ? -Infinity : edges[i - 1];
+        const inBand = entries
+          .filter((e) => e[bandField] > lo && e[bandField] <= hi)
+          .sort((x, y) => x[bandField] - y[bandField] || x.name.localeCompare(y.name));
+        const whole = (bandField as string) !== "ta" && (lo === -Infinity || Number.isInteger(lo));
+        const label =
+          hi === Infinity
+            ? `above ${fmtN(lo)}`
+            : lo === -Infinity
+              ? hi === 0
+                ? "0"
+                : `up to ${fmtN(hi)}`
+              : whole
+                ? `${fmtN(lo + 1)}–${fmtN(hi)}`
+                : `above ${fmtN(lo)} up to ${fmtN(hi)}`;
+        return { band: label, count: inBand.length, members: inBand.map((e) => ({ name: e.name, value: e[bandField] })) };
+      })
+    : null;
+
   // Everyone tied with the last listed member on the sort metric is included too.
   const shown = withTies(entries, topN, (e) => e[field as MetricField]);
   const tiedExtra = Math.max(0, shown.length - topN);
@@ -580,7 +606,7 @@ export function executeChapterQuery(args: unknown, index: QueryIndex): Record<st
     rowCount: entries.length, // members matching the scope/filters BEFORE topN
     distinct,
     totals,
-    rows, // topN rows after orderBy
+    ...(bands ? { bands, bandsNote: "Every matching member is in exactly one band; the counts are exact — copy them." } : { rows }), // topN rows after orderBy
     metrics,
     ...(tiedExtra > 0
       ? { tiedAtCutoff: tiedExtra, tieNote: `${tiedExtra} more member${tiedExtra === 1 ? "" : "s"} share the value of the last listed one and are included — name them all.` }
@@ -636,7 +662,7 @@ export function executeSlipEntries(args: unknown, index: QueryIndex): Record<str
   // No status filter unless the question calls for one.
   const status = member ? "any" : a.status === "inactive" || a.status === "any" ? a.status : "active";
   const chapterArg = typeof a.chapter === "string" ? a.chapter.trim() : "";
-  const homeOnly = !member && !/^(all|any|every)(s+chapters?)?$/i.test(chapterArg);
+  const homeOnly = !member && !/^(all|any|every)(\s+chapters?)?$/i.test(chapterArg);
   const homeKeys = new Set(index.roster.filter((m) => m.home).map((m) => m.key));
   const inactiveKeys = new Set(index.roster.filter((m) => !m.active).map((m) => m.key));
   const nk = (n: string) => n.replace(/\s+/g, " ").trim().toLowerCase();

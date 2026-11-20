@@ -11,11 +11,12 @@ import { LIGHT_LABEL, type LightColor } from "@/lib/traffic-light-score";
 export const REFERENCE_TOOL = {
   name: "chapter_reference",
   description:
-    "Reference data not in the snapshot. topic 'contacts' = members' email / phone / company / category / chapter / power team / active (use for 'what is X's email', 'who has no email', 'list members with emails'); 'traffic_lights' = the imported BNI Traffic Lights (score out of 100, colour green/amber/red/grey, per-metric scores; use for 'who is red', 'Traffic Light of X'); 'sponsors' = the imported Chapter Sponsor Report (who sponsored whom, application date); 'palms_totals' = the totals BNI's own PALMS report states per meeting week (RGI, RGO, RRI, RRO, visitors, 121s, TYFCB, CEU).",
+    "Reference data not in the snapshot. topic 'contacts' = members' email / phone / company / category / chapter / power team / active (use for 'what is X's email', 'who has no email', 'list members with emails'); 'traffic_lights' = the imported BNI Traffic Lights (score out of 100, colour green/amber/red/grey, per-metric scores; use for 'who is red', 'Traffic Light of X'); 'sponsors' = the imported Chapter Sponsor Report (who sponsored whom, application date); 'attendance_percent' = attendance % per active member per month, worked out by the server (BNI rule (recorded meetings − absent) ÷ recorded meetings; only meetings with an attendance record count) — copy it, never compute attendance % yourself; 'palms_totals' = the totals BNI's own PALMS report states per meeting week (RGI, RGO, RRI, RRO, visitors, 121s, TYFCB, CEU).",
   parameters: {
     type: "object",
     properties: {
-      topic: { type: "string", enum: ["contacts", "traffic_lights", "sponsors", "palms_totals"] },
+      topic: { type: "string", enum: ["contacts", "traffic_lights", "sponsors", "palms_totals", "attendance_percent"] },
+      months: { type: "array", items: { type: "string" }, description: "attendance_percent only: months as 'YYYY-MM', e.g. ['2026-08','2026-09']. Default = the last 4 months that have attendance." },
       members: { type: "array", items: { type: "string" }, description: "Member names (partial, case-insensitive). When given, no other member filter applies." },
       status: { type: "string", enum: ["active", "inactive", "any"], description: "contacts only. DEFAULT 'any'; use 'active' only when asked for active members." },
       chapter: { type: "string", description: "contacts only. DEFAULT 'home' (the Home Chapter); 'all' only when other chapters are asked for." },
@@ -80,8 +81,12 @@ export async function executeReference(args: unknown, tenantId: string, homeChap
       .filter((m) => !powerTeam || lc(m.powerTeam).includes(powerTeam))
       .filter((m) => (typeof a.hasEmail === "boolean" ? (m.email !== null) === a.hasEmail : true))
       .sort((x, y) => x.name.localeCompare(y.name));
+    const powerTeamCounts: Record<string, number> = {};
+    for (const m of list) if (m.powerTeam) powerTeamCounts[m.powerTeam] = (powerTeamCounts[m.powerTeam] ?? 0) + 1;
     return {
       count: list.length,
+      powerTeamCounts,
+      withoutPowerTeam: list.filter((m) => !m.powerTeam).length,
       withEmail: list.filter((m) => m.email).length,
       withoutEmail: list.filter((m) => !m.email).length,
       shown: Math.min(limit, list.length),
@@ -140,6 +145,67 @@ export async function executeReference(args: unknown, tenantId: string, homeChap
         notes: r.notes,
       })),
       basis: { filtersSummary: `BNI Traffic Lights · ${period}${light ? ` · ${LIGHT_LABEL[light]} only` : ""}` },
+    };
+  }
+
+  if (topic === "attendance_percent") {
+    const [rows, mem] = await Promise.all([
+      fetchAllRows<{ bni_week_id: string | null; member_name: string; present: number | null; absent: number | null; m: number | null; s: number | null; l: number | null }>(
+        "member_attendance",
+        "bni_week_id,member_name,present,absent,m,s,l",
+        { eq: [["tenant_id", tenantId]], order: { column: "id" } },
+      ),
+      fetchAllRows<MemberDb>("members", "name,email,phone,company,category,is_inactive,chapters(name),power_teams(name)", {
+        eq: [["tenant_id", tenantId]],
+        order: { column: "id" },
+      }),
+    ]);
+    const weekIds = [...new Set(rows.map((r) => r.bni_week_id).filter((x): x is string => !!x))];
+    const { data: wk } = weekIds.length
+      ? await getSupabaseServer().from("bni_weeks").select("id,meeting_date").in("id", weekIds)
+      : { data: [] as { id: string; meeting_date: string }[] };
+    const monthOf = new Map((wk ?? []).map((w) => [w.id as string, String(w.meeting_date).slice(0, 7)]));
+    const have = [...new Set([...monthOf.values()])].sort();
+    const asked = (Array.isArray(a.months) ? a.months.map(String) : []).filter((x) => /^\d{4}-\d{2}$/.test(x));
+    const months = asked.length ? asked : have.slice(-4);
+    const active = mem
+      .filter((m) => m.is_inactive !== true && lc((Array.isArray(m.chapters) ? m.chapters[0] : m.chapters)?.name) === lc(homeChapter))
+      .filter((m) => nameOk(m.name));
+    const byMonth = months.map((mo) => {
+      const inMonth = rows.filter((r) => monthOf.get(r.bni_week_id ?? "") === mo);
+      const list = active.map((m) => {
+        let recorded = 0;
+        let absent = 0;
+        for (const r of inMonth) {
+          if (lc(r.member_name) !== lc(m.name)) continue;
+          const n = (r.present ?? 0) + (r.absent ?? 0) + (r.l ?? 0) + (r.m ?? 0) + (r.s ?? 0);
+          if (n > 0) recorded += 1;
+          if ((r.absent ?? 0) > 0) absent += 1;
+        }
+        return {
+          name: m.name.replace(/\s+/g, " ").trim(),
+          recorded,
+          absent,
+          percent: recorded > 0 ? Math.round(((recorded - absent) / recorded) * 1000) / 10 : null,
+        };
+      });
+      const withData = list
+        .filter((x) => x.percent !== null)
+        .sort((x, y) => (x.percent as number) - (y.percent as number) || x.name.localeCompare(y.name));
+      return {
+        month: mo,
+        meetingsWithAttendance: new Set(inMonth.map((r) => r.bni_week_id)).size,
+        membersWithRecords: withData.length,
+        below100: withData.filter((x) => (x.percent as number) < 100).length,
+        at100: withData.filter((x) => x.percent === 100).length,
+        noRecords: list.filter((x) => x.percent === null).map((x) => x.name),
+        rows: withData.filter((x) => (x.percent as number) < 100),
+      };
+    });
+    return {
+      months: byMonth,
+      note: "rows lists only members BELOW 100% (lowest first); at100 members are the rest of membersWithRecords.",
+      basis: { filtersSummary: `Home chapter (${homeChapter}) · active members only · attendance = (recorded meetings − absent) ÷ recorded meetings` },
     };
   }
 

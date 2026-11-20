@@ -203,4 +203,15 @@ check("guard: follow-up inherits the cue from the history text", gd({ status: "a
   check("a cut-off value of 0 never pulls in the zero-activity roster", zero.rows.length === 3 && zero.tiedAtCutoff === undefined, String(zero.rows.length));
 }
 
+// Value bands: counts and members come from the server, edges inclusive, every member in exactly one band.
+{
+  const bi = { ...index, rows: [row("w4", "amit", "Amit", { rg: 10 }), row("w4", "bina", "Bina", { rg: 11 })], roster: roster.slice(0, 3) };
+  const b = m.executeChapterQuery({ scope: { kind: "all" }, chapter: "home", status: "any", metrics: ["referralsGiven"], orderBy: "+referralsGiven", bands: [10, 25] }, bi);
+  const counts = b.bands.map((x) => x.count).join(",");
+  check("bands [10,25]: 10 (and the zero member) in the first band, 11 in the second, none above", counts === "2,1,0" && b.bands[0].members.some((x) => x.name === "Amit") && b.bands[1].members[0].name === "Bina" && b.rows === undefined, counts);
+  check("zero-activity roster member lands in the first band (counts add up to the roster)", b.bands.reduce((n, x) => n + x.count, 0) === b.rowCount && b.rowCount === 3, String(b.rowCount));
+  const z = m.executeChapterQuery({ scope: { kind: "all" }, chapter: "home", status: "any", metrics: ["tyfcbAmount"], orderBy: "+tyfcbAmount", bands: [0, 1000000] }, { ...bi, rows: [row("w4", "amit", "Amit", { ta: 5 })] });
+  check("band 0 holds only members with exactly 0", z.bands[0].band === "0" && z.bands[0].count === 2 && z.bands[1].count === 1, JSON.stringify(z.bands.map((x) => [x.band, x.count])));
+}
+
 console.log(`TOTAL: ${pass} passed, ${fail} failed`);
