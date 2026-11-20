@@ -34,6 +34,7 @@
   (`lib/tenant-grant.ts`, idempotent upsert) — no SQL per user. Membership in
   any *other* chapter stays a manual SQL insert.
 - **Traffic Lights = BNI's own reports** (2026-10-14): imported from the panel at the top of `/traffic-lights` (not on `/import` since 2026-10-16) from the **Chapter Summary PALMS Report** + **Chapter Sponsor Report** into `traffic_palms_rows` / `traffic_sponsor_rows` (**`010_traffic_reports.sql` is NEW — the user runs it**); the slip tables are no longer used for that screen.
+- **`011_power_teams.sql` is NEW — the user runs it** (2026-11-20): `power_teams` table + `members.power_team_id`, seeded with the Home Chapter's 5 teams and 74 assignments from the Nov 2026 ASK sheet PDF (Rajesh Aggarwal / Lecon Financial left unassigned: no certain match). No UI uses it yet.
 - Migrations `001`–`007` are applied (**`008_member_aliases.sql` is NEW — the user runs it**: remembered member merges; `009_chat_owner_name.sql` is optional: chat owner names now come from the Firebase account itself) (006 = `member_attendance` for the PALMS
   Chapter Summary import, 007 = `palms_stats` for the PALMS-vs-slips
   comparison). No `DATABASE_URL` in `.env.local`, so the
