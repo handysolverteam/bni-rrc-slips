@@ -21,6 +21,7 @@ export const REFERENCE_TOOL = {
       status: { type: "string", enum: ["active", "inactive", "any"], description: "contacts only. DEFAULT 'any'; use 'active' only when asked for active members." },
       chapter: { type: "string", description: "contacts only. DEFAULT 'home' (the Home Chapter); 'all' only when other chapters are asked for." },
       powerTeam: { type: "string", description: "contacts only: keep members of this power team (partial name, e.g. 'B To B', 'Construction'). Each contacts row carries powerTeam (null = none)." },
+      groupByPowerTeam: { type: "boolean", description: "contacts only: return the members already grouped per power team (teams[] with exact counts and ready-to-paste text). Use it for 'list the members of each Power Team'. Members without a team are listed last as '(no power team)'." },
       hasEmail: { type: "boolean", description: "contacts only: true = only members WITH an email, false = only members WITHOUT one." },
       light: { type: "string", enum: ["green", "amber", "red", "grey"], description: "traffic_lights only: keep one colour." },
       period: { type: "string", description: "traffic_lights / sponsors: an imported range as 'YYYY-MM-DD_YYYY-MM-DD'. Default = the newest imported range; the result lists every available range." },
@@ -81,6 +82,32 @@ export async function executeReference(args: unknown, tenantId: string, homeChap
       .filter((m) => !powerTeam || lc(m.powerTeam).includes(powerTeam))
       .filter((m) => (typeof a.hasEmail === "boolean" ? (m.email !== null) === a.hasEmail : true))
       .sort((x, y) => x.name.localeCompare(y.name));
+    // Team lists are grouped HERE (the model mixed members between teams when it grouped a flat list itself).
+    if (a.groupByPowerTeam === true) {
+      const teams = new Map<string, typeof list>();
+      for (const m of list) {
+        const t = m.powerTeam ?? "(no power team)";
+        teams.set(t, [...(teams.get(t) ?? []), m]);
+      }
+      const groups = [...teams.entries()]
+        .sort((x, y) => (x[0] === "(no power team)" ? 1 : y[0] === "(no power team)" ? -1 : x[0].localeCompare(y[0])))
+        .map(([team, ms]) => ({
+          team,
+          count: ms.length,
+          members: ms.map((m) => m.name),
+          text: `${team} (${ms.length} ${ms.length === 1 ? "Member" : "Members"})\n${ms.map((m, k) => `${k + 1}. ${m.name}`).join("\n")}`,
+        }));
+      return {
+        teamCount: groups.length,
+        totalMembers: list.length,
+        assignedMembers: list.filter((m) => m.powerTeam).length,
+        teams: groups,
+        note: "Paste each team's text block as it is (exact member lists and counts); the total of members in teams is assignedMembers (totalMembers also counts those without a team). Do not move, add or invent members.",
+        basis: {
+          filtersSummary: `${allChapters ? "All chapters" : `Home chapter (${homeChapter})`} · ${status === "any" ? "active and inactive members" : `${status} members only`}`,
+        },
+      };
+    }
     const powerTeamCounts: Record<string, number> = {};
     for (const m of list) if (m.powerTeam) powerTeamCounts[m.powerTeam] = (powerTeamCounts[m.powerTeam] ?? 0) + 1;
     return {

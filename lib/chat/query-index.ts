@@ -554,17 +554,29 @@ export function executeChapterQuery(args: unknown, index: QueryIndex): Record<st
           .filter((e) => e[bandField] > lo && e[bandField] <= hi)
           .sort((x, y) => x[bandField] - y[bandField] || x.name.localeCompare(y.name));
         const whole = (bandField as string) !== "ta" && (lo === -Infinity || Number.isInteger(lo));
+        const money = (bandField as string) === "ta";
+        const fmt = (n: number): string => (money ? "₹" : "") + fmtN(n);
         const label =
           hi === Infinity
-            ? `above ${fmtN(lo)}`
+            ? `above ${fmt(lo)}`
             : lo === -Infinity
               ? hi === 0
                 ? "0"
-                : `up to ${fmtN(hi)}`
+                : money
+                  ? `up to ${fmt(hi)}`
+                  : `0–${fmtN(hi)}`
               : whole
                 ? `${fmtN(lo + 1)}–${fmtN(hi)}`
-                : `above ${fmtN(lo)} up to ${fmtN(hi)}`;
-        return { band: label, count: inBand.length, members: inBand.map((e) => ({ name: e.name, value: e[bandField] })) };
+                : `above ${fmt(lo)} up to ${fmt(hi)}`;
+        return {
+          band: label,
+          count: inBand.length,
+          members: inBand.map((e) => ({ name: e.name, value: e[bandField] })),
+          // Ready-to-paste block: heading with the exact count + one numbered line per member.
+          text: `${label} (${inBand.length} ${inBand.length === 1 ? "Member" : "Members"})\n${
+            inBand.length ? inBand.map((e, k) => `${k + 1}. ${e.name} – ${fmt(e[bandField])}`).join("\n") : "(none)"
+          }`,
+        };
       })
     : null;
 
@@ -606,7 +618,13 @@ export function executeChapterQuery(args: unknown, index: QueryIndex): Record<st
     rowCount: entries.length, // members matching the scope/filters BEFORE topN
     distinct,
     totals,
-    ...(bands ? { bands, bandsNote: "Every matching member is in exactly one band; the counts are exact — copy them." } : { rows }), // topN rows after orderBy
+    ...(bands
+      ? {
+          bandCount: bands.length,
+          bands,
+          bandsNote: `There are exactly ${bands.length} bands (empty ones included) and every matching member is in exactly one; the counts are exact. Paste each band's text block as it is, in this order — never merge, drop or re-count a band (you may only reword a heading).`,
+        }
+      : { rows }), // topN rows after orderBy
     metrics,
     ...(tiedExtra > 0
       ? { tiedAtCutoff: tiedExtra, tieNote: `${tiedExtra} more member${tiedExtra === 1 ? "" : "s"} share the value of the last listed one and are included — name them all.` }
