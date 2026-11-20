@@ -291,7 +291,8 @@ export default function ChatBox({
           replyTo: replyTo ?? undefined,
         }),
       });
-      const data = await res.json();
+      // A host timeout / crash answers with plain text, not JSON: show a clear message instead of a JSON parse error.
+      const data = await res.json().catch(() => ({ error: "The AI took too long to respond. Please try again." }));
       if (!res.ok) {
         setError(data.error ?? "Something went wrong.");
       } else {

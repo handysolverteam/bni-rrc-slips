@@ -32,6 +32,8 @@ const ACTIVE_GEMINI_MODELS = [
  * fallbacks inside the route's `maxDuration = 60` (3 × 20s).
  */
 const MODEL_ATTEMPT_TIMEOUT_MS = 20_000;
+/** Whole question (all rounds and fallbacks) — kept under the route's maxDuration of 60s. */
+const TOTAL_BUDGET_MS = 52_000;
 
 export type ChatHistoryMessage = { sender: "user" | "ai"; text: string };
 
@@ -263,6 +265,7 @@ async function callModel(
   useTools: boolean,
   apiKey: string,
   temperature: number,
+  timeoutMs = MODEL_ATTEMPT_TIMEOUT_MS,
 ): Promise<ModelAttempt> {
   try {
     // Key travels in the header only -- never in the URL (server logs).
@@ -289,7 +292,7 @@ async function callModel(
       method: "POST",
       headers: { "Content-Type": "application/json", "X-goog-api-key": apiKey },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(MODEL_ATTEMPT_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) return { kind: "error", detail: `HTTP ${response.status}`, status: response.status };
     let data: unknown;
@@ -378,16 +381,24 @@ export async function askGemini(
   let lastBasis: string | null = null;
   let usedTool = false;
   const toolsBroken = new Set<string>();
+  const deadline = Date.now() + TOTAL_BUDGET_MS;
 
   for (let round = 0; round < 3; round++) {
     let calls: ToolCall[] | null = null;
     for (const model of ACTIVE_GEMINI_MODELS) {
       const useTools = !toolsBroken.has(model);
-      let attempt = await callModel(model, contents, useTools, apiKey, temperature);
+      // Overall budget: stop BEFORE the route's maxDuration, so the member gets our message instead of the host's plain-text timeout page.
+      const left = deadline - Date.now();
+      if (left < 4_000) {
+        failures.push("out of time");
+        break;
+      }
+      const slice = Math.min(MODEL_ATTEMPT_TIMEOUT_MS, left);
+      let attempt = await callModel(model, contents, useTools, apiKey, temperature, slice);
       if (attempt.kind === "error" && attempt.status === 400 && useTools) {
         // This model's endpoint rejects the tools payload — continue without it.
         toolsBroken.add(model);
-        attempt = await callModel(model, contents, false, apiKey, temperature);
+        attempt = await callModel(model, contents, false, apiKey, temperature, Math.min(MODEL_ATTEMPT_TIMEOUT_MS, Math.max(1_000, deadline - Date.now())));
       }
       if (attempt.kind === "text") {
         // A clipped answer stays usable, but the user (and the next turn's
