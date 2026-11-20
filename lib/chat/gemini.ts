@@ -1,6 +1,7 @@
 import type { SlipsSnapshot } from "./snapshot";
 import { guardFilters } from "./filter-guard";
 import { REFERENCE_TOOL, executeReference } from "./reference-tool";
+import { collectFacts, findProblems } from "./verify-answer";
 import {
   CHAPTER_QUERY_TOOL,
   SLIP_ENTRIES_TOOL,
@@ -249,6 +250,10 @@ function formatHistory(history: ChatHistoryMessage[]): string {
 const TRUNCATION_NOTICE =
   "\n\n[This answer was cut short by the length limit — it is incomplete. Ask me again for the rest.]";
 
+/** Shown when an answer still disagrees with the data after one correction round. */
+const UNVERIFIED_NOTICE =
+  "\n\n[Some lines of this answer could not be matched to the data. Please re-ask, or check the figures on the screens / Excel exports.]";
+
 type ModelAttempt =
   | { kind: "text"; text: string; truncated?: boolean }
   | { kind: "calls"; calls: ToolCall[] }
@@ -382,10 +387,13 @@ export async function askGemini(
   let lastBasis: string | null = null;
   let usedTool = false;
   const toolsBroken = new Set<string>();
+  const toolResults: unknown[] = [];
+  let repaired = false;
   const deadline = Date.now() + TOTAL_BUDGET_MS;
 
-  for (let round = 0; round < 3; round++) {
+  for (let round = 0; round < 4; round++) {
     let calls: ToolCall[] | null = null;
+    let retry = false;
     for (const model of ACTIVE_GEMINI_MODELS) {
       const useTools = !toolsBroken.has(model);
       // Overall budget: stop BEFORE the route's maxDuration, so the member gets our message instead of the host's plain-text timeout page.
@@ -407,6 +415,22 @@ export async function askGemini(
         // truncation" and confabulating a reason for it. The suggestions block
         // is parsed first so the notice appended here never lands inside it.
         const { text: answer, suggestions } = extractSuggestions(attempt.text);
+        // Grounding check: every list line / count / total must match what the tools returned this turn.
+        let unverified = false;
+        if (usedTool) {
+          const problems = findProblems(answer, collectFacts(toolResults));
+          if (problems.length > 0 && !repaired && deadline - Date.now() > 12_000) {
+            repaired = true;
+            contents.push({ role: "model", parts: [{ text: attempt.text }] });
+            contents.push({
+              role: "user",
+              parts: [{ text: `CHECK FAILED — your answer does not match the tool results: ${problems.join("; ")}. Rewrite the answer using ONLY the tool results (copy the ready-made text blocks, counts and totals exactly; no filler or note lines). Keep the same format and end the same way.` }],
+            });
+            retry = true;
+            break;
+          }
+          unverified = problems.length > 0;
+        }
         // The model sometimes drops the required line: add it from the last tool basis (or the
         // whole-chapter default for an answer read straight from the snapshot) so it is never missing.
         const needsLine = !/filters applied:/i.test(answer) && (usedTool || /d/.test(answer));
@@ -416,7 +440,7 @@ export async function askGemini(
 Filters applied: ${lastBasis ?? "none (whole chapter totals — all members, active and inactive)"}`
           : answer;
         return {
-          text: attempt.truncated ? withLine + TRUNCATION_NOTICE : withLine,
+          text: (attempt.truncated ? withLine + TRUNCATION_NOTICE : withLine) + (unverified ? UNVERIFIED_NOTICE : ""),
           suggestions,
         };
       }
@@ -426,6 +450,7 @@ Filters applied: ${lastBasis ?? "none (whole chapter totals — all members, act
       }
       failures.push(`${model}: ${attempt.detail}`);
     }
+    if (retry) continue; // the answer failed the grounding check: ask once more
     if (!calls) break; // no model answered with text or calls this round
 
     // Execute every requested call and hand the results back for the next round.
@@ -435,6 +460,7 @@ Filters applied: ${lastBasis ?? "none (whole chapter totals — all members, act
       calls.map(async (c) => {
         const result = await executeToolCall(c, index, cueText, tenantId);
         usedTool = true;
+        toolResults.push(result);
         const b = (result as { basis?: { filtersSummary?: string } } | null)?.basis;
         if (b?.filtersSummary) lastBasis = b.filtersSummary;
         return { functionResponse: { name: c.name, response: { json: result } } };
