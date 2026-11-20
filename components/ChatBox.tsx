@@ -585,12 +585,15 @@ export default function ChatBox({
         </div>
       ) : null}
 
-      <div className="chat-chips" ref={chipsRef}>
-        {latestSuggestions(messages).map((s) => (
-          <button key={s} type="button" disabled={busy} onClick={() => send(s)}>
-            {s}
-          </button>
-        ))}
+      <div className="chat-suggest">
+        <span className="chat-suggest-label">💡 Suggested questions</span>
+        <div className="chat-chips" ref={chipsRef}>
+          {latestSuggestions(messages).map((s) => (
+            <button key={s} type="button" disabled={busy} onClick={() => send(s)}>
+              {s}
+            </button>
+          ))}
+        </div>
       </div>
 
       {pending.length > 0 ? (

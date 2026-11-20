@@ -1650,6 +1650,12 @@ button.copy-btn.done, button.copy-btn.done:hover:not(:disabled) { background: va
 .chat-group-title { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .chat-readonly { margin: 8px 0; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; background: var(--panel); font-size: 14px; }
 .chat-chips[hidden], .chat-input[hidden] { display: none !important; }
+/* Suggested questions: their own tinted strip with a label, so they read as a separate section from the chat and the composer */
+.chat-suggest { margin: 10px 14px 0; padding: 8px 12px 10px; border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 12px; background: var(--accent-soft); }
+.chat-suggest-label { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-ink); }
+.chat-suggest .chat-chips { padding: 7px 0 0; }
+.chat-suggest .chat-chips button { background: var(--panel); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); color: var(--ink); font-weight: 600; }
+.chat-suggest .chat-chips button:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #fff; }
 /* Chat sidebar sections: heading sits in line with the chat titles, with air above */
 .chat-sidebar .chat-groups { margin-top: 18px; gap: 18px; }
 .chat-sidebar .chat-group-title { margin: 0; padding: 0 12px; line-height: 1.2; }
