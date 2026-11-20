@@ -153,10 +153,30 @@ export default function ChatBox({
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
+  const chipsRef = useRef<HTMLDivElement>(null);
   // Set when THIS box created its session: the sessionId prop change that
   // follows must not trigger a history reload (it would wipe the reply
   // currently being generated).
   const justCreated = useRef(false);
+
+  // Suggestion chips: show only as many as fit in ONE row (the rest wrap below the first row and are hidden),
+  // re-measured when the suggestions change and whenever the chat box is resized.
+  const chipsKey = latestSuggestions(messages).join("|");
+  useEffect(() => {
+    const box = chipsRef.current;
+    if (!box) return;
+    const fit = () => {
+      const btns = Array.from(box.querySelectorAll<HTMLButtonElement>("button"));
+      for (const b of btns) b.style.display = "";
+      if (btns.length === 0) return;
+      const top = btns[0].offsetTop;
+      for (const b of btns) if (b.offsetTop > top + 2) b.style.display = "none";
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [chipsKey]);
 
   // Load persisted history when switching sessions.
   useEffect(() => {
@@ -565,7 +585,7 @@ export default function ChatBox({
         </div>
       ) : null}
 
-      <div className="chat-chips">
+      <div className="chat-chips" ref={chipsRef}>
         {latestSuggestions(messages).map((s) => (
           <button key={s} type="button" disabled={busy} onClick={() => send(s)}>
             {s}
