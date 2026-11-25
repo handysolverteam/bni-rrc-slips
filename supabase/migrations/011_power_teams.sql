@@ -6,8 +6,8 @@
 --   * members.power_team_id — the team a member belongs to (blank = none)
 --
 -- The seed + assignments at the bottom are the Home Chapter's teams from
--- "ASK sheet 2026 - November influencers.pdf" (74 members; Rajesh Aggarwal
--- of Lecon Financial is NOT assigned: no certain match in the member list).
+-- "ASK sheet 2026 - November influencers.pdf" (75 members; Rajesh Aggarwal of Lecon Financial = Rajesh Kumar Agarwal,
+-- same email carajesh.radhey@gmail.com, confirmed by the user 2026-11-25).
 -- ============================================================
 
 create table if not exists public.power_teams (
@@ -90,7 +90,7 @@ update public.members m set power_team_id = t.id
      'yoginder kalra'
    );
 
--- Business Owners B To B (10)
+-- Business Owners B To B (11)
 update public.members m set power_team_id = t.id
   from public.power_teams t
  where t.tenant_id = m.tenant_id and lower(t.name) = lower('Business Owners B To B')
@@ -102,6 +102,7 @@ update public.members m set power_team_id = t.id
      'komal gupta',
      'nishant tanwar',
      'rahul matharu',
+     'rajesh kumar agarwal',
      'ritu chauhan',
      'sandeep deshwal',
      'sanjay jain',
