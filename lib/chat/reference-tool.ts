@@ -12,7 +12,7 @@ import { inWindow, latestDate, rollingWindow } from "@/lib/period";
 export const REFERENCE_TOOL = {
   name: "chapter_reference",
   description:
-    "Reference data not in the snapshot. topic 'contacts' = members' email / phone / company / category / chapter / power team / active (use for 'what is X's email', 'who has no email', 'list members with emails'); 'traffic_lights' = the imported BNI Traffic Lights (score out of 100, colour green/amber/red/grey, per-metric scores; use for 'who is red', 'Traffic Light of X'); 'sponsors' = the imported Chapter Sponsor Report (who sponsored whom, application date); 'attendance_percent' = attendance % per active member per month, worked out by the server (BNI rule (recorded meetings − absent) ÷ recorded meetings; only meetings with an attendance record count) — copy it, never compute attendance % yourself; 'one_to_one_gaps' = who each active member has / has NOT done a 121 with in the last 6 months, worked out by the server from the 121 slips (pass members [name] — up to 5 names — for the full lists; without names it returns a ranking summary); 'palms_totals' = the totals BNI's own PALMS report states per meeting week (RGI, RGO, RRI, RRO, visitors, 121s, TYFCB, CEU).",
+    "Reference data not in the snapshot. topic 'contacts' = members' email / phone / company / category / chapter / power team / active (use for 'what is X's email', 'who has no email', 'list members with emails'); 'traffic_lights' = the imported BNI Traffic Lights (score out of 100, colour green/amber/red/grey, per-metric scores; use for 'who is red', 'Traffic Light of X'); 'sponsors' = the imported Chapter Sponsor Report (who sponsored whom, application date); 'attendance_percent' = attendance % per active member per month, worked out by the server (BNI rule (recorded meetings − absent) ÷ recorded meetings; only meetings with an attendance record count) — copy it, never compute attendance % yourself; 'one_to_one_gaps' = who each active member has / has NOT done a 121 with in the last 6 months, worked out by the server from the 121 slips (pass members [name] — up to 5 names — or page N for the full lists, 5 members per page; without either it returns a ranking summary); 'palms_totals' = the totals BNI's own PALMS report states per meeting week (RGI, RGO, RRI, RRO, visitors, 121s, TYFCB, CEU).",
   parameters: {
     type: "object",
     properties: {
@@ -26,6 +26,7 @@ export const REFERENCE_TOOL = {
       hasEmail: { type: "boolean", description: "contacts only: true = only members WITH an email, false = only members WITHOUT one." },
       light: { type: "string", enum: ["green", "amber", "red", "grey"], description: "traffic_lights only: keep one colour." },
       period: { type: "string", description: "traffic_lights / sponsors: an imported range as 'YYYY-MM-DD_YYYY-MM-DD'. Default = the newest imported range; the result lists every available range." },
+      page: { type: "integer", description: "one_to_one_gaps only, without members: 1-based page of the full per-member lists, 5 members per page (alphabetical)." },
       limit: { type: "integer", description: "Max rows (default 150, max 300). count always covers ALL matches." },
     },
     required: ["topic"],
@@ -227,19 +228,35 @@ export async function executeReference(args: unknown, tenantId: string, homeChap
     const base = {
       period,
       activeMembers: people.length,
-      slipsCounted: slips,
+      note: "State the period by its dates only (never a meeting count) and do not mention a slip total.",
       basis: { filtersSummary: `Home chapter (${homeChapter}) · active members only · 121s among these members · ${period}` },
     };
-    // One member (or a few) = the full lists; everyone = a short summary (a list per member would be far too long).
+    // One member (or a few) = the full lists; everyone = a short summary, or the full lists 5 members at a time (`page`).
     if (wanted.length > 0 && picked.length <= 5) return { ...base, count: picked.length, members: picked.map(rowOf) };
+    const page = Math.floor(Number(a.page));
+    if (wanted.length === 0 && page >= 1) {
+      const pageCount = Math.ceil(picked.length / 5);
+      const slice = picked.slice((page - 1) * 5, page * 5);
+      return {
+        ...base,
+        count: picked.length,
+        page,
+        pageCount,
+        members: slice.map(rowOf),
+        note: page < pageCount ? `Page ${page} of ${pageCount}; offer the next page (page ${page + 1}). State the period by its dates only.` : `Last page (${page} of ${pageCount}). State the period by its dates only.`,
+      };
+    }
     return {
       ...base,
       count: picked.length,
-      note: "Summary only — ask for one member (or up to 5) by name to get the full list of who they have not met.",
-      summary: picked
+      note: "Summary only — for the full lists of who each member has not met call again with page 1 (5 members per page, alphabetical) or with members [names]. State the period by its dates only.",
+      summaryText: picked
         .map((i) => ({ name: people[i], metCount: met[i].size, notMetCount: people.length - 1 - met[i].size }))
         .sort((x, y) => y.notMetCount - x.notMetCount || x.name.localeCompare(y.name))
-        .slice(0, limit),
+        .slice(0, limit)
+        .map((x, k) => `${k + 1}. ${x.name} – not met ${x.notMetCount} · met ${x.metCount}`)
+        .join("\n"),
+      pageCount: Math.ceil(picked.length / 5),
     };
   }
 
