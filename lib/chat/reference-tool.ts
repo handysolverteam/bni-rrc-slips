@@ -2,6 +2,7 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paged";
 import { fetchTrafficData, rangeLabel, trafficView } from "@/lib/traffic-lights";
 import { LIGHT_LABEL, type LightColor } from "@/lib/traffic-light-score";
+import { inWindow, latestDate, rollingWindow } from "@/lib/period";
 
 /**
  * `chapter_reference`: data the chat snapshot does not carry — member contact details, the imported BNI Traffic
@@ -11,11 +12,11 @@ import { LIGHT_LABEL, type LightColor } from "@/lib/traffic-light-score";
 export const REFERENCE_TOOL = {
   name: "chapter_reference",
   description:
-    "Reference data not in the snapshot. topic 'contacts' = members' email / phone / company / category / chapter / power team / active (use for 'what is X's email', 'who has no email', 'list members with emails'); 'traffic_lights' = the imported BNI Traffic Lights (score out of 100, colour green/amber/red/grey, per-metric scores; use for 'who is red', 'Traffic Light of X'); 'sponsors' = the imported Chapter Sponsor Report (who sponsored whom, application date); 'attendance_percent' = attendance % per active member per month, worked out by the server (BNI rule (recorded meetings − absent) ÷ recorded meetings; only meetings with an attendance record count) — copy it, never compute attendance % yourself; 'palms_totals' = the totals BNI's own PALMS report states per meeting week (RGI, RGO, RRI, RRO, visitors, 121s, TYFCB, CEU).",
+    "Reference data not in the snapshot. topic 'contacts' = members' email / phone / company / category / chapter / power team / active (use for 'what is X's email', 'who has no email', 'list members with emails'); 'traffic_lights' = the imported BNI Traffic Lights (score out of 100, colour green/amber/red/grey, per-metric scores; use for 'who is red', 'Traffic Light of X'); 'sponsors' = the imported Chapter Sponsor Report (who sponsored whom, application date); 'attendance_percent' = attendance % per active member per month, worked out by the server (BNI rule (recorded meetings − absent) ÷ recorded meetings; only meetings with an attendance record count) — copy it, never compute attendance % yourself; 'one_to_one_gaps' = who each active member has / has NOT done a 121 with in the last 6 months, worked out by the server from the 121 slips (pass members [name] — up to 5 names — for the full lists; without names it returns a ranking summary); 'palms_totals' = the totals BNI's own PALMS report states per meeting week (RGI, RGO, RRI, RRO, visitors, 121s, TYFCB, CEU).",
   parameters: {
     type: "object",
     properties: {
-      topic: { type: "string", enum: ["contacts", "traffic_lights", "sponsors", "palms_totals", "attendance_percent"] },
+      topic: { type: "string", enum: ["contacts", "traffic_lights", "sponsors", "palms_totals", "attendance_percent", "one_to_one_gaps"] },
       months: { type: "array", items: { type: "string" }, description: "attendance_percent only: months as 'YYYY-MM', e.g. ['2026-08','2026-09']. Default = the last 4 months that have attendance." },
       members: { type: "array", items: { type: "string" }, description: "Member names (partial, case-insensitive). When given, no other member filter applies." },
       status: { type: "string", enum: ["active", "inactive", "any"], description: "contacts only. DEFAULT 'any'; use 'active' only when asked for active members." },
@@ -172,6 +173,73 @@ export async function executeReference(args: unknown, tenantId: string, homeChap
         notes: r.notes,
       })),
       basis: { filtersSummary: `BNI Traffic Lights · ${period}${light ? ` · ${LIGHT_LABEL[light]} only` : ""}` },
+    };
+  }
+
+  if (topic === "one_to_one_gaps") {
+    // Who has / has not done a 121 with whom: unique partner pairs among ACTIVE members of the home chapter in the
+    // 6-month window ending at the newest meeting with 121 slips. A 121 counts for both people.
+    const [mem, otos] = await Promise.all([
+      fetchAllRows<MemberDb>("members", "name,email,phone,company,category,is_inactive,chapters(name),power_teams(name)", { eq: [["tenant_id", tenantId]], order: { column: "id" } }),
+      fetchAllRows<{ bni_week_id: string | null; initiated_by_name: string; met_with_name: string }>(
+        "slip_one_to_ones",
+        "bni_week_id,initiated_by_name,met_with_name",
+        { eq: [["tenant_id", tenantId]], order: { column: "id" } },
+      ),
+    ]);
+    const weekIds = [...new Set(otos.map((r) => r.bni_week_id).filter((x): x is string => !!x))];
+    const { data: wk } = weekIds.length
+      ? await getSupabaseServer().from("bni_weeks").select("id,meeting_date").in("id", weekIds)
+      : { data: [] as { id: string; meeting_date: string }[] };
+    const dateOf = new Map((wk ?? []).map((w) => [w.id as string, String(w.meeting_date).slice(0, 10)]));
+    const win = rollingWindow(latestDate(dateOf.values()));
+    if (!win) return { count: 0, note: "No one-to-one slips have been imported yet." };
+    const people = mem
+      .filter((m) => m.is_inactive !== true && lc((Array.isArray(m.chapters) ? m.chapters[0] : m.chapters)?.name) === lc(homeChapter))
+      .map((m) => m.name.replace(/\s+/g, " ").trim())
+      .sort((x, y) => x.localeCompare(y));
+    const idx = new Map(people.map((n, i) => [lc(n), i]));
+    const met = people.map(() => new Set<number>());
+    let slips = 0;
+    for (const r of otos) {
+      if (!inWindow(dateOf.get(r.bni_week_id ?? ""), win)) continue;
+      const i = idx.get(lc(r.initiated_by_name));
+      const j = idx.get(lc(r.met_with_name));
+      if (i === undefined || j === undefined || i === j) continue;
+      met[i].add(j);
+      met[j].add(i);
+      slips += 1;
+    }
+    const period = `${win.from} to ${win.to}`;
+    const rowOf = (i: number) => {
+      const metNames = [...met[i]].map((j) => people[j]).sort((x, y) => x.localeCompare(y));
+      const notMet = people.filter((_, j) => j !== i && !met[i].has(j));
+      return {
+        name: people[i],
+        metCount: metNames.length,
+        notMetCount: notMet.length,
+        met: metNames,
+        notMet,
+        text: `${people[i]} – 121s not done yet (${notMet.length} of ${people.length - 1} members)\n${notMet.length ? notMet.map((n, k) => `${k + 1}. ${n}`).join("\n") : "Met everyone!"}`,
+      };
+    };
+    const picked = people.map((_, i) => i).filter((i) => wanted.length === 0 || wanted.some((w) => lc(people[i]).includes(w)));
+    const base = {
+      period,
+      activeMembers: people.length,
+      slipsCounted: slips,
+      basis: { filtersSummary: `Home chapter (${homeChapter}) · active members only · 121s among these members · ${period}` },
+    };
+    // One member (or a few) = the full lists; everyone = a short summary (a list per member would be far too long).
+    if (wanted.length > 0 && picked.length <= 5) return { ...base, count: picked.length, members: picked.map(rowOf) };
+    return {
+      ...base,
+      count: picked.length,
+      note: "Summary only — ask for one member (or up to 5) by name to get the full list of who they have not met.",
+      summary: picked
+        .map((i) => ({ name: people[i], metCount: met[i].size, notMetCount: people.length - 1 - met[i].size }))
+        .sort((x, y) => y.notMetCount - x.notMetCount || x.name.localeCompare(y.name))
+        .slice(0, limit),
     };
   }
 
